@@ -9,6 +9,7 @@ dependencies = [
     "fastapi>=0.135.2",
     "myapplication>=0.1.0",
     "sqlalchemy[asyncio]>=2.0.48",
+    "starlette>=1.0.0",
     "uuid>=1.30",
     "uvicorn>=0.42.0",
 ]
