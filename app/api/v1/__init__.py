@@ -1,6 +1,4 @@
-"""
-路由注册
-"""
+"""路由注册。"""
 
 from fastapi import APIRouter
 
