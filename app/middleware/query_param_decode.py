@@ -1,23 +1,21 @@
+from typing import Any, Dict
 from urllib.parse import urlencode
-from typing import Dict, Any
+
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
 from app.utils.codec import DataCodec
 
 
-def _rewrite_query_params(request: Request, params: Dict[str, Any]):
-    """重写 request.query_params"""
+def _rewrite_query_params(request: Request, params: Dict[str, Any]) -> None:
     new_query_string = urlencode(params, doseq=True)
     request.scope["query_string"] = new_query_string.encode("utf-8")
 
 
 class QueryParamDecodeMiddleware(BaseHTTPMiddleware):
-    """
-    解密 query 参数
-    """
+    """将 query 中的加密参数解码为普通参数。"""
 
-    PARAM_NAME: str = "f"
+    param_name: str = "f"
 
     async def dispatch(self, request: Request, call_next):
         # 获取查询参数
@@ -26,7 +24,7 @@ class QueryParamDecodeMiddleware(BaseHTTPMiddleware):
         # =========================
         # 1️⃣ 处理 f 参数（加密数据）
         # =========================
-        encoded_value = query_params.get(self.PARAM_NAME, None)
+        encoded_value = query_params.get(self.param_name, None)
 
         if not encoded_value:
             return await call_next(request)
