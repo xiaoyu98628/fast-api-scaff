@@ -2,6 +2,7 @@
 初始化
 """
 
+
 from pathlib import Path
 
-CONFIG_DIR = Path(__file__).resolve().parent
+PUBLIC_DIR = Path(__file__).resolve().parent

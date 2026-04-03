@@ -5,8 +5,8 @@ from fastapi import FastAPI
 from app.api.v1 import api_router
 from app.core.exceptions import register_exception_handlers
 from app.middleware import register_middleware
-
 from config.app import get_settings
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -17,7 +17,7 @@ def create_app() -> FastAPI:
 
     app = FastAPI(
         title=settings.app_name,
-        debug=settings.debug,
+        debug=settings.app_debug,
         lifespan=lifespan,
     )
 
@@ -37,4 +37,4 @@ if __name__ == "__main__":
     import uvicorn
 
     settings = get_settings()
-    uvicorn.run("app.main:app", host=settings.host, port=settings.port, reload=settings.debug)
+    uvicorn.run("app.main:app", host=settings.app_host, port=settings.app_port, reload=settings.app_debug)
