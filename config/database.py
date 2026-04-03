@@ -19,5 +19,11 @@ class DatabaseSettings(BaseSettings):
 
     @property
     def url(self) -> str:
-        """数据库连接地址。"""
-        return f"mysql+asyncpg://{self.username}:{self.password}@{self.host}:{self.port}/{self.database}"
+        """数据库连接 URL（异步）"""
+        # 根据驱动选择，这里使用 aiomysql
+        return f"mysql+aiomysql://{self.username}:{self.password}@{self.host}:{self.port}/{self.database}?charset=utf8mb4"
+
+    @property
+    def sync_url(self) -> str:
+        """同步数据库连接 URL（用于 Alembic 等工具）"""
+        return f"mysql+pymysql://{self.username}:{self.password}@{self.host}:{self.port}/{self.database}?charset=utf8mb4"
