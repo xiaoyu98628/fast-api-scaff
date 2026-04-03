@@ -4,19 +4,18 @@ from fastapi import FastAPI
 
 from app.api.v1 import api_router
 from app.middleware import register_middleware
-from config.app import get_settings
-
+from config.config import get_config
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     yield
 
 def create_app() -> FastAPI:
-    settings = get_settings()
+    config = get_config()
 
     app = FastAPI(
-        title=settings.app_name,
-        debug=settings.app_debug,
+        title=config.app.app_name,
+        debug=config.app.app_debug,
         lifespan=lifespan,
     )
 
@@ -34,5 +33,5 @@ app = create_app()
 if __name__ == "__main__":
     import uvicorn
 
-    settings = get_settings()
-    uvicorn.run("app.main:app", host=settings.app_host, port=settings.app_port, reload=settings.app_debug)
+    config = get_config()
+    uvicorn.run("app.main:app", host=config.app.app_host, port=config.app.app_port, reload=config.app.app_debug)
