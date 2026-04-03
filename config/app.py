@@ -3,13 +3,13 @@ from functools import lru_cache
 from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from config import CONFIG_DIR
+from config import BASE_DIR
+
 
 class Settings(BaseSettings):
     """应用配置。"""
-
     model_config = SettingsConfigDict(
-        env_file=CONFIG_DIR.joinpath(".env"),
+        env_file=BASE_DIR.joinpath(".env"),
         env_file_encoding="utf-8",
         extra="ignore",
     )
