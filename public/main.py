@@ -3,7 +3,6 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.api.v1 import api_router
-from app.core.exceptions import register_exception_handlers
 from app.middleware import register_middleware
 from config.app import get_settings
 
@@ -22,7 +21,6 @@ def create_app() -> FastAPI:
     )
 
     register_middleware(app)
-    register_exception_handlers(app)
     app.include_router(api_router)
 
     @app.get(path="/health", summary="健康检测")
