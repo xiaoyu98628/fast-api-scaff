@@ -7,16 +7,17 @@ class DatabaseSettings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=BASE_DIR.joinpath(".env"),
         env_file_encoding="utf-8",
+        env_prefix="DB_",
         extra="ignore",
     )
 
-    db_host: str = "127.0.0.1"
-    db_port: str = "3306"
-    db_database: str = 'fast-api'
-    db_username: str = "root"
-    db_password: str = "root"
+    host: str = "127.0.0.1"
+    port: str = "3306"
+    database: str = 'fast-api'
+    username: str = "root"
+    password: str = "root"
 
     @property
-    def database_url(self) -> str:
+    def url(self) -> str:
         """数据库连接地址。"""
-        return f"mysql+asyncpg://{self.db_username}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_database}"
+        return f"mysql+asyncpg://{self.username}:{self.password}@{self.host}:{self.port}/{self.database}"

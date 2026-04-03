@@ -14,8 +14,8 @@ def create_app() -> FastAPI:
     config = get_config()
 
     app = FastAPI(
-        title=config.app.app_name,
-        debug=config.app.app_debug,
+        title=config.app.name,
+        debug=config.app.debug,
         lifespan=lifespan,
     )
 
@@ -34,4 +34,4 @@ if __name__ == "__main__":
     import uvicorn
 
     config = get_config()
-    uvicorn.run("app.main:app", host=config.app.app_host, port=config.app.app_port, reload=config.app.app_debug)
+    uvicorn.run("app.main:app", host=config.app.host, port=config.app.port, reload=config.app.debug)
