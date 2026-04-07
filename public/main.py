@@ -3,12 +3,14 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.api.v1 import api_router
+from app.infrastructure.db import close_db
 from app.middleware import register_middleware
 from config.config import get_config
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     yield
+    await close_db()
 
 def create_app() -> FastAPI:
     config = get_config()
