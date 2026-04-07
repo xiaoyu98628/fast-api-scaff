@@ -17,6 +17,10 @@ class DatabaseSettings(BaseSettings):
     username: str = "root"
     password: str = "root"
 
+    echo: bool = False
+    pool_size: int = 10
+    max_overflow: int = 20
+
     @property
     def url(self) -> str:
         """数据库连接 URL（异步）"""
