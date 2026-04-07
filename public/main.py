@@ -30,8 +30,16 @@ def create_app() -> FastAPI:
 
 app = create_app()
 
-if __name__ == "__main__":
+def main() -> None:
     import uvicorn
 
     config = get_config()
-    uvicorn.run("app.main:app", host=config.app.host, port=config.app.port, reload=config.app.debug)
+    uvicorn.run(
+        "public.main:app",
+        host="0.0.0.0",
+        port=config.app.port,
+        reload=config.app.debug,
+    )
+
+if __name__ == "__main__":
+    main()
