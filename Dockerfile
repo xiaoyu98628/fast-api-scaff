@@ -1,4 +1,4 @@
-FROM python:3.14-rc-slim AS builder
+FROM python:3.14-slim AS builder
 
 WORKDIR /app
 RUN pip install --no-cache-dir uv
@@ -8,7 +8,7 @@ RUN uv sync --frozen --no-dev --no-install-project
 
 COPY . .
 
-FROM python:3.14-rc-slim AS runtime
+FROM python:3.14-slim AS runtime
 
 ENV PATH="/app/.venv/bin:${PATH}"
 WORKDIR /app
