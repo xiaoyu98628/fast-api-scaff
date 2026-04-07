@@ -11,7 +11,7 @@ class AppSettings(BaseSettings):
         extra="ignore",
     )
 
-    name: str = "FastAPI Scaff"
+    name: str = "FastAPI scaff"
     env: str = "dev"
     debug: bool = True
     port: int = 8000
