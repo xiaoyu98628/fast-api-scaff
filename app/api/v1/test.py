@@ -5,6 +5,7 @@ from starlette.requests import Request
 
 from app.core.response.json import JsonResponse
 from app.infrastructure.db import get_db_session
+from app.infrastructure.redis import ping_redis
 
 router = APIRouter(prefix="/test", tags=["test"])
 
@@ -27,6 +28,18 @@ async def db_health(
     row = result.mappings().one()
     return JsonResponse.success(
         data={"db": "ok", "result": row["ok"]},
+        message="ok",
+        trace_id=getattr(request.state, "trace_id", None),
+    )
+
+
+@router.get(path="/redis-health", summary="Redis 连通性检测")
+async def redis_health(
+    request: Request,
+) -> JsonResponse[dict[str, bool]]:
+    ok = await ping_redis()
+    return JsonResponse.success(
+        data={"redis": ok},
         message="ok",
         trace_id=getattr(request.state, "trace_id", None),
     )

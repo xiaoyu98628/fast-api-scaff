@@ -4,12 +4,14 @@ from fastapi import FastAPI
 
 from app.api.v1 import api_router
 from app.infrastructure.db import close_db
+from app.infrastructure.redis import close_redis
 from app.middleware import register_middleware
 from config.config import get_config
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     yield
+    await close_redis()
     await close_db()
 
 def create_app() -> FastAPI:

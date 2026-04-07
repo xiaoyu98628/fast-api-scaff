@@ -13,6 +13,8 @@ uv run uvicorn public.main:app --host 0.0.0.0 --port 8001 --reload
 访问：
 - `http://127.0.0.1:8001/health`
 - `http://127.0.0.1:8001/api/v1/test/health`
+- `http://127.0.0.1:8001/api/v1/test/db-health`
+- `http://127.0.0.1:8001/api/v1/test/redis-health`
 
 ## 使用 Docker
 
@@ -38,6 +40,7 @@ docker compose down
 - `APP_ENV`：环境标识（如 `dev/test/pre/prod`）
 - `APP_PORT`：宿主机暴露端口
 - `DB_HOST/DB_PORT/DB_DATABASE/DB_USERNAME/DB_PASSWORD`：数据库连接
+- `REDIS_HOST/REDIS_PORT/REDIS_DB/REDIS_PASSWORD`：Redis 连接
 
 ## 目录结构
 
