@@ -1,4 +1,6 @@
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy import URL
 
 from config import BASE_DIR
 
@@ -12,8 +14,8 @@ class DatabaseSettings(BaseSettings):
     )
 
     host: str = "127.0.0.1"
-    port: str = "3306"
-    database: str = 'fast-api'
+    port: int = 3306
+    database: str = "fast-api"
     username: str = "root"
     password: str = "root"
 
@@ -21,13 +23,34 @@ class DatabaseSettings(BaseSettings):
     pool_size: int = 10
     max_overflow: int = 20
 
+    charset: str = Field(
+        default="utf8mb4",
+        description="写入连接 URL 的 charset 参数，对应环境变量 DB_CHARSET。",
+    )
+
     @property
-    def url(self) -> str:
+    def url(self) -> URL:
         """数据库连接 URL（异步）"""
-        # 根据驱动选择，这里使用 aiomysql
-        return f"mysql+aiomysql://{self.username}:{self.password}@{self.host}:{self.port}/{self.database}?charset=utf8mb4"
+        return URL.create(
+            drivername="mysql+aiomysql",
+            username=self.username,
+            password=self.password,
+            host=self.host,
+            port=self.port,
+            database=self.database,
+            query={"charset": self.charset},
+        )
 
     @property
     def sync_url(self) -> str:
         """同步数据库连接 URL（用于 Alembic 等工具）"""
-        return f"mysql+pymysql://{self.username}:{self.password}@{self.host}:{self.port}/{self.database}?charset=utf8mb4"
+        u = URL.create(
+            drivername="mysql+pymysql",
+            username=self.username,
+            password=self.password,
+            host=self.host,
+            port=self.port,
+            database=self.database,
+            query={"charset": self.charset},
+        )
+        return u.render_as_string(hide_password=False)
