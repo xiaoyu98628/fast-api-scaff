@@ -1,0 +1,49 @@
+---
+description: FastAPI + 轻量 DDD — 目录结构与分层职责
+alwaysApply: true
+---
+
+# 目录与分层
+
+## 设计原则
+
+Clean Architecture + 轻量 DDD。核心：**分层清晰、职责单一、依赖单向、易扩展**。
+
+## 目录树（新代码须对齐）
+
+```text
+app/
+├── main.py
+├── domain/                 # 领域：实体、值对象、领域服务（复杂业务再加重）
+├── application/
+│   ├── services/           # 用例编排、业务服务
+│   ├── enums/              # 业务枚举（默认）；进阶可放 domain/{mod}/enums.py
+│   └── agents/             # Agent（仅编排，不直连 DB/Redis）
+├── interfaces/
+│   ├── api/
+│   │   ├── router.py
+│   │   └── v1/router.py, v1/endpoints/*.py
+│   ├── schemas/            # Pydantic DTO
+│   └── middleware/
+├── infrastructure/
+│   ├── db/ (engine, session, base, models/)
+│   ├── redis/
+│   └── ai/                 # LLM 封装，无业务逻辑
+└── common/ (response, enums 仅跨模块通用, utils, exceptions)
+config/
+database/migrations/        # Alembic
+```
+
+## 分层职责
+
+| 层 | 职责 |
+|----|------|
+| **domain** | 核心业务规则 |
+| **application** | 用例编排；调 repository / service / agent；**业务枚举**默认 `enums/` |
+| **interfaces** | HTTP、DTO、中间件；**endpoint 不写业务逻辑** |
+| **infrastructure** | DB、缓存、AI 等技术实现 |
+| **common** | 横切：统一响应、**仅跨模块通用**枚举、工具、异常 |
+
+## 升级 DDD 的时机
+
+复杂业务规则、多聚合、多 Agent 协作时再加深 domain，当前阶段**不强制**全套 DDD，先保证分层清晰。

@@ -1,0 +1,51 @@
+---
+description: 调用链、DB 模块、Router、Agent 约束
+alwaysApply: true
+---
+
+# 调用链（必须遵守）
+
+```text
+API → Application → Infrastructure
+```
+
+可选延伸（Agent）：
+
+```text
+API → Agent → Service → Infrastructure
+```
+
+## 禁止
+
+- Endpoint / Router **直接**操作 DB、Session、ORM
+- **Agent 直接**操作 DB / Redis
+- `infrastructure/ai` 内写业务规则（仅技术封装）
+
+## `infrastructure/db/` 拆分
+
+| 文件 | 作用 |
+|------|------|
+| `engine.py` | 创建连接 |
+| `session.py` | Session 管理 |
+| `base.py` | ORM 基类 |
+| `models/` | 表模型 |
+
+目的：避免循环依赖、便于多库与测试替换、配合 Alembic。
+
+## Router 聚合顺序
+
+1. `endpoints/*.py` — 定义路由处理函数（薄层）
+2. `v1/router.py` — 聚合模块
+3. `api/router.py` — 聚合版本
+4. `main.py` — 挂载应用
+
+路径示例：`/api/v1/...`
+
+## Agent
+
+- 位置：`application/agents/`
+- 模型调用：经 `infrastructure/ai/`，不在 Agent 内直连存储
+
+## 架构口诀
+
+接口层只接请求；应用层做流程；领域层管规则；基础设施做实现。

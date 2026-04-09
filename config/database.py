@@ -1,11 +1,14 @@
+"""数据库连接与连接池参数（前缀 ``DB_``）；提供异步 URL 与 Alembic 用同步 URL。"""
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import URL
 
 from config import BASE_DIR
 
+
 class DatabaseSettings(BaseSettings):
-    """应用配置。"""
+    """MySQL 示例：异步驱动 ``aiomysql``，迁移使用 ``pymysql``。"""
     model_config = SettingsConfigDict(
         env_file=BASE_DIR.joinpath(".env"),
         env_file_encoding="utf-8",

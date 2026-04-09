@@ -1,6 +1,9 @@
+"""应用运行时参数：名称、环境、调试、监听端口等（前缀 ``APP_``）。"""
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from config import BASE_DIR
+
 
 class AppSettings(BaseSettings):
     """应用配置。"""

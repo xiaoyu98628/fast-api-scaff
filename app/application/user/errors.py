@@ -1,0 +1,22 @@
+"""用户模块业务错误码定义（code + message + status_code）。"""
+
+from enum import IntEnum
+
+
+class UserErrorCode(IntEnum):
+    """用户业务码（XXXXX）。"""
+
+    USER_NOT_EXIST = 1001
+    USER_ALREADY_EXIST = 1002
+
+    def message(self) -> str:
+        return {
+            UserErrorCode.USER_NOT_EXIST: "用户不存在",
+            UserErrorCode.USER_ALREADY_EXIST: "用户已存在",
+        }[self]
+
+    def status_code(self) -> int:
+        return {
+            UserErrorCode.USER_NOT_EXIST: 404,
+            UserErrorCode.USER_ALREADY_EXIST: 400,
+        }[self]

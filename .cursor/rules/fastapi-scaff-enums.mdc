@@ -1,0 +1,45 @@
+---
+description: Enum 放置、ORM/Pydantic 用法与禁止项（分层架构）
+alwaysApply: true
+---
+
+# Enum 规范
+
+## 原则
+
+> Enum 是**业务语义**，不是数据库实现。定义用 **`from enum import Enum`**。
+
+## 放哪里
+
+| 语义 | 路径 |
+|------|------|
+| 业务状态/类型（默认） | `app/application/enums/`（如 `order_status.py`） |
+| 进阶 DDD | `app/domain/{module}/enums.py` |
+| 跨模块通用（HTTP 等） | `app/common/enums/` |
+| 通用数字错误码 | `app/common/enums/error_code.py`；业务按模块见 `application/{module}/errors.py` |
+
+**禁止**：把各类业务枚举全塞进 `common/enums/`；在 **`infrastructure/`（含 db models 目录）单独定义业务枚举源文件**；Enum **依赖** Model（只能 Model/Service **引用** Enum）。
+
+## 命名
+
+- 文件：`snake_case.py`（`order_status.py`）
+- 类：`OrderStatus`；成员：`PENDING`（全大写单词）
+
+## SQLAlchemy（推荐）
+
+```python
+status = Column(Integer, default=OrderStatus.PENDING.value)
+```
+
+可选 `Column(SAEnum(OrderStatus))`：注意跨库与 Alembic 风险，新手避免。
+
+## Pydantic / FastAPI
+
+```python
+class OrderResponse(BaseModel):
+    status: OrderStatus  # int Enum → JSON 常为数字；字符串用 (str, Enum)
+```
+
+## 判断
+
+问：**这是业务规则吗？** 是 → application/domain；系统级通用 → common。永远不要以 infrastructure 为枚举**定义**的归属。

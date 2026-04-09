@@ -1,3 +1,5 @@
+"""Redis 连接串构建（前缀 ``REDIS_*``）。"""
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from config import BASE_DIR

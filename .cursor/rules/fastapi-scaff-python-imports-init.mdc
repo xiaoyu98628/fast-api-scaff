@@ -1,0 +1,37 @@
+---
+description: __init__.py、import 与工程习惯（Python）
+globs: "**/*.py"
+alwaysApply: false
+---
+
+# `__init__.py`
+
+- **每个包目录**须有 `__init__.py`；默认**空文件**，不做导出。
+- 允许：单一符号导出，或明确「模块统一出口」。
+
+```python
+# ✅ 允许
+from .codec import DataCodec
+from .json import ApiResponse
+
+# ❌ 禁止
+from .xxx import *
+```
+
+原则：仅在**不会冲突**时做聚合导出。
+
+# import 习惯
+
+优先显式路径，避免依赖隐式 re-export：
+
+```python
+# ✅ 推荐
+from app.common.utils.codec import DataCodec
+
+# ⚠️ 不推荐（除非该包 __init__ 明确约定导出）
+from app.common.utils import DataCodec
+```
+
+# 不要过度设计
+
+高层不依赖低层**实现细节**，但当前阶段以**分层清晰**为先，不必强行抽象接口泛滥。

@@ -1,0 +1,29 @@
+---
+description: 错误码 ErrorCodeBuilder、SERVICE_CODE、Biz/System 异常与全局 handler
+alwaysApply: true
+---
+
+# 错误码与异常
+
+## 九位结构
+
+`full = SS×10⁷ + tail`，`tail = AA×10⁵ + BB×10³ + CCC`（用 `ErrorCodeBuilder.compose_tail(aa, bb, ccc)`）。
+
+- **SS**：仅来自环境变量 **`SERVICE_CODE`**（`config.service`），**不要**写进 `IntEnum`。
+- **Enum**：只存 **tail**；**禁止**手写完整九位或手拼 `SS`+tail。
+- **唯一出口**：完整码只通过 **`ErrorCodeBuilder.build(tail)`**（`get_error_code_builder()`）得到；展示 `f"{full:09d}"`。
+
+## 异常（必须）
+
+- **业务**（AA=10）：`raise BizException(业务 errors IntEnum, message)`
+- **系统/第三方**（AA=20 或 30）：`raise SystemException(对应 IntEnum, message)`
+- **全局**：`register_exception_handlers(app)`；未捕获异常走兜底 handler，勿在接口层吞掉上述异常。
+
+## 放置
+
+- 系统类 tail：`app/common/enums/error_code.py`
+- 业务 tail：`app/application/{module}/errors.py`
+
+## 禁止
+
+手拼九位、Enum 含 SS、业务不用 BizException、系统不用 SystemException、绕过 handler、字符串当唯一错误码、错误枚举进 infrastructure。

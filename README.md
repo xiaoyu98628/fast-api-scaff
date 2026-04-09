@@ -7,7 +7,7 @@
 ```bash
 cp .env.sample .env
 uv sync
-uv run uvicorn public.main:app --host 0.0.0.0 --port 8001 --reload
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
 ```
 
 访问：
@@ -45,10 +45,12 @@ docker compose down
 ## 目录结构
 
 ```text
-app/                 业务代码（API、中间件、模型、工具）
-config/              应用配置
-database/migration/  Alembic 迁移配置
-public/main.py       FastAPI 入口
-docker-compose.yml   Docker 编排
-Dockerfile           Docker 镜像构建
+app/                       分层代码（domain / application / interfaces / infrastructure / common）
+app/application/           含 services、enums、agents；按模块可拆 application/<模块>/（含 errors.py）
+app/common/enums/          仅跨模块通用枚举（如 error_code.py）
+app/main.py                FastAPI 应用工厂（推荐 ASGI 入口）
+config/                    应用配置
+database/migrations/      Alembic 迁移配置
+docker-compose.yml        Docker 编排
+Dockerfile                Docker 镜像构建
 ```
