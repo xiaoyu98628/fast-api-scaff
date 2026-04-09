@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.api.router import api_router
-from app.infrastructure.db import close_db
+from app.infrastructure.database import close_db
 from app.infrastructure.redis import close_redis
 from app.middleware import register_middleware
 from config.config import get_config

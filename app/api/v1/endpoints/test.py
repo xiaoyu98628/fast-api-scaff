@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
 from app.core.response.json import JsonResponse
-from app.infrastructure.db import get_db_session
+from app.infrastructure.database import get_db_session
 from app.infrastructure.redis import ping_redis
 
 router = APIRouter(prefix="/test", tags=["test"])
