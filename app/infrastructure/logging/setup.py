@@ -2,9 +2,10 @@
 
 import logging
 from logging import Formatter, Handler, Logger
-from logging.handlers import RotatingFileHandler
+from logging.handlers import RotatingFileHandler, TimedRotatingFileHandler
 from pathlib import Path
 
+from app.infrastructure.logging.context import get_trace_id
 from config.logging import LogChannel, LoggingSettings
 
 
@@ -13,21 +14,46 @@ class TraceIdFilter(logging.Filter):
 
     def filter(self, record: logging.LogRecord) -> bool:
         if not hasattr(record, "trace_id"):
-            record.trace_id = "-"
+            record.trace_id = get_trace_id()
         return True
 
 
-def _build_handler(log_path: Path, level_name: str, settings: LoggingSettings) -> Handler:
-    handler = RotatingFileHandler(
-        filename=log_path,
-        maxBytes=settings.max_bytes,
-        backupCount=settings.backup_count,
-        encoding="utf-8",
-    )
+def _build_file_handler(log_path: Path, channel: LogChannel, settings: LoggingSettings) -> Handler:
+    driver = channel.driver.lower()
+    if driver == "single":
+        handler = logging.FileHandler(filename=log_path, encoding="utf-8", delay=True)
+    elif driver == "daily":
+        handler = TimedRotatingFileHandler(
+            filename=log_path,
+            when="midnight",
+            backupCount=settings.backup_count,
+            encoding="utf-8",
+            delay=True,
+        )
+    else:
+        # fallback: rotating 以保证未知 driver 不会导致日志中断
+        handler = RotatingFileHandler(
+            filename=log_path,
+            maxBytes=settings.max_bytes,
+            backupCount=settings.backup_count,
+            encoding="utf-8",
+            delay=True,
+        )
+
+    level_name = channel.level
     handler.setLevel(getattr(logging, level_name.upper(), logging.INFO))
     handler.setFormatter(Formatter(settings.format, settings.date_format))
     handler.addFilter(TraceIdFilter())
     return handler
+
+
+def _resolve_channel_log_path(channel: LogChannel) -> Path:
+    if not channel.path:
+        raise ValueError(f"log channel `{channel.logger}` must define path")
+    path = Path(channel.path)
+    if not path.is_absolute():
+        path = Path.cwd() / path
+    return path
 
 
 def _build_console_handler(settings: LoggingSettings) -> Handler:
@@ -46,45 +72,52 @@ def _attach(logger: Logger, handlers: list[Handler], level_name: str) -> None:
         logger.addHandler(h)
 
 
-def _resolve_default_handlers(
+def _build_channel_handlers(
     *,
     settings: LoggingSettings,
-    channel_handlers: dict[str, Handler],
-    console_handler: Handler | None,
-) -> list[Handler]:
+    channels: dict[str, LogChannel],
+) -> dict[str, Handler]:
+    handlers: dict[str, Handler] = {}
+    for name, channel in channels.items():
+        if channel.driver.lower() == "null":
+            handlers[name] = logging.NullHandler()
+            continue
+        log_path = _resolve_channel_log_path(channel)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        handlers[name] = _build_file_handler(log_path, channel, settings)
+    return handlers
+
+
+def _resolve_default_handler_names(
+    *,
+    settings: LoggingSettings,
+    channels: dict[str, LogChannel],
+) -> list[str]:
     if settings.channel == "stack":
-        base = [channel_handlers[name] for name in settings.stack_channels if name in channel_handlers]
+        base = [name for name in settings.stack_channels if name in channels]
         if not base:
-            base = [channel_handlers["request"], channel_handlers["error"]]
+            base = ["request", "error"]
     else:
-        base = [channel_handlers[settings.channel]] if settings.channel in channel_handlers else []
-    if console_handler:
-        base.append(console_handler)
+        base = [settings.channel] if settings.channel in channels else []
     return base
 
 
 def setup_logging(settings: LoggingSettings) -> None:
     """初始化多通道日志。"""
-    log_dir = Path(settings.dir)
-    if not log_dir.is_absolute():
-        log_dir = Path.cwd() / log_dir
-    log_dir.mkdir(parents=True, exist_ok=True)
-
     root_logger = logging.getLogger()
     root_logger.handlers.clear()
     root_logger.setLevel(getattr(logging, settings.level.upper(), logging.INFO))
 
     channels = settings.channels
-    channel_handlers: dict[str, Handler] = {
-        name: _build_handler(log_dir / channel.file, channel.level, settings)
-        for name, channel in channels.items()
-    }
+    channel_handlers = _build_channel_handlers(settings=settings, channels=channels)
     console_handler = _build_console_handler(settings) if settings.to_console else None
-    default_handlers = _resolve_default_handlers(
+    default_handler_names = _resolve_default_handler_names(
         settings=settings,
-        channel_handlers=channel_handlers,
-        console_handler=console_handler,
+        channels=channels,
     )
+    default_handlers = [channel_handlers[name] for name in default_handler_names]
+    if console_handler:
+        default_handlers.append(console_handler)
 
     app_logger = logging.getLogger("app")
     _attach(app_logger, default_handlers, settings.level)
@@ -127,3 +160,14 @@ def setup_logging(settings: LoggingSettings) -> None:
         [channel_handlers["debug"]] + ([console_handler] if console_handler else []),
         debug_channel.level,
     )
+
+    # Laravel deprecations_channel 对齐：默认丢弃，按配置可接入已有通道
+    py_warnings_logger = logging.getLogger("py.warnings")
+    py_warnings_logger.handlers.clear()
+    deprecations_name = settings.deprecations_channel
+    if deprecations_name in channel_handlers:
+        py_warnings_logger.addHandler(channel_handlers[deprecations_name])
+    else:
+        py_warnings_logger.addHandler(logging.NullHandler())
+    py_warnings_logger.setLevel(logging.WARNING)
+    py_warnings_logger.propagate = False

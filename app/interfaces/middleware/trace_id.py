@@ -5,6 +5,8 @@ import uuid
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
+from app.infrastructure.logging.context import set_trace_id
+
 
 class TraceIdMiddleware(BaseHTTPMiddleware):
     """为每个请求注入 trace id。"""
@@ -17,7 +19,10 @@ class TraceIdMiddleware(BaseHTTPMiddleware):
             trace_id = str(uuid.uuid4())
 
         request.state.trace_id = trace_id
-
-        response = await call_next(request)
-        response.headers[self.trace_id_header] = trace_id
-        return response
+        set_trace_id(trace_id)
+        try:
+            response = await call_next(request)
+            response.headers[self.trace_id_header] = trace_id
+            return response
+        finally:
+            set_trace_id("-")

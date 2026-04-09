@@ -1,12 +1,11 @@
 """请求访问日志中间件：记录方法、路径、状态码与耗时。"""
 
-import logging
 import time
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
-logger = logging.getLogger("app.request")
+from app.common.utils.logger import log_info
 
 
 class RequestLogMiddleware(BaseHTTPMiddleware):
@@ -18,13 +17,13 @@ class RequestLogMiddleware(BaseHTTPMiddleware):
         duration_ms = (time.perf_counter() - started) * 1000
 
         trace_id = getattr(request.state, "trace_id", "-")
-        extra = {"trace_id": trace_id}
-        logger.info(
+        log_info(
             "%s %s -> %s (%.2f ms)",
             request.method,
             request.url.path,
             response.status_code,
             duration_ms,
-            extra=extra,
+            channel="request",
+            trace_id=trace_id,
         )
         return response
