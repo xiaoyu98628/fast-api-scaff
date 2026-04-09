@@ -5,7 +5,7 @@ from logging import Formatter, Handler, Logger
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from config.logging import LoggingSettings
+from config.logging import LogChannel, LoggingSettings
 
 
 class TraceIdFilter(logging.Filter):
@@ -49,27 +49,15 @@ def _attach(logger: Logger, handlers: list[Handler], level_name: str) -> None:
 def _resolve_default_handlers(
     *,
     settings: LoggingSettings,
-    request_handler: Handler,
-    db_handler: Handler,
-    error_handler: Handler,
+    channel_handlers: dict[str, Handler],
     console_handler: Handler | None,
 ) -> list[Handler]:
-    if settings.channel == "request":
-        base = [request_handler]
-    elif settings.channel == "db":
-        base = [db_handler]
-    elif settings.channel == "error":
-        base = [error_handler]
-    else:
-        # stack
-        mapping = {
-            "request": request_handler,
-            "db": db_handler,
-            "error": error_handler,
-        }
-        base = [mapping[name] for name in settings.stack_channels if name in mapping]
+    if settings.channel == "stack":
+        base = [channel_handlers[name] for name in settings.stack_channels if name in channel_handlers]
         if not base:
-            base = [request_handler, error_handler]
+            base = [channel_handlers["request"], channel_handlers["error"]]
+    else:
+        base = [channel_handlers[settings.channel]] if settings.channel in channel_handlers else []
     if console_handler:
         base.append(console_handler)
     return base
@@ -87,15 +75,15 @@ def setup_logging(settings: LoggingSettings) -> None:
     root_logger.handlers.clear()
     root_logger.setLevel(getattr(logging, settings.level.upper(), logging.INFO))
 
-    request_handler = _build_handler(log_dir / settings.request_file, settings.request_level, settings)
-    db_handler = _build_handler(log_dir / settings.db_file, settings.db_level, settings)
-    error_handler = _build_handler(log_dir / settings.error_file, settings.error_level, settings)
+    channels = settings.channels
+    channel_handlers: dict[str, Handler] = {
+        name: _build_handler(log_dir / channel.file, channel.level, settings)
+        for name, channel in channels.items()
+    }
     console_handler = _build_console_handler(settings) if settings.to_console else None
     default_handlers = _resolve_default_handlers(
         settings=settings,
-        request_handler=request_handler,
-        db_handler=db_handler,
-        error_handler=error_handler,
+        channel_handlers=channel_handlers,
         console_handler=console_handler,
     )
 
@@ -103,30 +91,41 @@ def setup_logging(settings: LoggingSettings) -> None:
     app_logger = logging.getLogger("app")
     _attach(app_logger, default_handlers, settings.level)
 
-    request_logger = logging.getLogger("app.request")
+    request_channel: LogChannel = channels["request"]
+    request_logger = logging.getLogger(request_channel.logger)
     _attach(
         request_logger,
-        [request_handler] + ([console_handler] if console_handler else []),
-        settings.request_level,
+        [channel_handlers["request"]] + ([console_handler] if console_handler else []),
+        request_channel.level,
     )
 
-    db_logger = logging.getLogger("sqlalchemy.engine")
+    db_channel: LogChannel = channels["db"]
+    db_logger = logging.getLogger(db_channel.logger)
     _attach(
         db_logger,
-        [db_handler] + ([console_handler] if console_handler else []),
-        settings.db_level,
+        [channel_handlers["db"]] + ([console_handler] if console_handler else []),
+        db_channel.level,
     )
 
     db_pool_logger = logging.getLogger("sqlalchemy.pool")
     _attach(
         db_pool_logger,
-        [db_handler] + ([console_handler] if console_handler else []),
-        settings.db_level,
+        [channel_handlers["db"]] + ([console_handler] if console_handler else []),
+        db_channel.level,
     )
 
-    error_logger = logging.getLogger("app.error")
+    error_channel: LogChannel = channels["error"]
+    error_logger = logging.getLogger(error_channel.logger)
     _attach(
         error_logger,
-        [error_handler] + ([console_handler] if console_handler else []),
-        settings.error_level,
+        [channel_handlers["error"]] + ([console_handler] if console_handler else []),
+        error_channel.level,
+    )
+
+    debug_channel: LogChannel = channels["debug"]
+    debug_logger = logging.getLogger(debug_channel.logger)
+    _attach(
+        debug_logger,
+        [channel_handlers["debug"]] + ([console_handler] if console_handler else []),
+        debug_channel.level,
     )
