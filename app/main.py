@@ -8,8 +8,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.common.utils.logging import setup_logging
 from app.infrastructure.db.session import close_db
+from app.infrastructure.logging import setup_logging
 from app.infrastructure.redis.client import close_redis
 from app.interfaces.api.exception_handlers import register_exception_handlers
 from app.interfaces.api.router import api_router

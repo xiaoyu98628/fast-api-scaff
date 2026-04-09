@@ -1,4 +1,4 @@
-"""日志初始化：按 default + stack + channels 组装。"""
+"""日志初始化实现：基础设施层负责日志通道组装与输出。"""
 
 import logging
 from logging import Formatter, Handler, Logger
@@ -70,7 +70,6 @@ def setup_logging(settings: LoggingSettings) -> None:
         log_dir = Path.cwd() / log_dir
     log_dir.mkdir(parents=True, exist_ok=True)
 
-    # 先清空 root handlers，避免重复输出
     root_logger = logging.getLogger()
     root_logger.handlers.clear()
     root_logger.setLevel(getattr(logging, settings.level.upper(), logging.INFO))
@@ -87,7 +86,6 @@ def setup_logging(settings: LoggingSettings) -> None:
         console_handler=console_handler,
     )
 
-    # 业务默认 logger（给后续 service/agent/common 使用）
     app_logger = logging.getLogger("app")
     _attach(app_logger, default_handlers, settings.level)
 
