@@ -50,6 +50,7 @@ class LoggingSettings(BaseSettings):
     deprecations_channel: str = "null"
 
     # 全局通用配置
+    # level：控制台、根 logger、app 汇总，以及 request / db / debug 三个文件通道的级别（一处调节）
     level: str = "INFO"
     to_console: bool = True
     format: str = "%(asctime)s | %(levelname)s | %(name)s | trace_id=%(trace_id)s | %(message)s"
@@ -57,14 +58,9 @@ class LoggingSettings(BaseSettings):
     max_bytes: int = 10 * 1024 * 1024
     backup_count: int = 5  # daily 场景下等同 days
 
-    # 通道级别与文件
-    request_level: str = "INFO"
-    request_file: str = "request.log"
-    db_level: str = "INFO"
-    db_file: str = "db.log"
+    # error 通道单独级别（error.log 通常保持 ERROR，与访问/SQL 粒度解耦）
     error_level: str = "ERROR"
     error_file: str = "error.log"
-    debug_level: str = "DEBUG"
     debug_file: str = "debug.log"
 
     @property
@@ -73,19 +69,17 @@ class LoggingSettings(BaseSettings):
 
     @property
     def channels(self) -> dict[str, LogChannel]:
+        lv = self.level
         return {
-            "request": build_channel("app.request", level=self.request_level, filename=self.request_file),
-            "db": build_channel("sqlalchemy.engine", level=self.db_level, filename=self.db_file),
+            "request": build_channel("app.request", level=lv, filename="request.log"),
+            "db": build_channel("sqlalchemy.engine", level=lv, filename="db.log"),
             "error": build_channel("app.error", level=self.error_level, filename=self.error_file),
-            "debug": build_channel("app.debug", level=self.debug_level, filename=self.debug_file),
+            "debug": build_channel("app.debug", level=lv, filename=self.debug_file),
         }
 
     @field_validator(
         "level",
-        "request_level",
-        "db_level",
         "error_level",
-        "debug_level",
         mode="before",
     )
     @classmethod
