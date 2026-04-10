@@ -18,7 +18,7 @@ from app.common.errors.system_exception import SystemException
 from app.common.enums.error_code import ErrorCode
 from app.common.response.json import JsonResponse
 
-logger = logging.getLogger("app.error")
+logger = logging.getLogger("app.request")
 
 
 def register_exception_handlers(app: FastAPI) -> None:

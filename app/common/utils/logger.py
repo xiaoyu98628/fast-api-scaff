@@ -1,54 +1,101 @@
-"""统一日志封装：业务代码直接调用，避免散落 getLogger。"""
+"""业务日志入口：``Log.info("...")``，通道与 ``config.logging.LoggingSettings.channels`` 的 key 对齐。"""
 
 import logging
-from typing import Any
+from typing import Any, ClassVar
 
-CHANNEL_LOGGER_MAP = {
-    "request": "app.request",
-    "db": "sqlalchemy.engine",
-    "error": "app.error",
-    "debug": "app.debug",
-}
+__all__ = ["Log"]
 
 
-def get_channel_logger(channel: str = "debug") -> logging.Logger:
-    logger_name = CHANNEL_LOGGER_MAP.get(channel, f"app.{channel}")
-    return logging.getLogger(logger_name)
+class Log:
+    """类方法写日志；默认通道 ``request``。"""
 
+    # 与 LoggingSettings.channels 的 key 一致；新增通道时在此补充
+    CHANNEL_LOGGER_MAP: ClassVar[dict[str, str]] = {
+        "request": "app.request",
+        "db": "sqlalchemy.engine",
+    }
 
-def app_log(
-    level: int,
-    message: str,
-    *args: Any,
-    channel: str = "debug",
-    trace_id: str | None = None,
-    extra: dict[str, Any] | None = None,
-    exc_info: bool = False,
-) -> None:
-    payload = dict(extra or {})
-    if trace_id is not None:
-        payload["trace_id"] = trace_id
+    @classmethod
+    def get_logger(cls, channel: str = "request") -> logging.Logger:
+        name = cls.CHANNEL_LOGGER_MAP.get(channel, f"app.{channel}")
+        return logging.getLogger(name)
 
-    logger = get_channel_logger(channel)
-    logger.log(level, message, *args, extra=payload or None, exc_info=exc_info)
+    @classmethod
+    def _emit(
+        cls,
+        level: int,
+        message: str,
+        *args: Any,
+        channel: str = "request",
+        trace_id: str | None = None,
+        extra: dict[str, Any] | None = None,
+        exc_info: bool = False,
+    ) -> None:
+        payload = dict(extra or {})
+        if trace_id is not None:
+            payload["trace_id"] = trace_id
+        logger = cls.get_logger(channel)
+        logger.log(level, message, *args, extra=payload or None, exc_info=exc_info)
 
+    @classmethod
+    def debug(
+        cls,
+        message: str,
+        *args: Any,
+        channel: str = "request",
+        trace_id: str | None = None,
+        extra: dict[str, Any] | None = None,
+    ) -> None:
+        cls._emit(logging.DEBUG, message, *args, channel=channel, trace_id=trace_id, extra=extra)
 
-def log_debug(message: str, *args: Any, channel: str = "debug", **kwargs: Any) -> None:
-    app_log(logging.DEBUG, message, *args, channel=channel, **kwargs)
+    @classmethod
+    def info(
+        cls,
+        message: str,
+        *args: Any,
+        channel: str = "request",
+        trace_id: str | None = None,
+        extra: dict[str, Any] | None = None,
+    ) -> None:
+        cls._emit(logging.INFO, message, *args, channel=channel, trace_id=trace_id, extra=extra)
 
+    @classmethod
+    def warning(
+        cls,
+        message: str,
+        *args: Any,
+        channel: str = "request",
+        trace_id: str | None = None,
+        extra: dict[str, Any] | None = None,
+    ) -> None:
+        cls._emit(logging.WARNING, message, *args, channel=channel, trace_id=trace_id, extra=extra)
 
-def log_info(message: str, *args: Any, channel: str = "debug", **kwargs: Any) -> None:
-    app_log(logging.INFO, message, *args, channel=channel, **kwargs)
+    @classmethod
+    def error(
+        cls,
+        message: str,
+        *args: Any,
+        channel: str = "request",
+        trace_id: str | None = None,
+        extra: dict[str, Any] | None = None,
+    ) -> None:
+        cls._emit(logging.ERROR, message, *args, channel=channel, trace_id=trace_id, extra=extra)
 
-
-def log_warning(message: str, *args: Any, channel: str = "debug", **kwargs: Any) -> None:
-    app_log(logging.WARNING, message, *args, channel=channel, **kwargs)
-
-
-def log_error(message: str, *args: Any, channel: str = "error", **kwargs: Any) -> None:
-    app_log(logging.ERROR, message, *args, channel=channel, **kwargs)
-
-
-def log_exception(message: str, *args: Any, channel: str = "error", **kwargs: Any) -> None:
-    app_log(logging.ERROR, message, *args, channel=channel, exc_info=True, **kwargs)
-
+    @classmethod
+    def exception(
+        cls,
+        message: str,
+        *args: Any,
+        channel: str = "request",
+        trace_id: str | None = None,
+        extra: dict[str, Any] | None = None,
+    ) -> None:
+        cls._emit(
+            logging.ERROR,
+            message,
+            *args,
+            channel=channel,
+            trace_id=trace_id,
+            extra=extra,
+            exc_info=True,
+        )

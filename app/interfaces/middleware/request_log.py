@@ -5,7 +5,7 @@ import time
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
-from app.common.utils.logger import log_info
+from app.common.utils.logger import Log
 
 
 class RequestLogMiddleware(BaseHTTPMiddleware):
@@ -17,7 +17,7 @@ class RequestLogMiddleware(BaseHTTPMiddleware):
         duration_ms = (time.perf_counter() - started) * 1000
 
         trace_id = getattr(request.state, "trace_id", "-")
-        log_info(
+        Log.info(
             "%s %s -> %s (%.2f ms)",
             request.method,
             request.url.path,

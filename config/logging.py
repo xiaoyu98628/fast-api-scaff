@@ -1,16 +1,15 @@
-"""日志配置（Laravel 风格）：default + stack + channels + driver。"""
+"""日志配置：通道定义在此，新增通道时往 ``channels`` 里加一项即可。"""
 
 from datetime import datetime
 
-from pydantic import field_validator
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from config import BASE_DIR, LOG_DIR
 
 
 class LogChannel(BaseModel):
-    """单个日志通道配置。"""
+    """单个日志通道：底层 logger 名 + 落盘文件名 + 级别。"""
 
     logger: str
     driver: str = "single"
@@ -35,7 +34,7 @@ def build_channel(logger: str, *, level: str, filename: str) -> LogChannel:
 
 
 class LoggingSettings(BaseSettings):
-    """日志配置（前缀 ``LOG_``）。"""
+    """日志相关环境变量（前缀 ``LOG_``）。"""
 
     model_config = SettingsConfigDict(
         env_file=BASE_DIR.joinpath(".env"),
@@ -44,49 +43,23 @@ class LoggingSettings(BaseSettings):
         extra="ignore",
     )
 
-    # Laravel 风格：default + deprecations + channels
-    channel: str = "stack"
-    stack: str = "request,error"
-    deprecations_channel: str = "null"
-
-    # 全局通用配置
-    # level：控制台、根 logger、app 汇总，以及 request / db / debug 三个文件通道的级别（一处调节）
     level: str = "INFO"
     to_console: bool = True
     format: str = "%(asctime)s | %(levelname)s | %(name)s | trace_id=%(trace_id)s | %(message)s"
     date_format: str = "%Y-%m-%d %H:%M:%S"
     max_bytes: int = 10 * 1024 * 1024
-    backup_count: int = 5  # daily 场景下等同 days
-
-    # error 通道单独级别（error.log 通常保持 ERROR，与访问/SQL 粒度解耦）
-    error_level: str = "ERROR"
-    error_file: str = "error.log"
-    debug_file: str = "debug.log"
-
-    @property
-    def stack_channels(self) -> list[str]:
-        return [x.strip() for x in self.stack.split(",") if x.strip()]
+    backup_count: int = 5
 
     @property
     def channels(self) -> dict[str, LogChannel]:
+        """具名通道：key 用于注册与 util 中的 channel 名。扩展时在此追加条目。"""
         lv = self.level
         return {
             "request": build_channel("app.request", level=lv, filename="request.log"),
             "db": build_channel("sqlalchemy.engine", level=lv, filename="db.log"),
-            "error": build_channel("app.error", level=self.error_level, filename=self.error_file),
-            "debug": build_channel("app.debug", level=lv, filename=self.debug_file),
         }
 
-    @field_validator(
-        "level",
-        "error_level",
-        mode="before",
-    )
+    @field_validator("level", mode="before")
     @classmethod
     def normalize_level_value(cls, value: str) -> str:
         return str(value).upper()
-
-    @field_validator("channel", "deprecations_channel", mode="before")
-    @classmethod
-    def normalize_channel_name(cls, value: str) -> str:
-        return str(value).strip().lower()
