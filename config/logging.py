@@ -11,9 +11,11 @@ from config import BASE_DIR, LOG_DIR
 class LogChannel(BaseModel):
     """单个日志通道：底层 logger 名 + 落盘文件名 + 级别。"""
 
-    logger: str
     driver: str = "single"
     level: str
+
+
+    logger: str
     file: str
     path: str | None = None
     replace_placeholders: bool = True
@@ -44,6 +46,7 @@ class LoggingSettings(BaseSettings):
     )
 
     level: str = "INFO"
+
     to_console: bool = True
     format: str = "%(asctime)s | %(levelname)s | %(name)s | trace_id=%(trace_id)s | %(message)s"
     date_format: str = "%Y-%m-%d %H:%M:%S"
@@ -53,10 +56,9 @@ class LoggingSettings(BaseSettings):
     @property
     def channels(self) -> dict[str, LogChannel]:
         """具名通道：key 用于注册与 util 中的 channel 名。扩展时在此追加条目。"""
-        lv = self.level
         return {
-            "request": build_channel("app.request", level=lv, filename="request.log"),
-            "db": build_channel("sqlalchemy.engine", level=lv, filename="db.log"),
+            "request": build_channel("app.request", level=self.level, filename="request.log"),
+            "db": build_channel("sqlalchemy.engine", level=self.level, filename="db.log"),
         }
 
     @field_validator("level", mode="before")
