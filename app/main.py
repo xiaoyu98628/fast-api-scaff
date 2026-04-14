@@ -40,10 +40,6 @@ def create_app() -> FastAPI:
     register_exception_handlers(app)
     register_api_router(app)
 
-    @app.get(path="/health", summary="健康检测")
-    async def health():
-        return {"message": "Hello World"}
-
     return app
 
 
