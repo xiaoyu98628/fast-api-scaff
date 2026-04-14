@@ -5,6 +5,7 @@ from functools import lru_cache
 from pydantic import BaseModel
 
 from config.app import AppSettings
+from config.cors import CorsSettings
 from config.database import DatabaseSettings
 from config.logging import LoggingSettings
 from config.redis import RedisSettings
@@ -18,6 +19,7 @@ class Config(BaseModel):
     logging: LoggingSettings
     redis: RedisSettings
     service: ServiceSettings
+    cors: CorsSettings
 
 
 @lru_cache
@@ -29,4 +31,5 @@ def get_config() -> Config:
         logging=LoggingSettings(),
         redis=RedisSettings(),
         service=ServiceSettings(),
+        cors=CorsSettings(),
     )

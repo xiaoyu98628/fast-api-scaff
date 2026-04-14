@@ -2,12 +2,14 @@
 
 from fastapi import FastAPI
 
+from app.interfaces.middleware.cors import CorsMiddleware
 from app.interfaces.middleware.query_param_decode import QueryParamDecodeMiddleware
 from app.interfaces.middleware.request_log import RequestLogMiddleware
 from app.interfaces.middleware.trace_id import TraceIdMiddleware
 
 
 def register_middleware(app: FastAPI) -> None:
+    app.add_middleware(CorsMiddleware)
     app.add_middleware(TraceIdMiddleware)
     app.add_middleware(RequestLogMiddleware)
     app.add_middleware(QueryParamDecodeMiddleware)
