@@ -1,8 +1,9 @@
 """日志配置：通道定义在此，新增通道时往 ``channels`` 里加一项即可。"""
 
+from typing import Dict
 from datetime import datetime
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from config import BASE_DIR, LOG_DIR
@@ -11,29 +12,14 @@ from config import BASE_DIR, LOG_DIR
 class LogChannel(BaseModel):
     """单个日志通道：底层 logger 名 + 落盘文件名 + 级别。"""
 
-    driver: str = "single"
+    driver: str = "single" # single：写入单个固定文件，daily：按天写入不同文件
     level: str
-
-
-    logger: str
-    file: str
     path: str | None = None
-    replace_placeholders: bool = True
 
 
 def build_daily_log_path(filename: str) -> str:
     daily_dir = LOG_DIR / datetime.now().strftime("%Y-%m-%d")
     return str(daily_dir / filename)
-
-
-def build_channel(logger: str, *, level: str, filename: str) -> LogChannel:
-    return LogChannel(
-        logger=logger,
-        level=level,
-        file=filename,
-        path=build_daily_log_path(filename),
-    )
-
 
 class LoggingSettings(BaseSettings):
     """日志相关环境变量（前缀 ``LOG_``）。"""
@@ -46,6 +32,7 @@ class LoggingSettings(BaseSettings):
     )
 
     level: str = "INFO"
+    driver: str = "single"
 
     to_console: bool = True
     format: str = "%(asctime)s | %(levelname)s | %(name)s | trace_id=%(trace_id)s | %(message)s"
@@ -54,14 +41,10 @@ class LoggingSettings(BaseSettings):
     backup_count: int = 5
 
     @property
-    def channels(self) -> dict[str, LogChannel]:
+    def channels(self) -> Dict[str, LogChannel]:
         """具名通道：key 用于注册与 util 中的 channel 名。扩展时在此追加条目。"""
         return {
-            "request": build_channel("app.request", level=self.level, filename="request.log"),
-            "db": build_channel("sqlalchemy.engine", level=self.level, filename="db.log"),
+            "single": LogChannel(driver=self.driver, level=self.level, path=""),
+            "request": LogChannel(driver="single", level=self.level, path=""),
+            "db": LogChannel(driver="single", level=self.level, path=""),
         }
-
-    @field_validator("level", mode="before")
-    @classmethod
-    def normalize_level_value(cls, value: str) -> str:
-        return str(value).upper()
