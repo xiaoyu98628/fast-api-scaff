@@ -46,7 +46,7 @@ docker compose down
 
 ```text
 app/                       分层代码（domain / application / interfaces / infrastructure / common）
-app/application/           含 services、enums、agents；按模块可拆 application/<模块>/（含 errors.py）
+app/application/           含 services、enums；按模块可拆 application/<模块>/（含 errors.py）
 app/common/enums/          仅跨模块通用枚举（如 error_code.py）
 app/main.py                FastAPI 应用工厂（推荐 ASGI 入口）
 config/                    应用配置

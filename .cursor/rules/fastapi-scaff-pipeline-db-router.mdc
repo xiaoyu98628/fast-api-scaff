@@ -1,5 +1,5 @@
 ---
-description: 调用链、DB 模块、Router、Agent 约束
+description: 调用链、DB 模块、Router 约束
 alwaysApply: true
 ---
 
@@ -9,17 +9,9 @@ alwaysApply: true
 API → Application → Infrastructure
 ```
 
-可选延伸（Agent）：
-
-```text
-API → Agent → Service → Infrastructure
-```
-
 ## 禁止
 
 - Endpoint / Router **直接**操作 DB、Session、ORM
-- **Agent 直接**操作 DB / Redis
-- `infrastructure/ai` 内写业务规则（仅技术封装）
 
 ## `infrastructure/db/` 拆分
 
@@ -40,11 +32,6 @@ API → Agent → Service → Infrastructure
 4. `main.py` — 挂载应用
 
 路径示例：`/api/v1/...`
-
-## Agent
-
-- 位置：`application/agents/`
-- 模型调用：经 `infrastructure/ai/`，不在 Agent 内直连存储
 
 ## 架构口诀
 

@@ -23,8 +23,7 @@ app/
 │
 ├── application/            # 应用层（用例编排）
 │   ├── services/           # 业务服务
-│   ├── enums/              # 业务相关枚举（默认）
-│   └── agents/             # Agent（AI 智能体）
+│   └── enums/              # 业务相关枚举（默认）
 
 ├── interfaces/             # 接口层（对外）
 │   ├── api/
@@ -44,8 +43,7 @@ app/
 │   │   ├── base.py
 │   │   └── models/
 │   │
-│   ├── redis/
-│   └── ai/                 # 大模型接入（OpenAI / DeepSeek）
+│   └── redis/
 
 ├── common/                 # 通用模块（跨层）
 │   ├── response/           # 统一返回结构
@@ -74,7 +72,7 @@ database/
 > 用例编排层（核心）
 
 * 组织业务流程
-* 调用 repository / service / agent
+* 调用 repository / service
 
 示例：
 
@@ -116,10 +114,6 @@ class UserService:
 
 * 缓存
 
-#### ai
-
-* 大模型调用封装（无业务逻辑）
-
 ---
 
 ### 5. common（通用层）
@@ -143,7 +137,6 @@ API → Application → Infrastructure
 
 ```text
 API → 直接操作 DB ❌
-Agent → 直接操作 DB ❌
 ```
 
 ---
@@ -246,52 +239,7 @@ from .xxx import *   ❌
 
 ---
 
-## 八、Agent 架构规范
-
-### 位置
-
-```text
-application/agents/
-```
-
----
-
-### 示例
-
-```python
-class ChatAgent:
-    async def chat(self, message: str):
-        ...
-```
-
----
-
-### 模型调用
-
-```text
-infrastructure/ai/
-```
-
----
-
-### 调用链
-
-```text
-API → Agent → Service → Infrastructure
-```
-
----
-
-### 禁止
-
-```python
-# ❌
-Agent 直接操作 DB / Redis
-```
-
----
-
-## 九、最佳实践总结
+## 八、最佳实践总结
 
 ### 1. 分层原则
 
@@ -331,11 +279,11 @@ from app.utils import DataCodec  # 除非明确导出
 
 * 复杂业务规则
 * 多聚合关系
-* 多 Agent 协作
+* 多子域协作
 
 ---
 
-## 十、一句话核心原则
+## 九、一句话核心原则
 
 > 分层不是为了好看，而是为了：
 >
@@ -346,7 +294,7 @@ from app.utils import DataCodec  # 除非明确导出
 
 ---
 
-## 十一、最终架构心法
+## 十、最终架构心法
 
 ```text
 接口层：只接请求
@@ -357,7 +305,7 @@ from app.utils import DataCodec  # 除非明确导出
 
 ---
 
-## 十二、Enum 使用规范（FastAPI + 分层架构）
+## 十一、Enum 使用规范（FastAPI + 分层架构）
 
 ### 一、核心原则（必须遵守）
 
@@ -413,7 +361,7 @@ app/common/enums/
 
 #### 示例（错误类 tail 枚举）
 
-错误响应用的数字码见**第十三节**：`IntEnum` 只存 **AA BB CCC 合成的 tail**，服务号 **SS** 由环境变量 **`SERVICE_CODE`** 与 **`ErrorCodeBuilder`** 在运行时合成，**勿**在 Enum 里写完整九位码。
+错误响应用的数字码见**第十二节**：`IntEnum` 只存 **AA BB CCC 合成的 tail**，服务号 **SS** 由环境变量 **`SERVICE_CODE`** 与 **`ErrorCodeBuilder`** 在运行时合成，**勿**在 Enum 里写完整九位码。
 
 ### 三、禁止行为（非常重要）
 
@@ -511,8 +459,8 @@ Enum → 依赖 Model ❌
 | 类型 | 放置 |
 | ---- | ---- |
 | 业务状态 | `application/enums/` 或 `domain/.../enums.py` |
-| 通用 / 系统错误码 | `common/enums/error_code.py`（见第十三节） |
-| 业务错误码（按模块） | `application/{module}/errors.py`（见第十三节） |
+| 通用 / 系统错误码 | `common/enums/error_code.py`（见第十二节） |
+| 业务错误码（按模块） | `application/{module}/errors.py`（见第十二节） |
 | HTTP 相关通用 | `common/enums/` |
 | 纯数据库存储细节 | 不应单独成「业务枚举」源 |
 
@@ -541,7 +489,7 @@ app/
 
 ---
 
-## 十三、错误码与异常体系（ErrorCode + Exception）
+## 十二、错误码与异常体系（ErrorCode + Exception）
 
 ### 一、核心约定（必须遵守）
 
