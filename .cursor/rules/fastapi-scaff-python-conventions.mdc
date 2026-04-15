@@ -1,5 +1,5 @@
 ---
-description: __init__.py、import 与工程习惯（Python）
+description: Python 约定：__init__.py、import、函数长度、避免过度设计
 globs: "**/*.py"
 alwaysApply: false
 ---
@@ -31,6 +31,12 @@ from app.common.utils.codec import DataCodec
 # ⚠️ 不推荐（除非该包 __init__ 明确约定导出）
 from app.common.utils import DataCodec
 ```
+
+# 函数与方法长度
+
+- 单个**函数或方法**（从 `def` 下一行到该块结束）**不得超过 80 行**。
+- 接近或超过上限时：拆分为私有辅助函数、独立步骤函数或小型类；避免单函数内多层嵌套与「流程 + 细节」混写。
+- 例外需有明确理由（如生成的协议解析、经评审的性能热点），并在同文件内用简短注释标明原因与范围。
 
 # 不要过度设计
 
