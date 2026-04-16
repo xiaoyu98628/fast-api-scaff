@@ -21,6 +21,7 @@ class DatabaseSettings(BaseSettings):
     database: str = "fast-api"
     username: str = "root"
     password: str = "root"
+    prefix: str = ""
 
     echo: bool = False
     pool_size: int = 10

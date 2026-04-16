@@ -30,6 +30,18 @@ docker compose logs -f api
 docker compose down
 ```
 
+迁移文件指令
+```bash
+# 创建迁移文件
+alembic -c database/alembic.ini revision --autogenerate -m "add_xxx_table"
+
+# 应用迁移到数据库
+alembic -c database/alembic.ini upgrade head
+
+# 查看当前迁移版本
+alembic -c database/alembic.ini current
+```
+
 说明：
 - 宿主机端口取 `.env` 里的 `APP_PORT`（默认 `8001`）
 - 容器内部固定监听 `8000`
