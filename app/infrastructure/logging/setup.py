@@ -1,4 +1,4 @@
-"""日志注册：按 ``LoggingSettings.channels`` 挂载文件与控制台，扩展通道只需改配置。"""
+"""日志注册：按通道挂载文件/控制台，统一接入请求日志与 SQLAlchemy 日志。"""
 
 import logging
 from logging import Formatter, Handler, Logger
@@ -19,6 +19,8 @@ class TraceIdFilter(logging.Filter):
 
 
 def _build_file_handler(log_path: Path, channel: LogChannel, settings: LoggingSettings) -> Handler:
+    # 双保险：确保日志目录在创建 handler 前已存在，避免首次写日志时报 FileNotFoundError。
+    log_path.parent.mkdir(parents=True, exist_ok=True)
     driver = channel.driver.lower()
     if driver == "single":
         handler = logging.FileHandler(filename=log_path, encoding="utf-8", delay=True)
@@ -87,7 +89,7 @@ def _build_channel_handlers(
 
 
 def setup_logging(settings: LoggingSettings) -> None:
-    """按配置注册各通道 logger；与 db 通道同文件的 SQLAlchemy pool 日志单独挂载。"""
+    """按配置注册各通道 logger；db 通道同时挂到 engine 与 pool。"""
     root_logger = logging.getLogger()
     root_logger.handlers.clear()
     root_logger.setLevel(getattr(logging, settings.level.upper(), logging.INFO))
@@ -108,6 +110,7 @@ def setup_logging(settings: LoggingSettings) -> None:
         db_handlers: list[Handler] = [channel_handlers["db"]]
         if console_handler:
             db_handlers.append(console_handler)
+        _attach(logging.getLogger("sqlalchemy.engine"), db_handlers, db_ch.level)
         _attach(logging.getLogger("sqlalchemy.pool"), db_handlers, db_ch.level)
 
     py_warnings_logger = logging.getLogger("py.warnings")

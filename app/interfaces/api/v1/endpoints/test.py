@@ -5,6 +5,7 @@ from starlette.requests import Request
 
 from app.application.health.service import SystemHealthService
 from app.common.response.json import JsonResponse
+from app.common.utils.logger import Log
 
 router = APIRouter(prefix="/test", tags=["test"])
 
@@ -16,6 +17,7 @@ def get_system_health_service() -> SystemHealthService:
 
 @router.get(path="/health", summary="测试接口")
 async def health(request: Request) -> JsonResponse[dict[str, dict[str, str]]]:
+    Log.exception("health check")
     return JsonResponse.success(
         data={"query_params": dict(request.query_params)},
         message="ok",

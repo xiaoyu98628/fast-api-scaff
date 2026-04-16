@@ -1,22 +1,21 @@
-"""业务日志入口：``Log.info("...")``，通道与 ``config.logging.LoggingSettings.channels`` 的 key 对齐。"""
+"""通用业务日志入口：``Log.info("...")``，按 channel 路由到对应 logger。"""
 
 import logging
 from typing import Any, ClassVar
 
-__all__ = ["Log"]
-
-
 class Log:
-    """类方法写日志；默认通道 ``request``。"""
+    """类方法写日志；默认通道 ``app``。"""
 
     # 与 LoggingSettings.channels 的 key 一致；新增通道时在此补充
     CHANNEL_LOGGER_MAP: ClassVar[dict[str, str]] = {
+        "app": "app",
         "request": "app.request",
         "db": "sqlalchemy.engine",
+        "exception": "exception"
     }
 
     @classmethod
-    def get_logger(cls, channel: str = "request") -> logging.Logger:
+    def get_logger(cls, channel: str = "app") -> logging.Logger:
         name = cls.CHANNEL_LOGGER_MAP.get(channel, f"app.{channel}")
         return logging.getLogger(name)
 
@@ -26,7 +25,7 @@ class Log:
         level: int,
         message: str,
         *args: Any,
-        channel: str = "request",
+        channel: str = "app",
         trace_id: str | None = None,
         extra: dict[str, Any] | None = None,
         exc_info: bool = False,
@@ -35,14 +34,18 @@ class Log:
         if trace_id is not None:
             payload["trace_id"] = trace_id
         logger = cls.get_logger(channel)
-        logger.log(level, message, *args, extra=payload or None, exc_info=exc_info)
+        try:
+            logger.log(level, message, *args, extra=payload or None, exc_info=exc_info)
+        except Exception:
+            # 日志系统异常不应影响主流程，回退到根 logger 输出错误信息。
+            logging.getLogger().exception("log emit failed: channel=%s message=%s", channel, message)
 
     @classmethod
     def debug(
         cls,
         message: str,
         *args: Any,
-        channel: str = "request",
+        channel: str = "app",
         trace_id: str | None = None,
         extra: dict[str, Any] | None = None,
     ) -> None:
@@ -53,7 +56,7 @@ class Log:
         cls,
         message: str,
         *args: Any,
-        channel: str = "request",
+        channel: str = "app",
         trace_id: str | None = None,
         extra: dict[str, Any] | None = None,
     ) -> None:
@@ -64,7 +67,7 @@ class Log:
         cls,
         message: str,
         *args: Any,
-        channel: str = "request",
+        channel: str = "app",
         trace_id: str | None = None,
         extra: dict[str, Any] | None = None,
     ) -> None:
@@ -75,7 +78,7 @@ class Log:
         cls,
         message: str,
         *args: Any,
-        channel: str = "request",
+        channel: str = "app",
         trace_id: str | None = None,
         extra: dict[str, Any] | None = None,
     ) -> None:
@@ -86,12 +89,12 @@ class Log:
         cls,
         message: str,
         *args: Any,
-        channel: str = "request",
+        channel: str = "exception",
         trace_id: str | None = None,
         extra: dict[str, Any] | None = None,
     ) -> None:
         cls._emit(
-            logging.ERROR,
+            logging.INFO,
             message,
             *args,
             channel=channel,
