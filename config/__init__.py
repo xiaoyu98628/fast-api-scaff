@@ -7,6 +7,6 @@
 
 from pathlib import Path
 
-CONFIG_DIR = Path(__file__).resolve().parent
-BASE_DIR = CONFIG_DIR.parent
-LOG_DIR = BASE_DIR / "logs"
+BASE_DIR = Path(__file__).resolve().parent.parent
+CONFIG_DIR = BASE_DIR / "config"
+LOG_DIR = BASE_DIR / "storage"
