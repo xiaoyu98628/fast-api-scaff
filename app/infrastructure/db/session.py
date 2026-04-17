@@ -1,6 +1,7 @@
-"""异步 Session 工厂、依赖注入用的 ``get_db_session``，以及进程退出时的清理。"""
+"""异步 Session 工厂、按需会话 provider、依赖注入辅助与进程退出清理。"""
 
 from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -23,15 +24,25 @@ def get_session_factory() -> async_sessionmaker[AsyncSession] | None:
     return _session_factory
 
 
+class SessionProvider:
+    """为应用层提供 Lazy Session 能力：在真正使用 DB 时再打开会话。"""
+
+    @asynccontextmanager
+    async def session(self) -> AsyncGenerator[AsyncSession, None]:
+        session_factory = get_session_factory()
+        async with session_factory() as session:
+            try:
+                yield session
+            except Exception:
+                await session.rollback()
+                raise
+
+
 async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
     """FastAPI 依赖：``Depends(get_db_session)`` 获取请求级 Session，异常时回滚。"""
-    session_factory = get_session_factory()
-    async with session_factory() as session:
-        try:
-            yield session
-        except Exception:
-            await session.rollback()
-            raise
+    provider = SessionProvider()
+    async with provider.session() as session:
+        yield session
 
 
 async def ping_db() -> bool:

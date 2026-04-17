@@ -8,15 +8,18 @@ class UserErrorCode(IntEnum):
 
     USER_NOT_EXIST = 1001
     USER_ALREADY_EXIST = 1002
+    LOGIN_FAILED = 1003
 
     def message(self) -> str:
         return {
             UserErrorCode.USER_NOT_EXIST: "用户不存在",
             UserErrorCode.USER_ALREADY_EXIST: "用户已存在",
+            UserErrorCode.LOGIN_FAILED: "用户名或密码错误",
         }[self]
 
     def status_code(self) -> int:
         return {
             UserErrorCode.USER_NOT_EXIST: 404,
             UserErrorCode.USER_ALREADY_EXIST: 400,
+            UserErrorCode.LOGIN_FAILED: 401,
         }[self]

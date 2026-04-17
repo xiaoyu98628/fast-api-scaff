@@ -37,10 +37,16 @@ database/migrations/        # Alembic
 | 层 | 职责 |
 |----|------|
 | **domain** | 核心业务规则 |
-| **application** | 用例编排；调 repository / service；**业务枚举**默认 `enums/` |
+| **application** | 用例编排；调 repository / service；**业务枚举**默认 `enums/`；统一事务边界与会话生命周期 |
 | **interfaces** | HTTP、DTO、中间件；**endpoint 不写业务逻辑** |
-| **infrastructure** | DB、缓存等技术实现 |
+| **infrastructure** | DB、缓存等技术实现；提供 Session 工厂/Provider 等技术能力 |
 | **common** | 横切：统一响应、**仅跨模块通用**枚举、工具、异常 |
+
+## Session 使用约束（新增）
+
+- Endpoint 不注入/传递 `AsyncSession`，避免“请求一进入就绑定会话”。
+- Application 在用例内部按需获取 Session（Lazy Session），并负责 `commit/rollback` 策略。
+- Infrastructure 提供 `engine/sessionmaker/provider`，不承载业务流程决策。
 
 ## 升级 DDD 的时机
 

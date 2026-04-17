@@ -12,6 +12,15 @@ API → Application → Infrastructure
 ## 禁止
 
 - Endpoint / Router **直接**操作 DB、Session、ORM
+- Endpoint / Router 禁止声明 `Depends(get_db_session)` 作为业务路径注入；会话获取与事务边界由 Application Service / UoW 统一管理
+- Repository 内自行 `commit/rollback`（事务提交与回滚必须由 Application Service / UoW 统一控制）
+
+## Session 生命周期（Lazy Session）
+
+- **Application 层按需开会话**：仅在真正需要访问 Repository 前，才创建 Session（`async with ...`）。
+- **Infrastructure 层只提供能力**：`infrastructure/db/session.py` 提供 `sessionmaker` / provider，不承担业务事务编排。
+- **Repository 只做数据访问**：不在 Repository 内 `commit/rollback`，由 Application 统一控制事务边界。
+- **接口层保持薄**：Endpoint 只收参数与返回 DTO，不感知 `AsyncSession`。
 
 ## `infrastructure/db/` 拆分
 
