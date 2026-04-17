@@ -49,7 +49,7 @@ database/migrations/        # Alembic
 
 ## 全项目异常处理约束（新增）
 
-- 除 `register_exception_handlers(app)` 注册的全局异常处理器外，项目内其他位置（Endpoint、Middleware、Application、Infrastructure、Common）禁止处理错误响应。
+- 除 `ExceptionCaptureMiddleware` 统一异常出口外，项目内其他位置（Endpoint、Middleware、Application、Infrastructure、Common）禁止处理错误响应。
 - 所有层只负责抛异常或上抛异常，不在本层吞异常并返回错误 JSON/Response。
 
 ## Session 使用约束（新增）

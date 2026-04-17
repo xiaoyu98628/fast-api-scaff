@@ -13,7 +13,7 @@ alwaysApply: true
 
 | 语义 | 路径 |
 |------|------|
-| 业务状态/类型（默认） | `app/application/enums/`（如 `order_status.py`） |
+| 业务状态/类型（默认） | `app/application/enums/`（如 `user_status.py`） |
 | 进阶 DDD | `app/domain/{module}/enums.py` |
 | 跨模块通用（HTTP 等） | `app/common/enums/` |
 | 通用数字错误码 | `app/common/enums/error_code.py`；业务按模块见 `application/{module}/errors.py` |
@@ -22,22 +22,22 @@ alwaysApply: true
 
 ## 命名
 
-- 文件：`snake_case.py`（`order_status.py`）
-- 类：`OrderStatus`；成员：`PENDING`（全大写单词）
+- 文件：`snake_case.py`（`user_status.py`）
+- 类：`UserStatus`；成员：`ACTIVATION`（全大写单词）
 
 ## SQLAlchemy（推荐）
 
 ```python
-status = Column(Integer, default=OrderStatus.PENDING.value)
+status = mapped_column(String(16), default=UserStatus.ACTIVATION.value)
 ```
 
-可选 `Column(SAEnum(OrderStatus))`：注意跨库与 Alembic 风险，新手避免。
+可选 `Column(SAEnum(UserStatus))`：注意跨库与 Alembic 风险，新手避免。
 
 ## Pydantic / FastAPI
 
 ```python
-class OrderResponse(BaseModel):
-    status: OrderStatus  # int Enum → JSON 常为数字；字符串用 (str, Enum)
+class UserPublic(BaseModel):
+    status: UserStatus
 ```
 
 ## 判断

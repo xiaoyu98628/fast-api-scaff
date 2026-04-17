@@ -45,7 +45,7 @@ API → Application → Infrastructure
 
 ## RESTful 路由与 CRUD 方法命名
 
-- 资源路径使用**复数**名词（如 `users`、`orders`），版本前缀下形如 `/api/v1/{resources}`；**禁止**在路径中塞动词（如 `/getUser`、`/userCreate`）。
+- 资源路径使用**复数**名词（如 `users`），版本前缀下形如 `/api/v1/{resources}`；**禁止**在路径中塞动词（如 `/getUser`、`/userCreate`）。
 - 单资源使用路径参数标识（如 `/{user_id}`），**禁止**用 query 代替资源标识表达「删某条」等语义（删除仍用 `DELETE .../{id}`）。
 - 标准资源 CRUD 与 **HTTP 动词、Endpoint 处理函数名、Application Service 方法名**对齐如下（仓储层对外方法名亦建议一致，便于检索）：
 
