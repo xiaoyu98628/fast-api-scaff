@@ -7,20 +7,11 @@ from app.application.user.errors import UserErrorCode
 from app.common.errors import BizException
 from app.common.utils.jwt import decode_access_token
 from app.infrastructure.redis.token_store import AccessTokenStore
+from app.interfaces.api.public_paths import PUBLIC_AUTH_SKIP_PATHS
 
 
 class AuthTokenMiddleware(BaseHTTPMiddleware):
     """为业务接口提供登录校验（登录/文档/健康检查路径放行）。"""
-
-    _public_paths = {
-        "/docs",
-        "/openapi.json",
-        "/redoc",
-        "/api/v1/auth/login",
-        "/api/v1/test/health",
-        "/api/v1/test/db-health",
-        "/api/v1/test/redis-health",
-    }
 
     def __init__(self, app):
         super().__init__(app)
@@ -37,7 +28,7 @@ class AuthTokenMiddleware(BaseHTTPMiddleware):
         return token.strip()
 
     def _should_skip(self, request: Request) -> bool:
-        return request.method == "OPTIONS" or request.url.path in self._public_paths
+        return request.method == "OPTIONS" or request.url.path in PUBLIC_AUTH_SKIP_PATHS
 
     async def dispatch(self, request: Request, call_next):
         if self._should_skip(request):
