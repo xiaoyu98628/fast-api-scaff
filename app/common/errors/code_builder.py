@@ -2,7 +2,7 @@
 
 from functools import lru_cache
 
-from config.config import get_config
+from config.setting import get_setting
 
 
 class ErrorCodeBuilder:
@@ -43,4 +43,4 @@ class ErrorCodeBuilder:
 @lru_cache
 def get_error_code_builder() -> ErrorCodeBuilder:
     """进程内单例构造器，SERVICE_CODE 来自环境配置。"""
-    return ErrorCodeBuilder(get_config().service.service_code)
+    return ErrorCodeBuilder(get_setting().service.service_code)

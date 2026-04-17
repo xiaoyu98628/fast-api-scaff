@@ -2,7 +2,7 @@
 
 from sqlalchemy.orm import DeclarativeBase, declared_attr
 
-from config.config import get_config
+from config.setting import get_setting
 
 
 class Base(DeclarativeBase):
@@ -28,4 +28,4 @@ class Base(DeclarativeBase):
                 f"{cls.__qualname__} 请设置 __tablename_suffix__ = '...'，"
                 f"或在本类中声明 __tablename__ = '...'"
             )
-        return f"{get_config().database.prefix}{suffix}"
+        return f"{get_setting().database.prefix}{suffix}"

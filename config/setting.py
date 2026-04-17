@@ -1,4 +1,4 @@
-"""组合子配置并提供进程内缓存的 ``get_config()``（单例式读取）。"""
+"""组合子配置并提供进程内缓存的 ``get_setting()``（单例式读取）。"""
 
 from functools import lru_cache
 
@@ -13,8 +13,9 @@ from config.redis import RedisSettings
 from config.service import ServiceSettings
 
 
-class Config(BaseModel):
+class Setting(BaseModel):
     """聚合应用、数据库、Redis 等子配置；新增模块时在此加字段。"""
+
     app: AppSettings
     database: DatabaseSettings
     jwt: JwtSettings
@@ -25,9 +26,10 @@ class Config(BaseModel):
 
 
 @lru_cache
-def get_config() -> Config:
-    """返回缓存的 ``Config``；测试环境可通过 ``get_config.cache_clear()`` 刷新。"""
-    return Config(
+def get_setting() -> Setting:
+    """返回缓存的 ``Setting``；测试环境可通过 ``get_setting.cache_clear()`` 刷新。"""
+
+    return Setting(
         app=AppSettings(),
         database=DatabaseSettings(),
         jwt=JwtSettings(),

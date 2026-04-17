@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 import jwt
 from jwt import InvalidTokenError
 
-from config.config import get_config
+from config.setting import get_setting
 
 
 def create_access_token(
@@ -14,22 +14,22 @@ def create_access_token(
     username: str,
 ) -> tuple[str, int]:
     """签发访问令牌，返回 ``(token, expires_in_seconds)``。"""
-    jwt_config = get_config().jwt
-    expire_delta = timedelta(minutes=jwt_config.access_token_expire_minutes)
+    jwt_setting = get_setting().jwt
+    expire_delta = timedelta(minutes=jwt_setting.access_token_expire_minutes)
     expires_at = datetime.now(UTC) + expire_delta
     payload = {
         "sub": subject,
         "username": username,
         "exp": expires_at,
     }
-    token = jwt.encode(payload, jwt_config.secret_key, algorithm=jwt_config.algorithm)
+    token = jwt.encode(payload, jwt_setting.secret_key, algorithm=jwt_setting.algorithm)
     return token, int(expire_delta.total_seconds())
 
 
 def decode_access_token(token: str) -> dict:
     """校验访问令牌并返回 payload。"""
-    jwt_config = get_config().jwt
-    return jwt.decode(token, jwt_config.secret_key, algorithms=[jwt_config.algorithm])
+    jwt_setting = get_setting().jwt
+    return jwt.decode(token, jwt_setting.secret_key, algorithms=[jwt_setting.algorithm])
 
 
 def is_access_token_valid(token: str) -> bool:

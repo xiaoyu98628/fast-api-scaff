@@ -2,7 +2,7 @@
 
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-from config.config import get_config
+from config.setting import get_setting
 
 _engine: AsyncEngine | None = None
 
@@ -11,13 +11,13 @@ def get_engine() -> AsyncEngine | None:
     """首次调用时根据配置创建 ``AsyncEngine``，后续复用同一实例。"""
     global _engine
     if _engine is None:
-        database_config = get_config().database
+        database_setting = get_setting().database
         _engine = create_async_engine(
-            database_config.url,
+            database_setting.url,
             pool_pre_ping=True,
-            echo=database_config.echo,
-            pool_size=database_config.pool_size,
-            max_overflow=database_config.max_overflow,
+            echo=database_setting.echo,
+            pool_size=database_setting.pool_size,
+            max_overflow=database_setting.max_overflow,
         )
     return _engine
 

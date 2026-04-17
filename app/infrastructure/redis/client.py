@@ -2,7 +2,7 @@
 
 from redis.asyncio import Redis
 
-from config.config import get_config
+from config.setting import get_setting
 
 _redis_client: Redis | None = None
 
@@ -11,10 +11,10 @@ def get_redis_client() -> Redis | None:
     """懒加载全局 ``Redis`` 连接，配置来自 ``REDIS_*`` 环境变量。"""
     global _redis_client
     if _redis_client is None:
-        redis_config = get_config().redis
+        redis_setting = get_setting().redis
         _redis_client = Redis.from_url(
-            redis_config.url,
-            decode_responses=redis_config.decode_responses,
+            redis_setting.url,
+            decode_responses=redis_setting.decode_responses,
         )
     return _redis_client
 
