@@ -57,6 +57,7 @@ API → Application → Infrastructure
 | 删除 | DELETE | `/api/v1/users/{id}` | `destroy` |
 
 - 列表分页（`index`）等另行约定时，保持资源复数与查询参数分工（如 `?page=`），勿破坏资源名一致性。
+- 非标准 CRUD 的业务动作（如状态流转）方法命名采用**动词+名词**：`verb_noun`（如 `update_status`）；Endpoint / Service / Repository 建议保持同名，便于检索与链路追踪。
 
 ## 架构口诀
 

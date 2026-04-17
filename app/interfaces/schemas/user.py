@@ -2,6 +2,8 @@
 
 from pydantic import BaseModel, Field
 
+from app.application.enums.user_status import UserStatus
+
 
 class LoginRequest(BaseModel):
     """登录请求体。"""
@@ -16,6 +18,7 @@ class UserPublic(BaseModel):
     id: str
     username: str
     nickname: str
+    status: UserStatus
 
 
 class LoginResponse(BaseModel):
@@ -40,3 +43,9 @@ class UserUpdateRequest(BaseModel):
 
     nickname: str | None = Field(default=None, min_length=1, max_length=64, description="昵称")
     password: str | None = Field(default=None, min_length=1, max_length=128, description="新密码")
+
+
+class UserUpdateStatusRequest(BaseModel):
+    """修改用户状态请求体。"""
+
+    status: UserStatus = Field(..., description="状态（activation/locking）")

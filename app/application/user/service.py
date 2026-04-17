@@ -5,6 +5,7 @@
 
 import secrets
 
+from app.application.enums.user_status import UserStatus
 from app.application.user.dto import LoginResult, UserSnapshot
 from app.application.user.errors import UserErrorCode
 from app.common.errors import BizException
@@ -33,17 +34,20 @@ class UserService:
         username: str,
         password: str,
     ) -> LoginResult:
-        """用户名 + 密码登录；失败时统一抛出 ``LOGIN_FAILED``（防枚举）。"""
+        """用户名 + 密码登录；停用账号返回明确状态错误。"""
         async with self._session_provider.session() as session:
             user = await self._users.get_active_by_username(session, username)
 
             if user is None or not verify_password(password, user.password):
                 raise BizException(UserErrorCode.LOGIN_FAILED)
+            if user.status != UserStatus.ACTIVATION.value:
+                raise BizException(UserErrorCode.USER_STATUS_LOCKED)
 
             user_snapshot = UserSnapshot(
                 id=user.id,
                 username=user.username,
                 nickname=user.nickname,
+                status=UserStatus(user.status),
             )
             access_token, expires_in = create_access_token(
                 subject=user_snapshot.id,
@@ -78,6 +82,7 @@ class UserService:
                 id=user.id,
                 username=user.username,
                 nickname=user.nickname,
+                status=UserStatus(user.status),
             )
 
     async def show(self, user_id: str) -> UserSnapshot:
@@ -90,6 +95,7 @@ class UserService:
                 id=user.id,
                 username=user.username,
                 nickname=user.nickname,
+                status=UserStatus(user.status),
             )
 
     async def update(
@@ -115,6 +121,20 @@ class UserService:
                 id=user.id,
                 username=user.username,
                 nickname=user.nickname,
+                status=UserStatus(user.status),
+            )
+
+    async def update_status(self, user_id: str, *, status: UserStatus) -> UserSnapshot:
+        """更新用户状态（`activation` / `locking`）。"""
+        async with self._session_provider.session() as session:
+            user = await self._users.update_status(session, user_id, status=status)
+            if user is None:
+                raise BizException(UserErrorCode.USER_NOT_EXIST)
+            return UserSnapshot(
+                id=user.id,
+                username=user.username,
+                nickname=user.nickname,
+                status=UserStatus(user.status),
             )
 
     async def destroy(self, user_id: str) -> None:

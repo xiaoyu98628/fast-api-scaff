@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.application.enums.user_status import UserStatus
 from app.infrastructure.db.models.user import User
 
 
@@ -64,6 +65,21 @@ class UserRepository:
             user.nickname = nickname
         if password_hash is not None:
             user.password = password_hash
+        await session.flush()
+        return user
+
+    @staticmethod
+    async def update_status(
+        session: AsyncSession,
+        user_id: str,
+        *,
+        status: UserStatus,
+    ) -> User | None:
+        """按主键更新用户状态；不存在则返回 ``None``。"""
+        user = await UserRepository.show(session, user_id)
+        if user is None:
+            return None
+        user.status = status.value
         await session.flush()
         return user
 

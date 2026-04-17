@@ -43,3 +43,8 @@ class OrderResponse(BaseModel):
 ## 判断
 
 问：**这是业务规则吗？** 是 → application/domain；系统级通用 → common。永远不要以 infrastructure 为枚举**定义**的归属。
+
+## 强约束（新增）
+
+- 业务状态字段（如 `users.status`）必须定义对应业务 Enum（如 `UserStatus`），并放在 `app/application/enums/`。
+- Service/Endpoint 禁止散落硬编码状态字符串（如 `"activation"`、`"locking"`）；统一使用 Enum 成员（如 `UserStatus.ACTIVATION`）。

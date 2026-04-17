@@ -8,6 +8,7 @@ from app.common.response.json import JsonResponse
 from app.interfaces.schemas.user import (
     UserPublic,
     UserStoreRequest,
+    UserUpdateStatusRequest,
     UserUpdateRequest,
 )
 
@@ -29,7 +30,7 @@ async def store(
         password=body.password,
         nickname=body.nickname,
     )
-    data = UserPublic(id=result.id, username=result.username, nickname=result.nickname)
+    data = UserPublic(id=result.id, username=result.username, nickname=result.nickname, status=result.status)
     return JsonResponse.success(
         data=data,
         message="创建成功",
@@ -44,7 +45,7 @@ async def show(
     service: UserService = Depends(get_user_service),
 ) -> JsonResponse[UserPublic]:
     result = await service.show(user_id)
-    data = UserPublic(id=result.id, username=result.username, nickname=result.nickname)
+    data = UserPublic(id=result.id, username=result.username, nickname=result.nickname, status=result.status)
     return JsonResponse.success(
         data=data,
         message="ok",
@@ -64,7 +65,7 @@ async def update(
         nickname=body.nickname,
         password=body.password,
     )
-    data = UserPublic(id=result.id, username=result.username, nickname=result.nickname)
+    data = UserPublic(id=result.id, username=result.username, nickname=result.nickname, status=result.status)
     return JsonResponse.success(
         data=data,
         message="更新成功",
@@ -82,5 +83,21 @@ async def destroy(
     return JsonResponse.success(
         data=None,
         message="删除成功",
+        trace_id=getattr(request.state, "trace_id", None),
+    )
+
+
+@router.patch(path="/{user_id}/status", summary="修改用户状态")
+async def update_status(
+    request: Request,
+    user_id: str,
+    body: UserUpdateStatusRequest,
+    service: UserService = Depends(get_user_service),
+) -> JsonResponse[UserPublic]:
+    result = await service.update_status(user_id, status=body.status)
+    data = UserPublic(id=result.id, username=result.username, nickname=result.nickname, status=result.status)
+    return JsonResponse.success(
+        data=data,
+        message="状态修改成功",
         trace_id=getattr(request.state, "trace_id", None),
     )

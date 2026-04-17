@@ -29,6 +29,7 @@ async def login(
             id=result.user.id,
             username=result.user.username,
             nickname=result.user.nickname,
+            status=result.user.status,
         ),
     )
     return JsonResponse.success(

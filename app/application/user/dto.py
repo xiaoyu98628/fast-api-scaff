@@ -2,6 +2,8 @@
 
 from dataclasses import dataclass
 
+from app.application.enums.user_status import UserStatus
+
 
 @dataclass(frozen=True, slots=True)
 class UserSnapshot:
@@ -10,6 +12,7 @@ class UserSnapshot:
     id: str
     username: str
     nickname: str
+    status: UserStatus
 
 
 @dataclass(frozen=True, slots=True)
