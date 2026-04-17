@@ -137,7 +137,17 @@ API → Application → Infrastructure
 
 ```text
 API → 直接操作 DB ❌
+Endpoint / Router 直接声明 Depends(get_db_session) 作为业务路径注入 ❌
+Repository 内自行 commit/rollback ❌
+Middleware 内直接返回业务错误响应 ❌（中间件应抛异常）
 ```
+
+### Session 生命周期（Lazy Session）
+
+* Application 层按需开会话：仅在真正访问 Repository 前创建 Session（`async with ...`）
+* Infrastructure 层提供能力：`infrastructure/db/session.py` 提供 `sessionmaker/provider`，不承担业务事务编排
+* Repository 只做数据访问：不在 Repository 内 `commit/rollback`，事务提交与回滚由 Application 统一控制
+* Endpoint 保持薄：只收参数和返回 DTO，不感知 `AsyncSession`
 
 ---
 
@@ -191,8 +201,24 @@ api/
 ### 示例路径：
 
 ```text
-/api/v1/user/list
+/api/v1/users
+/api/v1/users/{id}
 ```
+
+### RESTful 路由与 CRUD 方法命名
+
+* 资源路径使用复数名词（如 `users`），路径中禁止动词（如 `/getUser`、`/userCreate`）
+* 单资源通过路径参数标识（如 `/{user_id}`），删除语义使用 `DELETE .../{id}`
+* 标准 CRUD 与 HTTP 动词、Endpoint 方法名、Application Service 方法名对齐：
+
+| 语义 | HTTP | 路径示例 | 方法名 |
+| --- | --- | --- | --- |
+| 新增 | POST | `/api/v1/users` | `store` |
+| 详情 | GET | `/api/v1/users/{id}` | `show` |
+| 更新 | PATCH（或 PUT） | `/api/v1/users/{id}` | `update` |
+| 删除 | DELETE | `/api/v1/users/{id}` | `destroy` |
+
+* 非标准 CRUD 的业务动作使用 `verb_noun`（如 `update_status`），Endpoint / Service / Repository 建议同名
 
 ---
 
@@ -496,8 +522,8 @@ app/
 1. **完整十位对外码**只能由 **`ErrorCodeBuilder`** 生成；**禁止**在业务里手写 `HTTP * 10**7 + …` 或自行拼接十位字符串/整数。
 2. **`IntEnum` 只定义「低位 PART」**：`PART = BB × 100 + CC`（0～9999），**不包含**前三位 HTTP 与三位服务码。服务码来自环境变量 **`SERVICE_CODE`**（000–999，见 `config.service.ServiceSettings`），HTTP 由各枚举的 **`status_code()`** 提供；由 **`ErrorCodeBuilder.build(http_status, partial)`** 合成；展示用 **`f"{full:010d}"`**。
 3. 应用 **`ErrorCodeBuilder.compose_partial(bb, cc)`** 生成 PART，避免散落魔法公式（也可直接写合成值，如 `10 * 100 + 1 = 1001`）。
-4. **业务失败**必须 **`raise BizException(业务错误枚举, message)`**；**系统 / 基础设施 / 第三方调用失败**用 **`raise SystemException(系统类枚举, message)`**（HTTP 仍由枚举的 `status_code()` 决定）。不要在 Service 里直接 `return JsonResponse.error(...)` 代替异常（除非极薄适配层且团队明确允许）。
-5. **所有异常**须进入 **全局 `exception_handler`**（如 `register_exception_handlers(app)`），由 handler 统一转 **`JsonResponse`** 与 HTTP 状态码；**禁止**在 endpoint 大面积 `try/except` 吞掉 `BizException` / `SystemException` 且不向上抛。
+4. **业务失败**必须 **`raise BizException(业务错误枚举, message)`**；**系统 / 基础设施 / 第三方调用失败**用 **`raise SystemException(系统类枚举, message)`**（HTTP 仍由枚举的 `status_code()` 决定）。不要在 Service 里直接 `return JsonResponse.error(...)` 代替异常。
+5. **所有异常**须进入统一异常出口 **`ExceptionCaptureMiddleware`**，由其统一转 **`JsonResponse`** 与 HTTP 状态码；除该统一出口外，Endpoint / Middleware / Application / Infrastructure 仅负责抛异常或上抛异常，不构造错误响应。
 
 十位语义（合成后整型 `full`）：
 
@@ -562,14 +588,15 @@ class OrderErrorCode(IntEnum):
 | 业务规则 / 领域校验失败 | `BizException` | 由业务枚举 `status_code()` |
 | DB/Redis/向量库/未预期缺陷、第三方超时等 | `SystemException` | 由系统类枚举 `status_code()`（多为 500） |
 
-在 `create_app()` 中注册 **`register_exception_handlers(app)`**；兜底 **`Exception`** handler 将未捕获异常记录日志并返回 `INTERNAL_ERROR` 合成码（仍经 `ErrorCodeBuilder`）。
+在 `create_app()` 中挂载统一异常中间件 **`ExceptionCaptureMiddleware`**；兜底未捕获异常由该中间件记录日志并返回 `INTERNAL_ERROR` 合成码（仍经 `ErrorCodeBuilder`）。
 
 ### 六、禁止行为
 
 * 手写完整十位或手写各段拼接 ❌（须 `ErrorCodeBuilder`）
 * 在 `IntEnum` 中写入 **服务码** ❌
 * 业务失败不用 `BizException`、系统问题不用 `SystemException` ❌
-* 绕过全局 handler、在接口层随意吞异常 ❌
+* 绕过 `ExceptionCaptureMiddleware` 统一出口、在接口层随意吞异常 ❌
+* 在 Endpoint / Middleware / Service / Repository / Utils 构造或返回错误响应 ❌
 * 把所有业务错误低位堆在单一文件 ❌（按模块 `errors.py` 拆分）
 * 纯字符串作唯一错误标识 ❌
 * 错误枚举定义放在 `infrastructure/` ❌
