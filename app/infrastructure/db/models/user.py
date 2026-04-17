@@ -1,24 +1,23 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy.orm import declared_attr, Mapped, mapped_column
-from sqlalchemy import DateTime, Integer, String, func, JSON, CHAR, Index, UniqueConstraint
+from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import DateTime, String, func, CHAR, Index, UniqueConstraint
 
 from app.infrastructure.db.base import Base
-from config.config import get_config
+
 
 class User(Base):
-
-    @declared_attr.directive
-    def __tablename__(cls):
-        config = get_config()
-        return f"{config.database.prefix}users"
+    __tablename_suffix__ = "users"
 
     # 表备注
     # SQLAlchemy 要求：当 __table_args__ 为 tuple 时，dict（表参数）必须放在最后
     __table_args__ = (
+        # 唯一索引
         UniqueConstraint('username', name='uq_username'),
+        # 普通索引
         # Index('idx_username', 'username'),
+        # 表注释
         {'comment': '用户表'},
     )
 
