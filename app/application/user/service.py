@@ -3,11 +3,13 @@
 口令哈希统一经本服务调用 ``app.common.utils.password``，勿在 Router 或 ORM Model 中直写 bcrypt。
 """
 
+import secrets
+
 from app.application.user.dto import LoginResult, UserSnapshot
 from app.application.user.errors import UserErrorCode
 from app.common.errors import BizException
 from app.common.utils.jwt import create_access_token
-from app.common.utils.password import verify_password
+from app.common.utils.password import hash_password, verify_password
 from app.infrastructure.db.session import SessionProvider
 from app.infrastructure.db.repositories.user_repository import UserRepository
 from app.infrastructure.redis.token_store import AccessTokenStore
@@ -54,3 +56,70 @@ class UserService:
                 token_type="Bearer",
                 expires_in=expires_in,
             )
+
+    async def store(
+        self,
+        username: str,
+        password: str,
+        nickname: str,
+    ) -> UserSnapshot:
+        """新增用户；用户名已存在时抛出 ``USER_ALREADY_EXIST``。"""
+        async with self._session_provider.session() as session:
+            if await self._users.get_active_by_username(session, username) is not None:
+                raise BizException(UserErrorCode.USER_ALREADY_EXIST)
+            user = await self._users.store(
+                session,
+                user_id=secrets.token_hex(13),
+                username=username,
+                password_hash=hash_password(password),
+                nickname=nickname,
+            )
+            return UserSnapshot(
+                id=user.id,
+                username=user.username,
+                nickname=user.nickname,
+            )
+
+    async def show(self, user_id: str) -> UserSnapshot:
+        """按主键查询未软删用户。"""
+        async with self._session_provider.session() as session:
+            user = await self._users.show(session, user_id)
+            if user is None:
+                raise BizException(UserErrorCode.USER_NOT_EXIST)
+            return UserSnapshot(
+                id=user.id,
+                username=user.username,
+                nickname=user.nickname,
+            )
+
+    async def update(
+        self,
+        user_id: str,
+        *,
+        nickname: str | None,
+        password: str | None,
+    ) -> UserSnapshot:
+        """更新昵称或密码；至少提供一项。"""
+        if nickname is None and password is None:
+            raise BizException(UserErrorCode.USER_UPDATE_NO_FIELDS)
+        async with self._session_provider.session() as session:
+            user = await self._users.update(
+                session,
+                user_id,
+                nickname=nickname,
+                password_hash=hash_password(password) if password is not None else None,
+            )
+            if user is None:
+                raise BizException(UserErrorCode.USER_NOT_EXIST)
+            return UserSnapshot(
+                id=user.id,
+                username=user.username,
+                nickname=user.nickname,
+            )
+
+    async def destroy(self, user_id: str) -> None:
+        """软删除用户。"""
+        async with self._session_provider.session() as session:
+            deleted = await self._users.destroy(session, user_id)
+            if not deleted:
+                raise BizException(UserErrorCode.USER_NOT_EXIST)

@@ -25,3 +25,18 @@ class LoginResponse(BaseModel):
     token_type: str
     expires_in: int
     user: UserPublic
+
+
+class UserStoreRequest(BaseModel):
+    """新增用户请求体（对应 ``store``）。"""
+
+    username: str = Field(..., min_length=1, max_length=64, description="用户名")
+    password: str = Field(..., min_length=1, max_length=128, description="密码")
+    nickname: str = Field(..., min_length=1, max_length=64, description="昵称")
+
+
+class UserUpdateRequest(BaseModel):
+    """更新用户请求体（昵称与密码至少填一项）。"""
+
+    nickname: str | None = Field(default=None, min_length=1, max_length=64, description="昵称")
+    password: str | None = Field(default=None, min_length=1, max_length=128, description="新密码")

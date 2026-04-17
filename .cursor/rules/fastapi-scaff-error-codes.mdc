@@ -26,6 +26,12 @@ alwaysApply: true
 - **系统 / 第三方 / 基础设施**：`raise SystemException(对应 IntEnum, message)`（仍通过枚举的 `status_code()` 决定前三位 HTTP）
 - **全局**：`register_exception_handlers(app)`；未捕获异常走兜底 handler，勿在接口层吞掉上述异常。
 
+## 统一错误出口（新增）
+
+- 项目内错误响应只允许由**全局异常处理器**生成（`register_exception_handlers`）。
+- Endpoint / Middleware / Service / Repository / Utils **只抛异常，不处理错误响应**。
+- 允许场景仅限：`raise BizException`、`raise SystemException` 或上抛原始异常，由全局 handler 统一映射为响应。
+
 ## 放置
 
 - 系统类低位：`app/common/enums/error_code.py`
@@ -33,4 +39,4 @@ alwaysApply: true
 
 ## 禁止
 
-手写完整十位、Enum 含服务码、业务不用 BizException、系统不用 SystemException、绕过 handler、字符串当唯一错误码、错误枚举进 infrastructure。
+手写完整十位、Enum 含服务码、业务不用 BizException、系统不用 SystemException、绕过 handler、字符串当唯一错误码、错误枚举进 infrastructure、在非全局 handler 处构造/返回错误响应。

@@ -37,7 +37,7 @@ class AuthTokenMiddleware(BaseHTTPMiddleware):
         return token.strip()
 
     def _should_skip(self, request: Request) -> bool:
-        return request.url.path in self._public_paths
+        return request.method == "OPTIONS" or request.url.path in self._public_paths
 
     async def dispatch(self, request: Request, call_next):
         if self._should_skip(request):

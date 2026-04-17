@@ -14,6 +14,7 @@ API → Application → Infrastructure
 - Endpoint / Router **直接**操作 DB、Session、ORM
 - Endpoint / Router 禁止声明 `Depends(get_db_session)` 作为业务路径注入；会话获取与事务边界由 Application Service / UoW 统一管理
 - Repository 内自行 `commit/rollback`（事务提交与回滚必须由 Application Service / UoW 统一控制）
+- Middleware 内直接返回业务错误响应（中间件应抛异常，统一交给全局 exception handler）
 
 ## Session 生命周期（Lazy Session）
 
@@ -41,6 +42,21 @@ API → Application → Infrastructure
 4. `main.py` — 挂载应用
 
 路径示例：`/api/v1/...`
+
+## RESTful 路由与 CRUD 方法命名
+
+- 资源路径使用**复数**名词（如 `users`、`orders`），版本前缀下形如 `/api/v1/{resources}`；**禁止**在路径中塞动词（如 `/getUser`、`/userCreate`）。
+- 单资源使用路径参数标识（如 `/{user_id}`），**禁止**用 query 代替资源标识表达「删某条」等语义（删除仍用 `DELETE .../{id}`）。
+- 标准资源 CRUD 与 **HTTP 动词、Endpoint 处理函数名、Application Service 方法名**对齐如下（仓储层对外方法名亦建议一致，便于检索）：
+
+| 语义 | HTTP | 路径示例 | 方法名 |
+|------|------|----------|--------|
+| 新增 | POST | `/api/v1/users` | `store` |
+| 详情 | GET | `/api/v1/users/{id}` | `show` |
+| 更新 | PATCH（或 PUT） | `/api/v1/users/{id}` | `update` |
+| 删除 | DELETE | `/api/v1/users/{id}` | `destroy` |
+
+- 列表分页（`index`）等另行约定时，保持资源复数与查询参数分工（如 `?page=`），勿破坏资源名一致性。
 
 ## 架构口诀
 

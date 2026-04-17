@@ -40,6 +40,18 @@ alembic -c database/alembic.ini upgrade head
 
 # 查看当前迁移版本
 alembic -c database/alembic.ini current
+
+# 查看所有迁移版本
+alembic -c database/alembic.ini history
+
+# 回滚到上一个版本
+alembic -c database/alembic.ini downgrade -1
+
+# 回滚到指定版本
+alembic -c database/alembic.ini downgrade 8ac14e223d1e
+
+# 回滚到初始版本
+alembic -c database/alembic.ini downgrade base
 ```
 
 说明：
