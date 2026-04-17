@@ -11,6 +11,7 @@ from app.application.user.errors import UserErrorCode
 from app.common.errors import BizException
 from app.common.utils.jwt import create_access_token
 from app.common.utils.password import hash_password, verify_password
+from app.domain.user.entity import UserEntity
 from app.infrastructure.db.session import SessionProvider
 from app.infrastructure.db.repositories.user_repository import UserRepository
 from app.infrastructure.redis.token_store import AccessTokenStore
@@ -40,7 +41,12 @@ class UserService:
 
             if user is None or not verify_password(password, user.password):
                 raise BizException(UserErrorCode.LOGIN_FAILED)
-            if user.status != UserStatus.ACTIVATION.value:
+            domain_user = UserEntity(
+                id=user.id,
+                username=user.username,
+                status=UserStatus(user.status),
+            )
+            if not domain_user.can_login():
                 raise BizException(UserErrorCode.USER_STATUS_LOCKED)
 
             user_snapshot = UserSnapshot(

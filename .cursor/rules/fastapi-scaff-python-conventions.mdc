@@ -7,18 +7,17 @@ alwaysApply: false
 # `__init__.py`
 
 - **每个包目录**须有 `__init__.py`；默认**空文件**，不做导出。
-- 允许：单一符号导出，或明确「模块统一出口」。
+- **禁止**在 `__init__.py` 中做 re-export（包含 `from .x import Y` 与 `__all__`）。
 
 ```python
-# ✅ 允许
+# ❌ 禁止
 from .codec import DataCodec
 from .json import ApiResponse
-
-# ❌ 禁止
 from .xxx import *
+__all__ = ["DataCodec"]
 ```
 
-原则：仅在**不会冲突**时做聚合导出。
+原则：统一使用显式完整模块路径导入，避免包级导出带来的命名歧义与依赖不透明。
 
 # import 习惯
 
@@ -28,7 +27,7 @@ from .xxx import *
 # ✅ 推荐
 from app.common.utils.codec import DataCodec
 
-# ⚠️ 不推荐（除非该包 __init__ 明确约定导出）
+# ❌ 禁止（禁止依赖包级导出）
 from app.common.utils import DataCodec
 ```
 
