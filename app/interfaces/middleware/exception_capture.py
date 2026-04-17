@@ -1,7 +1,5 @@
 """统一异常拦截中间件：兜底捕获中间件链路异常并输出统一错误响应。"""
 
-import logging
-
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -12,8 +10,7 @@ from app.common.enums.error_code import ErrorCode
 from app.common.errors.code_builder import get_error_code_builder
 from app.common.errors.handler import render_known_exception
 from app.common.response.json import JsonResponse
-
-logger = logging.getLogger("app.request")
+from app.common.utils.logger import Log
 
 
 class ExceptionCaptureMiddleware(BaseHTTPMiddleware):
@@ -23,6 +20,30 @@ class ExceptionCaptureMiddleware(BaseHTTPMiddleware):
         try:
             return await call_next(request)
         except BaseException as exc:  # noqa: BLE001 - 统一收口后再按类型映射
+            trace_id = getattr(request.state, "trace_id", "-")
+            method = request.method
+            path = request.url.path
+            if isinstance(exc, Exception):
+                status_code = getattr(exc, "status_code", "-")
+                error_code = getattr(exc, "code", "-")
+                message = getattr(exc, "message", str(exc))
+                detail = "-"
+                if isinstance(exc, StarletteHTTPException):
+                    detail = str(exc.detail)
+                elif isinstance(exc, RequestValidationError):
+                    detail = str(exc.errors()[:3])
+                Log.exception(
+                    "Captured exception in middleware chain: %s %s -> type=%s status=%s code=%s message=%s detail=%s",
+                    method,
+                    path,
+                    exc.__class__.__name__,
+                    status_code,
+                    error_code,
+                    message,
+                    detail,
+                    channel="app",
+                    trace_id=trace_id,
+                )
             rendered = render_known_exception(exc)
             if rendered is not None:
                 return rendered
@@ -45,8 +66,6 @@ class ExceptionCaptureMiddleware(BaseHTTPMiddleware):
                     data=exc.errors(),
                 ).model_dump(exclude_none=True)
                 return JSONResponse(status_code=422, content=body)
-
-            logger.exception("Unhandled exception in middleware chain: %s", exc)
             code = get_error_code_builder().build(
                 http_status=ErrorCode.INTERNAL_ERROR.status_code(),
                 partial=int(ErrorCode.INTERNAL_ERROR),

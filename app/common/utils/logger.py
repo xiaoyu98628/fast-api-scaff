@@ -11,7 +11,9 @@ class Log:
         "app": "app",
         "request": "app.request",
         "db": "sqlalchemy.engine",
-        "exception": "exception"
+        "error": "error",
+        "exception": "exception",
+        "debug":"debug",
     }
 
     @classmethod
@@ -45,7 +47,7 @@ class Log:
         cls,
         message: str,
         *args: Any,
-        channel: str = "app",
+        channel: str = "debug",
         trace_id: str | None = None,
         extra: dict[str, Any] | None = None,
     ) -> None:
@@ -78,7 +80,7 @@ class Log:
         cls,
         message: str,
         *args: Any,
-        channel: str = "app",
+        channel: str = "error",
         trace_id: str | None = None,
         extra: dict[str, Any] | None = None,
     ) -> None:

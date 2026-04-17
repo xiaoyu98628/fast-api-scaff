@@ -1,7 +1,6 @@
-"""日志配置：统一定义基础通道（app/request/db），便于按场景拆分日志文件。"""
+"""日志配置：统一定义基础通道（app/request/db/error），便于按场景拆分日志文件。"""
 
 from typing import Dict
-from datetime import datetime
 
 from pydantic import BaseModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -63,5 +62,17 @@ class LoggingSettings(BaseSettings):
                 driver=self.driver,
                 level=self.level,
                 path=str(LOG_DIR / "log" / "exception.log"),
+            ),
+            "error": LogChannel(
+                logger="error",
+                driver=self.driver,
+                level=self.level,
+                path=str(LOG_DIR / "log" / "error.log"),
+            ),
+            "debug": LogChannel(
+                logger="debug",
+                driver=self.driver,
+                level=self.level,
+                path=str(LOG_DIR / "log" / "debug.log"),
             ),
         }
