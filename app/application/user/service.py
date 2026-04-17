@@ -10,6 +10,7 @@ from app.common.utils.jwt import create_access_token
 from app.common.utils.password import verify_password
 from app.infrastructure.db.session import SessionProvider
 from app.infrastructure.db.repositories.user_repository import UserRepository
+from app.infrastructure.redis.token_store import AccessTokenStore
 
 
 class UserService:
@@ -19,9 +20,11 @@ class UserService:
         self,
         user_repository: UserRepository | None = None,
         session_provider: SessionProvider | None = None,
+        access_token_store: AccessTokenStore | None = None,
     ) -> None:
         self._users = user_repository or UserRepository()
         self._session_provider = session_provider or SessionProvider()
+        self._access_token_store = access_token_store or AccessTokenStore()
 
     async def login(
         self,
@@ -44,6 +47,7 @@ class UserService:
                 subject=user_snapshot.id,
                 username=user_snapshot.username,
             )
+            await self._access_token_store.save(access_token, expires_in)
             return LoginResult(
                 user=user_snapshot,
                 access_token=access_token,
