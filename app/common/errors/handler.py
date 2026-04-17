@@ -20,7 +20,7 @@ from app.common.response.json import JsonResponse
 logger = logging.getLogger("app.request")
 
 
-def _build_error_response(*, status_code: int, code: int, message: str) -> JSONResponse:
+def _build_error_response(*, status_code: int, code: int, message: str):
     body = JsonResponse.error(
         code=f"{code:010d}",
         message=message,
@@ -41,7 +41,7 @@ def _extract_known_exception_from_group(exc_group: ExceptionGroup) -> BizExcepti
     return None
 
 
-def render_known_exception(exc: BaseException) -> JSONResponse | None:
+def render_known_exception(exc: BaseException):
     """将可识别异常转换为统一响应；不可识别返回 ``None``。"""
     if isinstance(exc, BizException):
         return _build_error_response(status_code=exc.status_code, code=exc.code, message=exc.message)
@@ -58,15 +58,15 @@ def register_exception_handlers(app: FastAPI) -> None:
     """注册全局异常处理。"""
 
     @app.exception_handler(BizException)
-    async def _biz_exception_handler(_, exc: BizException) -> JSONResponse:
+    async def _biz_exception_handler(_, exc: BizException):
         return render_known_exception(exc)
 
     @app.exception_handler(SystemException)
-    async def _system_exception_handler(_, exc: SystemException) -> JSONResponse:
+    async def _system_exception_handler(_, exc: SystemException):
         return render_known_exception(exc)
 
     @app.exception_handler(ExceptionGroup)
-    async def _exception_group_handler(_, exc: ExceptionGroup) -> JSONResponse:
+    async def _exception_group_handler(_, exc: ExceptionGroup):
         rendered = render_known_exception(exc)
         if rendered is not None:
             return rendered
@@ -82,7 +82,7 @@ def register_exception_handlers(app: FastAPI) -> None:
         )
 
     @app.exception_handler(Exception)
-    async def _unhandled_exception(request, exc: Exception) -> JSONResponse:
+    async def _unhandled_exception(request, exc: Exception):
         if isinstance(exc, RequestValidationError):
             return await request_validation_exception_handler(request, exc)
         if isinstance(exc, StarletteHTTPException):

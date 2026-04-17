@@ -12,7 +12,6 @@ from app.infrastructure.db.session import close_db
 from app.infrastructure.logging import setup_logging
 from app.infrastructure.redis.client import close_redis
 from app.interfaces.api import register_api_router
-from app.interfaces.api.exception_handlers import register_exception_handlers
 from app.interfaces.middleware import register_middleware
 from config.config import get_config
 
@@ -37,7 +36,6 @@ def create_app() -> FastAPI:
     )
 
     register_middleware(app)
-    register_exception_handlers(app)
     register_api_router(app)
 
     return app

@@ -2,6 +2,8 @@
 
 import logging
 
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -24,6 +26,25 @@ class ExceptionCaptureMiddleware(BaseHTTPMiddleware):
             rendered = render_known_exception(exc)
             if rendered is not None:
                 return rendered
+            if isinstance(exc, StarletteHTTPException):
+                code = get_error_code_builder().build(
+                    http_status=exc.status_code,
+                    partial=exc.status_code,
+                )
+                body = JsonResponse.error(
+                    code=f"{code:010d}",
+                    message=str(exc.detail),
+                    data=None,
+                ).model_dump(exclude_none=True)
+                return JSONResponse(status_code=exc.status_code, content=body)
+            if isinstance(exc, RequestValidationError):
+                code = get_error_code_builder().build(http_status=422, partial=422)
+                body = JsonResponse.error(
+                    code=f"{code:010d}",
+                    message="请求参数校验失败",
+                    data=exc.errors(),
+                ).model_dump(exclude_none=True)
+                return JSONResponse(status_code=422, content=body)
 
             logger.exception("Unhandled exception in middleware chain: %s", exc)
             code = get_error_code_builder().build(
