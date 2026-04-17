@@ -1,15 +1,8 @@
-"""FastAPI 全局异常处理注册。"""
+"""统一异常映射工具：将已知异常转换为统一响应。"""
 
 import logging
 
-from fastapi import FastAPI
-from fastapi.exception_handlers import (
-    http_exception_handler,
-    request_validation_exception_handler,
-)
-from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.common.errors.biz_exception import BizException
 from app.common.errors.code_builder import get_error_code_builder
@@ -52,49 +45,3 @@ def render_known_exception(exc: BaseException):
         if known_exc is not None:
             return render_known_exception(known_exc)
     return None
-
-
-def register_exception_handlers(app: FastAPI) -> None:
-    """注册全局异常处理。"""
-
-    @app.exception_handler(BizException)
-    async def _biz_exception_handler(_, exc: BizException):
-        return render_known_exception(exc)
-
-    @app.exception_handler(SystemException)
-    async def _system_exception_handler(_, exc: SystemException):
-        return render_known_exception(exc)
-
-    @app.exception_handler(ExceptionGroup)
-    async def _exception_group_handler(_, exc: ExceptionGroup):
-        rendered = render_known_exception(exc)
-        if rendered is not None:
-            return rendered
-        logger.exception("Unhandled ExceptionGroup: %s", exc)
-        code = get_error_code_builder().build(
-            http_status=ErrorCode.INTERNAL_ERROR.status_code(),
-            partial=int(ErrorCode.INTERNAL_ERROR),
-        )
-        return _build_error_response(
-            status_code=ErrorCode.INTERNAL_ERROR.status_code(),
-            code=code,
-            message=ErrorCode.INTERNAL_ERROR.message(),
-        )
-
-    @app.exception_handler(Exception)
-    async def _unhandled_exception(request, exc: Exception):
-        if isinstance(exc, RequestValidationError):
-            return await request_validation_exception_handler(request, exc)
-        if isinstance(exc, StarletteHTTPException):
-            return await http_exception_handler(request, exc)
-
-        logger.exception("Unhandled exception: %s", exc)
-        code = get_error_code_builder().build(
-            http_status=ErrorCode.INTERNAL_ERROR.status_code(),
-            partial=int(ErrorCode.INTERNAL_ERROR),
-        )
-        return _build_error_response(
-            status_code=ErrorCode.INTERNAL_ERROR.status_code(),
-            code=code,
-            message=ErrorCode.INTERNAL_ERROR.message(),
-        )

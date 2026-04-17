@@ -2,7 +2,6 @@
 
 from app.common.errors.biz_exception import BizException
 from app.common.errors.code_builder import ErrorCodeBuilder, get_error_code_builder
-from app.common.errors.handler import register_exception_handlers
 from app.common.errors.system_exception import SystemException
 
 __all__ = [
@@ -10,5 +9,4 @@ __all__ = [
     "ErrorCodeBuilder",
     "SystemException",
     "get_error_code_builder",
-    "register_exception_handlers",
 ]
