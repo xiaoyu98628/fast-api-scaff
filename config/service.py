@@ -1,4 +1,4 @@
-"""服务级环境变量（无前缀）：如 ``SERVICE_CODE``（九位错误码中的 SS）。"""
+"""服务级环境变量（无前缀）：如 ``SERVICE_CODE``（十位错误码中的三位服务段）。"""
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -15,11 +15,11 @@ class ServiceSettings(BaseSettings):
         extra="ignore",
     )
 
-    service_code: str = Field(default="01", description="两位服务码，如 01、02、03。")
+    service_code: str = Field(default="001", description="三位服务码，如 001、002、010。")
 
     @field_validator("service_code")
     @classmethod
     def validate_service_code(cls, value: str) -> str:
-        if not value.isdigit() or len(value) != 2:
-            raise ValueError("SERVICE_CODE 必须是两位数字（如 01）")
+        if not value.isdigit() or len(value) != 3:
+            raise ValueError("SERVICE_CODE 必须为三位数字（如 001）")
         return value

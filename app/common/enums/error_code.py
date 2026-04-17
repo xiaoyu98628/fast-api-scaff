@@ -1,9 +1,10 @@
-"""跨模块通用业务码（XXXXX）；完整九位码由 ErrorCodeBuilder 统一构造。"""
+"""跨模块通用错误低位（BB×100+CC）；完整十位码由 ErrorCodeBuilder 统一构造。"""
 
 from enum import IntEnum
 
+
 class ErrorCode(IntEnum):
-    """通用错误业务码（5位以内），不含 SS 与 AA。"""
+    """通用错误低位（模块+具体，不含 HTTP 前缀与服务码）。"""
 
     NOT_FOUND = 404
     INTERNAL_ERROR = 500

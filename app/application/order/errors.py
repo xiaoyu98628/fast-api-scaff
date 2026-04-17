@@ -4,7 +4,7 @@ from enum import IntEnum
 
 
 class OrderErrorCode(IntEnum):
-    """订单业务码（XXXXX）。"""
+    """订单业务码低位（BB×100+CC）。"""
 
     ORDER_NOT_EXIST = 2001
     ORDER_ALREADY_PAID = 2002

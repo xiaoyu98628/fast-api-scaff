@@ -1,9 +1,9 @@
-"""健康检查相关业务码（XXXXX）；支持 message 与 HTTP 状态码。"""
+"""健康检查相关业务码低位（BB×100+CC）；支持 message 与 HTTP 状态码。"""
 
 from enum import IntEnum
 
 class HealthErrorCode(IntEnum):
-    """健康检查模块业务码。"""
+    """健康检查模块业务码低位（BB×100+CC）。"""
 
     DB_PROBE_FAILED = 9001
     REDIS_PROBE_FAILED = 9002

@@ -4,7 +4,7 @@ from enum import IntEnum
 
 
 class UserErrorCode(IntEnum):
-    """用户业务码（XXXXX）。"""
+    """用户业务码低位（BB×100+CC，与 HTTP 状态由成员语义决定）。"""
 
     USER_NOT_EXIST = 1001
     USER_ALREADY_EXIST = 1002

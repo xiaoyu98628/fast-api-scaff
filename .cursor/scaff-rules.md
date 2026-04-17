@@ -359,9 +359,9 @@ if order.status == OrderStatus.PAID:
 app/common/enums/
 ```
 
-#### 示例（错误类 tail 枚举）
+#### 示例（错误类低位枚举）
 
-错误响应用的数字码见**第十二节**：`IntEnum` 只存 **AA BB CCC 合成的 tail**，服务号 **SS** 由环境变量 **`SERVICE_CODE`** 与 **`ErrorCodeBuilder`** 在运行时合成，**勿**在 Enum 里写完整九位码。
+错误响应用的数字码见**第十二节**：`IntEnum` 只存 **PART = BB×100+CC**；前三位 HTTP 与各枚举的 **`status_code()`** 一致；三位 **服务码** 由 **`SERVICE_CODE`** 与 **`ErrorCodeBuilder`** 在运行时合成，**勿**在 Enum 里写完整十位码。
 
 ### 三、禁止行为（非常重要）
 
@@ -493,21 +493,21 @@ app/
 
 ### 一、核心约定（必须遵守）
 
-1. **完整九位对外码**只能由 **`ErrorCodeBuilder`** 生成；**禁止**在业务里手写 `SS * 10**7 + …` 或自行拼接九位字符串/整数。
-2. **`IntEnum` 只定义「业务低位」**：成员值为 **tail** = `AA × 10⁵ + BB × 10³ + CCC`，**不包含服务号 SS**。SS 来自环境变量 **`SERVICE_CODE`**（0–99，见 `config.service.ServiceSettings`），由 **`ErrorCodeBuilder.build(tail)`** 与 tail 合成最终整数；展示用 `f"{full:09d}"`。
-3. **tail 的 AA 段**仅允许 **10**（业务）、**20**（系统）、**30**（第三方）；应用 **`ErrorCodeBuilder.compose_tail(aa=…, bb=…, ccc=…)`** 生成 tail，避免散落魔法公式。
-4. **业务失败**必须 **`raise BizException(业务错误枚举, message)`**；**系统 / 基础设施 / 第三方调用失败**用 **`raise SystemException(系统类枚举, message)`**。不要在 Service 里直接 `return JsonResponse.error(...)` 代替异常（除非极薄适配层且团队明确允许）。
-5. **所有异常**须进入 **全局 `exception_handler`**（如 `app/interfaces/api/exception_handlers.py`），由 handler 统一转 **`JsonResponse`** 与 HTTP 状态码；**禁止**在 endpoint 大面积 `try/except` 吞掉 `BizException` / `SystemException` 且不向上抛。
+1. **完整十位对外码**只能由 **`ErrorCodeBuilder`** 生成；**禁止**在业务里手写 `HTTP * 10**7 + …` 或自行拼接十位字符串/整数。
+2. **`IntEnum` 只定义「低位 PART」**：`PART = BB × 100 + CC`（0～9999），**不包含**前三位 HTTP 与三位服务码。服务码来自环境变量 **`SERVICE_CODE`**（000–999，见 `config.service.ServiceSettings`），HTTP 由各枚举的 **`status_code()`** 提供；由 **`ErrorCodeBuilder.build(http_status, partial)`** 合成；展示用 **`f"{full:010d}"`**。
+3. 应用 **`ErrorCodeBuilder.compose_partial(bb, cc)`** 生成 PART，避免散落魔法公式（也可直接写合成值，如 `10 * 100 + 1 = 1001`）。
+4. **业务失败**必须 **`raise BizException(业务错误枚举, message)`**；**系统 / 基础设施 / 第三方调用失败**用 **`raise SystemException(系统类枚举, message)`**（HTTP 仍由枚举的 `status_code()` 决定）。不要在 Service 里直接 `return JsonResponse.error(...)` 代替异常（除非极薄适配层且团队明确允许）。
+5. **所有异常**须进入 **全局 `exception_handler`**（如 `register_exception_handlers(app)`），由 handler 统一转 **`JsonResponse`** 与 HTTP 状态码；**禁止**在 endpoint 大面积 `try/except` 吞掉 `BizException` / `SystemException` 且不向上抛。
 
-九位语义（合成后整型 `full`）：
+十位语义（合成后整型 `full`）：
 
 ```text
-full = SS × 10⁷ + tail，其中 tail = AA × 10⁵ + BB × 10³ + CCC
+full = HTTP × 10⁷ + SVC × 10⁴ + PART，其中 PART = BB × 100 + CC
 ```
 
-示例：`SERVICE_CODE=2`，订单业务 `AA=10, BB=1, CCC=1` → tail=`1001001`，full=`21001001`，字符串 **`021001001`**。
+示例：`SERVICE_CODE=001`，`HTTP=404`，订单不存在 `BB=20, CC=01` → `PART=2001`，`full=4040012001`，字符串 **`4040012001`**。
 
-### 二、通用错误 tail（系统类）
+### 二、通用错误低位（系统类）
 
 路径：
 
@@ -515,18 +515,18 @@ full = SS × 10⁷ + tail，其中 tail = AA × 10⁵ + BB × 10³ + CCC
 app/common/enums/error_code.py
 ```
 
-成员为 **AA=20** 的 tail（如 `NOT_FOUND`、`INTERNAL_ERROR`），**不得**含 SS。
+成员为 **PART**（如 `NOT_FOUND`、`INTERNAL_ERROR`），**不得**含 HTTP 与服务码。
 
 ```python
 from enum import IntEnum
-from app.common.exceptions.error_code_builder import ErrorCodeBuilder
+from app.common.errors.code_builder import ErrorCodeBuilder
 
 class ErrorCode(IntEnum):
-    NOT_FOUND = ErrorCodeBuilder.compose_tail(aa=20, bb=0, ccc=404)
-    INTERNAL_ERROR = ErrorCodeBuilder.compose_tail(aa=20, bb=0, ccc=500)
+    NOT_FOUND = ErrorCodeBuilder.compose_partial(4, 4)  # 404：模块 04、具体 04
+    INTERNAL_ERROR = ErrorCodeBuilder.compose_partial(5, 0)  # 500：模块 05、具体 00
 ```
 
-### 三、业务模块错误 tail
+### 三、业务模块错误低位
 
 路径：
 
@@ -534,43 +534,43 @@ class ErrorCode(IntEnum):
 app/application/{module}/errors.py
 ```
 
-成员 **仅 AA=10**（业务），供 **`BizException`** 使用。
+成员值为 **PART**，供 **`BizException`** 使用；**`status_code()`** 返回对应 HTTP（如 400、404、422）。
 
 ```python
 from enum import IntEnum
-from app.common.exceptions.error_code_builder import ErrorCodeBuilder
+from app.common.errors.code_builder import ErrorCodeBuilder
 
 class OrderErrorCode(IntEnum):
-    ORDER_NOT_EXIST = ErrorCodeBuilder.compose_tail(aa=10, bb=1, ccc=1)
+    ORDER_NOT_EXIST = ErrorCodeBuilder.compose_partial(20, 1)
 ```
 
 ### 四、分段职责与登记（必须）
 
 | 段 | 含义 | 约定 |
 | -- | ---- | ---- |
-| SS | 服务 | 环境变量 **`SERVICE_CODE`**，部署时按服务登记 |
-| AA | 类型 | **10 / 20 / 30**（业务 / 系统 / 第三方） |
+| HTTP | 响应状态 | 枚举 **`status_code()`**，须与 REST 语义一致（常见 200、400、404、422、500） |
+| SVC | 服务 | 环境变量 **`SERVICE_CODE`** 三位，部署时按 `docs/service_code.md` 登记 |
 | BB | 模块 | 服务内子域 `00–99`，须文档登记 |
-| CCC | 序号 | `000–999`，同一 `(SS, AA, BB)` 下递增 |
+| CC | 具体 | `00–99`，同一 `(SVC, BB)` 下递增 |
 
-从**完整码**反解：`SS = full // 10⁷ % 100`，`tail = full % 10⁷`，再对 tail 拆 AA/BB/CCC。
+从**完整码**反解：`HTTP = full // 10⁷`，余下 `r = full % 10⁷`，`SVC = r // 10⁴`，`PART = r % 10⁴`，再 `BB = PART // 100`，`CC = PART % 100`。
 
 ### 五、异常与 Handler
 
-| 类型 | 抛出 | 枚举 AA |
-| ---- | ---- | ------- |
-| 业务规则 / 领域校验失败 | `BizException` | 10 |
-| DB/Redis/向量库/未预期缺陷、第三方超时等 | `SystemException` | 20 或 30 |
+| 类型 | 抛出 | HTTP |
+| ---- | ---- | ---- |
+| 业务规则 / 领域校验失败 | `BizException` | 由业务枚举 `status_code()` |
+| DB/Redis/向量库/未预期缺陷、第三方超时等 | `SystemException` | 由系统类枚举 `status_code()`（多为 500） |
 
 在 `create_app()` 中注册 **`register_exception_handlers(app)`**；兜底 **`Exception`** handler 将未捕获异常记录日志并返回 `INTERNAL_ERROR` 合成码（仍经 `ErrorCodeBuilder`）。
 
 ### 六、禁止行为
 
-* 手写完整九位码或手写 `SS` 与 tail 拼接 ❌（须 `ErrorCodeBuilder`）
-* 在 `IntEnum` 中写入 **SS** ❌
+* 手写完整十位或手写各段拼接 ❌（须 `ErrorCodeBuilder`）
+* 在 `IntEnum` 中写入 **服务码** ❌
 * 业务失败不用 `BizException`、系统问题不用 `SystemException` ❌
 * 绕过全局 handler、在接口层随意吞异常 ❌
-* 把所有业务错误 tail 堆在单一文件 ❌（按模块 `errors.py` 拆分）
+* 把所有业务错误低位堆在单一文件 ❌（按模块 `errors.py` 拆分）
 * 纯字符串作唯一错误标识 ❌
 * 错误枚举定义放在 `infrastructure/` ❌
 
@@ -579,21 +579,19 @@ class OrderErrorCode(IntEnum):
 ```text
 app/application/{module}/
 ├── service.py
-├── errors.py          # 业务 tail 枚举（AA=10）+ BizException 抛出点
+├── errors.py          # 业务 PART 枚举 + BizException 抛出点
 ├── enums.py           # 可选
 ├── schemas.py         # 可选
 ```
 
 ```text
-app/common/exceptions/
-├── error_code_builder.py
-├── app_exceptions.py   # BizException / SystemException
-```
-
-```text
-app/interfaces/api/exception_handlers.py
+app/common/errors/
+├── code_builder.py
+├── biz_exception.py
+├── system_exception.py
+├── handler.py
 ```
 
 ### 八、一句话
 
-> **tail 进 Enum，SS 进 env，完整码只经 ErrorCodeBuilder；业务抛 BizException，系统抛 SystemException，统一走全局 handler。**
+> **PART 进 Enum，服务码进 env，HTTP 由枚举 status_code，完整码只经 ErrorCodeBuilder；业务抛 BizException，系统抛 SystemException，统一走全局 handler。**

@@ -3,11 +3,10 @@
 from enum import IntEnum
 
 from app.common.errors.code_builder import get_error_code_builder
-from app.common.errors.error_types import ErrorType
 
 
 class BizException(Exception):
-    """业务异常（AA=10）。"""
+    """业务异常。"""
 
     __slots__ = ("code", "message", "biz_code", "status_code")
 
@@ -16,7 +15,7 @@ class BizException(Exception):
         self.message = message if message is not None else getattr(code, "message", lambda: "业务异常")()
         self.status_code = int(getattr(code, "status_code", lambda: 400)())
         self.code = get_error_code_builder().build(
-            code=self.biz_code,
-            error_type=ErrorType.BIZ,
+            http_status=self.status_code,
+            partial=self.biz_code,
         )
         super().__init__(self.message)

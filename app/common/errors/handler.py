@@ -13,7 +13,6 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.common.errors.biz_exception import BizException
 from app.common.errors.code_builder import get_error_code_builder
-from app.common.errors.error_types import ErrorType
 from app.common.errors.system_exception import SystemException
 from app.common.enums.error_code import ErrorCode
 from app.common.response.json import JsonResponse
@@ -27,7 +26,7 @@ def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(BizException)
     async def _biz_exception_handler(_, exc: BizException) -> JSONResponse:
         body = JsonResponse.error(
-            code=f"{exc.code:09d}",
+            code=f"{exc.code:010d}",
             message=exc.message,
             data=None,
         ).model_dump(exclude_none=True)
@@ -36,7 +35,7 @@ def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(SystemException)
     async def _system_exception_handler(_, exc: SystemException) -> JSONResponse:
         body = JsonResponse.error(
-            code=f"{exc.code:09d}",
+            code=f"{exc.code:010d}",
             message=exc.message,
             data=None,
         ).model_dump(exclude_none=True)
@@ -51,11 +50,11 @@ def register_exception_handlers(app: FastAPI) -> None:
 
         logger.exception("Unhandled exception: %s", exc)
         code = get_error_code_builder().build(
-            code=int(ErrorCode.INTERNAL_ERROR),
-            error_type=ErrorType.SYSTEM,
+            http_status=ErrorCode.INTERNAL_ERROR.status_code(),
+            partial=int(ErrorCode.INTERNAL_ERROR),
         )
         body = JsonResponse.error(
-            code=f"{code:09d}",
+            code=f"{code:010d}",
             message=ErrorCode.INTERNAL_ERROR.message(),
             data=None,
         ).model_dump(exclude_none=True)

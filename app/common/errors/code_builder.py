@@ -1,8 +1,7 @@
-"""统一错误码构造器：完整码 = SS + AA + XXXXX（9 位整型）。"""
+"""统一错误码构造器：完整码 = HTTP(3) + 服务码(3) + 模块(2) + 具体(2)（10 位整型）。"""
 
 from functools import lru_cache
 
-from app.common.errors.error_types import ErrorType
 from config.config import get_config
 
 
@@ -12,22 +11,33 @@ class ErrorCodeBuilder:
     __slots__ = ("_service_code",)
 
     def __init__(self, service_code: str) -> None:
-        if not service_code.isdigit() or len(service_code) != 2:
-            raise ValueError(f"SERVICE_CODE 必须是两位数字，收到: {service_code}")
-        self._service_code = int(service_code)
+        if not service_code.isdigit() or len(service_code) not in (2, 3):
+            raise ValueError(f"SERVICE_CODE 须为两位或三位数字，收到: {service_code}")
+        self._service_code = int(service_code.zfill(3))
 
-    def build(self, code: int, error_type: ErrorType | int) -> int:
-        """构造完整错误码（SSAAxxxxx）。"""
-        aa = int(error_type)
-        if aa not in (ErrorType.BIZ, ErrorType.SYSTEM, ErrorType.THIRD):
-            raise ValueError(f"error_type 仅支持 10/20/30，收到: {aa}")
-        if not 0 <= int(code) <= 99_999:
-            raise ValueError(f"业务码必须是 0~99999 的整数，收到: {code}")
-        return self._service_code * 10**7 + aa * 10**5 + int(code)
+    @staticmethod
+    def compose_partial(module: int, detail: int) -> int:
+        """由模块号与具体序号合成 Enum 低位（BB×100+CC，0～9999）。"""
+        if not 0 <= module <= 99:
+            raise ValueError(f"module 必须在 0～99，收到: {module}")
+        if not 0 <= detail <= 99:
+            raise ValueError(f"detail 必须在 0～99，收到: {detail}")
+        return module * 100 + detail
 
-    def format_code(self, code: int, error_type: ErrorType | int) -> str:
-        """输出 9 位字符串（左补零）。"""
-        return f"{self.build(code=code, error_type=error_type):09d}"
+    def build(self, http_status: int, partial: int) -> int:
+        """构造完整错误码。
+
+        partial 为 IntEnum 成员值：模块(两位)×100 + 具体(两位)，与 compose_partial 一致。
+        """
+        if not 100 <= int(http_status) <= 599:
+            raise ValueError(f"http_status 须在 100～599（标准 HTTP），收到: {http_status}")
+        if not 0 <= int(partial) <= 9999:
+            raise ValueError(f"partial 须在 0～9999，收到: {partial}")
+        return int(http_status) * 10**7 + self._service_code * 10**4 + int(partial)
+
+    def format_code(self, http_status: int, partial: int) -> str:
+        """输出 10 位字符串（左补零）。"""
+        return f"{self.build(http_status=http_status, partial=partial):010d}"
 
 
 @lru_cache
