@@ -1,4 +1,5 @@
 from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
@@ -43,6 +44,24 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
         except Exception:
             await session.rollback()
             raise
+
+
+class SessionProvider:
+    """为服务层提供会话上下文（与 ``get_session_factory`` 共用连接）。
+
+    事务边界由**服务层**决定：写操作在成功路径调用 ``await session.commit()``；
+    本处仅在异常时 ``rollback()``，避免把脏状态带出会话。
+    """
+
+    @asynccontextmanager
+    async def session(self) -> AsyncGenerator[AsyncSession, None]:
+        session_factory = get_session_factory()
+        async with session_factory() as session:
+            try:
+                yield session
+            except Exception:
+                await session.rollback()
+                raise
 
 
 async def ping_db() -> bool:

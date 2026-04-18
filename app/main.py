@@ -2,8 +2,10 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.api.openapi import setup_openapi_security
 from app.api.router import api_router
 from app.infrastructure.database import close_db
+from app.infrastructure.logging.setup import setup_logging
 from app.infrastructure.redis import close_redis
 from app.middleware import register_middleware
 from config.config import get_config
@@ -18,6 +20,7 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     config = get_config()
+    setup_logging(config.logging)
 
     app = FastAPI(
         title=config.app.name,
@@ -27,6 +30,7 @@ def create_app() -> FastAPI:
 
     register_middleware(app)
     app.include_router(api_router)
+    setup_openapi_security(app)
 
     @app.get(path="/health", summary="健康检测")
     async def health():

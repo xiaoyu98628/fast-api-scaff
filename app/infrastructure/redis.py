@@ -26,3 +26,23 @@ async def close_redis() -> None:
     if _redis_client is not None:
         await _redis_client.aclose()
     _redis_client = None
+
+
+class AccessTokenStore:
+    """Redis token 存储，key 设计为 ``auth:access_token:{token}``。"""
+
+    key_prefix = "auth:access_token:"
+
+    @staticmethod
+    def _build_key(token: str) -> str:
+        return f"{AccessTokenStore.key_prefix}{token}"
+
+    async def save(self, token: str, ttl_seconds: int) -> None:
+        redis = get_redis_client()
+        key = self._build_key(token)
+        await redis.set(name=key, value="1", ex=ttl_seconds)
+
+    async def exists(self, token: str) -> bool:
+        redis = get_redis_client()
+        key = self._build_key(token)
+        return bool(await redis.exists(key))

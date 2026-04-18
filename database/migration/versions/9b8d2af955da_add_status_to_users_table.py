@@ -1,0 +1,34 @@
+"""add_status_to_users_table
+
+Revision ID: 9b8d2af955da
+Revises: ca32688704e2
+Create Date: 2026-04-17 14:02:37.672845
+
+"""
+
+from typing import Sequence, Union
+
+import sqlalchemy as sa
+from alembic import op
+
+revision: str = "9b8d2af955da"
+down_revision: Union[str, Sequence[str], None] = "ca32688704e2"
+branch_labels: Union[str, Sequence[str], None] = None
+depends_on: Union[str, Sequence[str], None] = None
+
+
+def upgrade() -> None:
+    op.add_column(
+        "m_users",
+        sa.Column(
+            "status",
+            sa.String(length=16),
+            server_default="activation",
+            nullable=False,
+            comment="状态[activation:激活,locking:锁定]",
+        ),
+    )
+
+
+def downgrade() -> None:
+    op.drop_column("m_users", "status")

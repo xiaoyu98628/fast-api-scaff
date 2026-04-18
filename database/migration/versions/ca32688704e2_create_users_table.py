@@ -1,0 +1,37 @@
+"""create_users_table
+
+Revision ID: ca32688704e2
+Revises:
+Create Date: 2026-04-16 18:20:56.747470
+
+"""
+
+from typing import Sequence, Union
+
+import sqlalchemy as sa
+from alembic import op
+
+revision: str = "ca32688704e2"
+down_revision: Union[str, Sequence[str], None] = None
+branch_labels: Union[str, Sequence[str], None] = None
+depends_on: Union[str, Sequence[str], None] = None
+
+
+def upgrade() -> None:
+    op.create_table(
+        "m_users",
+        sa.Column("id", sa.CHAR(length=26), nullable=False, comment="编号"),
+        sa.Column("username", sa.String(length=64), nullable=False, comment="用户名"),
+        sa.Column("password", sa.String(length=128), nullable=False, comment="密码"),
+        sa.Column("nickname", sa.String(length=64), nullable=False, comment="昵称"),
+        sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False, comment="创建时间"),
+        sa.Column("updated_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False, comment="更新时间"),
+        sa.Column("deleted_at", sa.DateTime(), nullable=True, comment="删除时间"),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("username", name="uq_username"),
+        comment="用户表",
+    )
+
+
+def downgrade() -> None:
+    op.drop_table("m_users")
