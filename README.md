@@ -7,7 +7,7 @@
 ```bash
 cp .env.sample .env
 uv sync
-uv run uvicorn public.main:app --host 0.0.0.0 --port 8001 --reload
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
 ```
 
 访问：
@@ -21,7 +21,7 @@ uv run uvicorn public.main:app --host 0.0.0.0 --port 8001 --reload
 ```bash
 cp .env.sample .env
 docker compose up --build -d
-docker compose logs -f api
+docker compose logs -f service
 ```
 
 停止服务：
@@ -31,8 +31,9 @@ docker compose down
 ```
 
 说明：
-- 宿主机端口取 `.env` 里的 `APP_PORT`（默认 `8001`）
-- 容器内部固定监听 `8000`
+
+- 宿主机端口取 `.env` 里的 `APP_PORT`（默认 `8001`）；映射到容器内 **8000**
+- Compose 服务名为 **`service`**（见 `docker-compose.yml`）
 
 ## 常用配置
 
@@ -45,10 +46,9 @@ docker compose down
 ## 目录结构
 
 ```text
-app/                 业务代码（API、中间件、模型、工具）
+app/                 业务代码（API、中间件、模型、工具）与 main.py 入口
 config/              应用配置
 database/migration/  Alembic 迁移配置
-public/main.py       FastAPI 入口
 docker-compose.yml   Docker 编排
 Dockerfile           Docker 镜像构建
 ```

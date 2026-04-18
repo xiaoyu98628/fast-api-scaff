@@ -1,5 +1,5 @@
 services:
-  api:
+  service:
     build:
       context: .
       dockerfile: Dockerfile
@@ -8,8 +8,11 @@ services:
     container_name: ${APP_NAME}
     ports:
       - "${APP_PORT:-8000}:8000"
-    command: sh -c "uvicorn public.main:app --host 0.0.0.0 --port 8000"
-    restart: unless-stopped
+    volumes:
+      - .:/app
+      - /app/.venv
+    command: sh -c "uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    restart: no
     networks:
       - app_net
 

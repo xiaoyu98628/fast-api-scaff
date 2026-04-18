@@ -8,11 +8,13 @@ from app.infrastructure.redis import close_redis
 from app.middleware import register_middleware
 from config.config import get_config
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     yield
     await close_redis()
     await close_db()
+
 
 def create_app() -> FastAPI:
     config = get_config()
@@ -32,18 +34,21 @@ def create_app() -> FastAPI:
 
     return app
 
+
 app = create_app()
+
 
 def main() -> None:
     import uvicorn
 
     config = get_config()
     uvicorn.run(
-        "public.main:app",
+        "app.main:app",
         host="0.0.0.0",
         port=config.app.port,
         reload=config.app.debug,
     )
+
 
 if __name__ == "__main__":
     main()
