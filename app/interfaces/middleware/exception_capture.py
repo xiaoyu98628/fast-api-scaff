@@ -32,7 +32,7 @@ class ExceptionCaptureMiddleware(BaseHTTPMiddleware):
                     detail = str(exc.detail)
                 elif isinstance(exc, RequestValidationError):
                     detail = str(exc.errors()[:3])
-                Log.exception(
+                Log.error(
                     "Captured exception in middleware chain: %s %s -> type=%s status=%s code=%s message=%s detail=%s",
                     method,
                     path,
@@ -41,7 +41,6 @@ class ExceptionCaptureMiddleware(BaseHTTPMiddleware):
                     error_code,
                     message,
                     detail,
-                    channel="app",
                     trace_id=trace_id,
                 )
             rendered = render_known_exception(exc)

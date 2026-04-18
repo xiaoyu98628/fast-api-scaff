@@ -51,7 +51,15 @@ class Log:
         trace_id: str | None = None,
         extra: dict[str, Any] | None = None,
     ) -> None:
-        cls._emit(logging.DEBUG, message, *args, channel=channel, trace_id=trace_id, extra=extra)
+        cls._emit(
+            logging.DEBUG,
+            message,
+            *args,
+            channel=channel,
+            trace_id=trace_id,
+            extra=extra,
+            exc_info=True,
+        )
 
     @classmethod
     def info(
@@ -84,7 +92,15 @@ class Log:
         trace_id: str | None = None,
         extra: dict[str, Any] | None = None,
     ) -> None:
-        cls._emit(logging.ERROR, message, *args, channel=channel, trace_id=trace_id, extra=extra)
+        cls._emit(
+            logging.ERROR,
+            message,
+            *args,
+            channel=channel,
+            trace_id=trace_id,
+            extra=extra,
+            exc_info=True,
+        )
 
     @classmethod
     def exception(
