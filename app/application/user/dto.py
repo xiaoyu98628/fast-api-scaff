@@ -23,3 +23,21 @@ class LoginResult:
     access_token: str
     token_type: str
     expires_in: int
+
+
+@dataclass(frozen=True, slots=True)
+class PaginationMeta:
+    """分页元信息（与接口层 ``meta`` 字段对齐）。"""
+
+    current_page: int
+    last_page: int
+    total: int
+    page_size: int
+
+
+@dataclass(frozen=True, slots=True)
+class UserIndexResult:
+    """用户列表分页用例结果。"""
+
+    items: list[UserSnapshot]
+    meta: PaginationMeta

@@ -5,6 +5,15 @@ from pydantic import BaseModel, Field
 from app.application.enums.user_status import UserStatus
 
 
+class PageMeta(BaseModel):
+    """分页元数据（与统一响应内层 ``meta`` 对齐）。"""
+
+    current_page: int = Field(..., ge=1, description="当前页码")
+    last_page: int = Field(..., ge=1, description="最后一页页码")
+    total: int = Field(..., ge=0, description="总条数")
+    page_size: int = Field(..., ge=1, description="每页条数")
+
+
 class LoginRequest(BaseModel):
     """登录请求体。"""
 
@@ -19,6 +28,13 @@ class UserPublic(BaseModel):
     username: str
     nickname: str
     status: UserStatus
+
+
+class UserListPayload(BaseModel):
+    """用户列表接口中 ``data`` 字段的内层结构：列表 + 分页。"""
+
+    data: list[UserPublic]
+    meta: PageMeta
 
 
 class LoginResponse(BaseModel):

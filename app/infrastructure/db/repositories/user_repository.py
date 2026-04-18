@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.enums.user_status import UserStatus
@@ -28,6 +28,26 @@ class UserRepository:
         stmt = select(User).where(User.id == user_id, User.deleted_at.is_(None))
         result = await session.execute(stmt)
         return result.scalar_one_or_none()
+
+    @staticmethod
+    async def count_not_deleted(session: AsyncSession) -> int:
+        """未软删用户总数。"""
+        stmt = select(func.count()).select_from(User).where(User.deleted_at.is_(None))
+        result = await session.execute(stmt)
+        return int(result.scalar_one())
+
+    @staticmethod
+    async def index(session: AsyncSession, *, offset: int, limit: int) -> list[User]:
+        """分页列出未软删用户（按创建时间倒序）。"""
+        stmt = (
+            select(User)
+            .where(User.deleted_at.is_(None))
+            .order_by(User.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
 
     @staticmethod
     async def store(

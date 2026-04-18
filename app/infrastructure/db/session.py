@@ -25,7 +25,11 @@ def get_session_factory() -> async_sessionmaker[AsyncSession] | None:
 
 
 class SessionProvider:
-    """为应用层提供 Lazy Session 能力：在真正使用 DB 时再打开会话。"""
+    """为应用层提供 Lazy Session 能力：在真正使用 DB 时再打开会话。
+
+    事务边界由**应用层**决定：写操作用例在成功路径调用 ``await session.commit()``；
+    本处仅在异常时 ``rollback()``，避免把脏状态带出会话。
+    """
 
     @asynccontextmanager
     async def session(self) -> AsyncGenerator[AsyncSession, None]:

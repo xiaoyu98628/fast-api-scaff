@@ -6,7 +6,7 @@
 import secrets
 
 from app.application.enums.user_status import UserStatus
-from app.application.user.dto import LoginResult, UserSnapshot
+from app.application.user.dto import LoginResult, PaginationMeta, UserIndexResult, UserSnapshot
 from app.application.user.errors import UserErrorCode
 from app.common.errors import BizException
 from app.common.utils.jwt import create_access_token
@@ -84,12 +84,37 @@ class UserService:
                 password_hash=hash_password(password),
                 nickname=nickname,
             )
+            await session.commit()
             return UserSnapshot(
                 id=user.id,
                 username=user.username,
                 nickname=user.nickname,
                 status=UserStatus(user.status),
             )
+
+    async def index(self, page: int, page_size: int) -> UserIndexResult:
+        """分页用户列表（不含已软删）；``page`` / ``page_size`` 由接口层校验为正整数范围。"""
+        offset = (page - 1) * page_size
+        async with self._session_provider.session() as session:
+            total = await self._users.count_not_deleted(session)
+            rows = await self._users.index(session, offset=offset, limit=page_size)
+        last_page = max(1, (total + page_size - 1) // page_size) if total else 1
+        items = [
+            UserSnapshot(
+                id=row.id,
+                username=row.username,
+                nickname=row.nickname,
+                status=UserStatus(row.status),
+            )
+            for row in rows
+        ]
+        meta = PaginationMeta(
+            current_page=page,
+            last_page=last_page,
+            total=total,
+            page_size=page_size,
+        )
+        return UserIndexResult(items=items, meta=meta)
 
     async def show(self, user_id: str) -> UserSnapshot:
         """按主键查询未软删用户。"""
@@ -123,6 +148,7 @@ class UserService:
             )
             if user is None:
                 raise BizException(UserErrorCode.USER_NOT_EXIST)
+            await session.commit()
             return UserSnapshot(
                 id=user.id,
                 username=user.username,
@@ -136,6 +162,7 @@ class UserService:
             user = await self._users.update_status(session, user_id, status=status)
             if user is None:
                 raise BizException(UserErrorCode.USER_NOT_EXIST)
+            await session.commit()
             return UserSnapshot(
                 id=user.id,
                 username=user.username,
@@ -149,3 +176,4 @@ class UserService:
             deleted = await self._users.destroy(session, user_id)
             if not deleted:
                 raise BizException(UserErrorCode.USER_NOT_EXIST)
+            await session.commit()
