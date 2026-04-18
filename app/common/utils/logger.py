@@ -107,7 +107,7 @@ class Log:
         cls,
         message: str,
         *args: Any,
-        channel: str = "exception",
+        channel: str = "error",
         trace_id: str | None = None,
         extra: dict[str, Any] | None = None,
     ) -> None:

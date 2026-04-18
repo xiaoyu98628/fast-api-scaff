@@ -11,6 +11,19 @@ from app.common.utils.logger import Log
 
 SENSITIVE_KEYS = {"password", "token", "access_token", "refresh_token", "authorization"}
 
+_LOG_JSON_MAX_LEN = 8000
+
+
+def _json_for_log(obj: Any, *, max_len: int = _LOG_JSON_MAX_LEN) -> str:
+    """单行写入日志文件：Formatter 未展开 ``extra`` 时仍能看到请求/响应内容。"""
+    try:
+        text = json.dumps(obj, ensure_ascii=False, default=str)
+    except TypeError:
+        text = str(obj)
+    if len(text) > max_len:
+        return f"{text[: max_len - 20]}...<truncated len={len(text)}>"
+    return text
+
 
 def _mask_payload(payload: Any) -> Any:
     if isinstance(payload, dict):
@@ -45,23 +58,6 @@ async def _extract_request_params(request: Request) -> dict[str, Any]:
     return _mask_payload(params)
 
 
-def _extract_response_result(response: Any) -> Any:
-    content_type = getattr(response, "media_type", "") or ""
-    raw_body = getattr(response, "body", b"")
-    if isinstance(raw_body, str):
-        raw_body = raw_body.encode("utf-8")
-    if not isinstance(raw_body, (bytes, bytearray)) or not raw_body:
-        return {"content_type": content_type, "body_preview": "<streaming or empty>"}
-
-    text = raw_body.decode("utf-8", errors="ignore")
-    if "application/json" in content_type:
-        try:
-            return _mask_payload(json.loads(text))
-        except json.JSONDecodeError:
-            return {"content_type": content_type, "body_preview": text[:500]}
-    return {"content_type": content_type, "body_preview": text[:500]}
-
-
 class RequestLogMiddleware(BaseHTTPMiddleware):
     """记录每个请求的访问日志。"""
 
@@ -69,37 +65,37 @@ class RequestLogMiddleware(BaseHTTPMiddleware):
         started = time.perf_counter()
         trace_id = getattr(request.state, "trace_id", "-")
         status_code = 500
+        client_ip = request.client.host if request.client else "-"
         request_params = await _extract_request_params(request)
+        params_text = _json_for_log(request_params)
         Log.info(
-            "--> %s %s",
+            "--> %s %s | ip=%s | params=%s",
             request.method,
             request.url.path,
+            client_ip,
+            params_text,
             channel="request",
             trace_id=trace_id,
             extra={
-                "client_ip": request.client.host if request.client else "-",
+                "client_ip": client_ip,
                 "params": request_params,
             },
         )
 
-        response_result: Any = "<no response>"
         try:
             response = await call_next(request)
             status_code = response.status_code
-            response_result = _extract_response_result(response)
             return response
         finally:
             duration_ms = (time.perf_counter() - started) * 1000
             Log.info(
-                "<-- %s %s -> %s (%.2f ms)",
+                "<-- %s %s -> %s (%.2f ms) | ip=%s",
                 request.method,
                 request.url.path,
                 status_code,
                 duration_ms,
+                client_ip,
                 channel="request",
                 trace_id=trace_id,
-                extra={
-                    "client_ip": request.client.host if request.client else "-",
-                    "result": response_result,
-                },
+                extra={"client_ip": client_ip},
             )

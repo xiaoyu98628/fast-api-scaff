@@ -11,8 +11,9 @@ from app.interfaces.middleware.trace_id import TraceIdMiddleware
 
 
 def register_middleware(app: FastAPI) -> None:
-    app.add_middleware(TraceIdMiddleware)
+    # 先注册的内层、后注册的外层；请求先经外层。TraceId 须在外层，请求日志才能读到 trace_id。
     app.add_middleware(RequestLogMiddleware)
+    app.add_middleware(TraceIdMiddleware)
     app.add_middleware(AuthTokenMiddleware)
     app.add_middleware(CorsMiddleware)
     app.add_middleware(QueryParamDecodeMiddleware)
