@@ -1,0 +1,33 @@
+---
+description: Python 习惯：import、函数长度、__init__.py
+globs: "**/*.py"
+alwaysApply: false
+---
+
+# Python 约定（demo2）
+
+## import
+
+优先**显式模块路径**，避免隐式包聚合导入：
+
+```python
+# 推荐
+from app.core.errors import BizException
+from app.utils.jwt import create_access_token
+
+# 不推荐（除非本仓库已约定导出的单一入口）
+from app.utils import create_access_token
+```
+
+## `__init__.py`
+
+- 新建包目录应有 `__init__.py`；默认可为空。
+- 本仓库例外：`app/models/__init__.py` 导出 `Base`/`User` 供 Alembic；`app/core/errors/__init__.py` 导出异常与构造器。新增包若无类似需求，保持空文件、不做 re-export。
+
+## 函数长度
+
+单函数/方法建议 **≤ 80 行**；过长则拆私有函数或步骤函数，避免深层嵌套。
+
+## 适度抽象
+
+以分层清晰为先，不强行接口泛滥；需要替换实现时再抽端口。

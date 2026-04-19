@@ -1,0 +1,37 @@
+---
+description: API 路由聚合、REST 命名、与 Service/Repository 对齐
+alwaysApply: true
+---
+
+# 路由与 REST 约定
+
+## 聚合顺序
+
+1. `app/api/v1/endpoints/*.py` — 处理函数（薄）
+2. `app/api/v1/router.py` — 挂载各模块 `APIRouter`
+3. `app/api/router.py` — 版本前缀 `/api`
+4. `app/main.py` — `include_router`、`setup_openapi_security`、根 `/health`
+
+对外业务路径形态：**`/api/v1/...`**
+
+## 资源与动词
+
+- 资源名用**复数**（如 `users`）；路径里**不要**塞动词（如 `/getUser`）。
+- 单条资源用路径参数：`/{user_id}`；删除用 **`DELETE .../{id}`**，不要用 query 表达「删某条」。
+
+## CRUD 与 Service 方法名对齐
+
+| 语义 | HTTP | 路径示例 | Service / Repository 建议方法名 |
+|------|------|----------|-----------------------------------|
+| 列表分页 | GET | `/api/v1/users?page=&page_size=` | `index` |
+| 新增 | POST | `/api/v1/users` | `store` |
+| 详情 | GET | `/api/v1/users/{id}` | `show` |
+| 更新 | PATCH | `/api/v1/users/{id}` | `update` |
+| 删除 | DELETE | `/api/v1/users/{id}` | `destroy` |
+
+非标准动作用 **`verb_noun`**（如 `update_status`），Endpoint / Service / Repository 建议同名便于检索。
+
+## 禁止
+
+- Endpoint **直接**执行 SQL、操作 `AsyncSession` 做业务写（除明确允许的依赖注入场景）。
+- Repository 内 **`commit`/`rollback`**。

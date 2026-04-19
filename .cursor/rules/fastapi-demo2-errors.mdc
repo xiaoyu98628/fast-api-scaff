@@ -1,0 +1,33 @@
+---
+description: 十位错误码、SERVICE_CODE、BizException/SystemException、统一出口路径
+alwaysApply: true
+---
+
+# 错误码与异常（demo2 路径）
+
+## 十位结构
+
+`full = HTTP×10⁷ + SVC×10⁴ + PART`，`PART = BB×100 + CC`（可用 `ErrorCodeBuilder.compose_partial(bb, cc)`）。
+
+| 位段 | 含义 |
+|------|------|
+| 1～3 | HTTP（100～599） |
+| 4～6 | **服务码**，仅来自 **`SERVICE_CODE`**（`config.service`） |
+| 7～10 | PART（0～9999），**IntEnum 只存 PART** |
+
+- 完整码只通过 **`get_error_code_builder().build(http_status, partial)`**；响应里 **`f"{full:010d}"`**。
+- **业务**：`raise BizException(UserErrorCode.xxx)`（`app/enums/user_error_code.py` 等）。
+- **系统/第三方**：`raise SystemException(ErrorCode.xxx)` 或带 `status_code()` 的枚举。
+- **唯一 JSON 错误出口**：`app/middleware/exception_capture.py`（配合 `app/core/errors/handler.py`）。
+
+## 文件放置
+
+| 内容 | 路径 |
+|------|------|
+| 构造器与异常类 | `app/core/errors/` |
+| 跨模块通用低位 | `app/enums/error_code.py` |
+| 按模块业务低位 | `app/enums/{module}_error_code.py`（如 `user_error_code.py`） |
+
+## 禁止
+
+手写完整十位、在 Enum 里写服务码、业务失败不抛 `BizException`、在 Service/Repository 里 `return JsonResponse.error`、绕过 `ExceptionCaptureMiddleware` 私自返回错误体。

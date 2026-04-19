@@ -1,0 +1,61 @@
+---
+description: demo2 目录结构、调用链、Session、中间件与异常出口
+alwaysApply: true
+---
+
+# 架构总览（demo2）
+
+轻量分层：**依赖单向、接口薄、服务编排、仓储只访问数据、基础设施提供技术能力**。
+
+## 目录树（新代码须对齐）
+
+```text
+app/
+  main.py
+  api/              路由、public_paths、openapi
+  core/
+    response/       统一响应 JsonResponse
+    errors/         ErrorCodeBuilder、Biz/SystemException、render_known_exception
+  enums/            业务状态、模块业务错误码、跨模块通用错误低位
+  middleware/
+  models/           ORM Base + 表模型（表名前缀见 config DB_PREFIX）
+  repositories/   数据访问（无 commit/rollback）
+  schemas/         Pydantic 请求/响应 DTO
+  services/        业务服务（用例编排、事务边界）
+  infrastructure/ database.py（引擎、SessionProvider、get_db_session）、redis.py、logging/
+  utils/            jwt、password、logger、codec 等
+config/             聚合 get_config()，子模块按环境变量前缀拆分
+database/migration/ # Alembic + versions
+```
+
+## 调用链（必须）
+
+```text
+api/endpoints → services → repositories / infrastructure
+```
+
+| 层 | 职责 |
+|----|------|
+| **api** | HTTP：参数、依赖注入、返回 DTO/JsonResponse；**不写业务与事务** |
+| **schemas** | 请求/响应 Pydantic 模型 |
+| **services** | 用例编排；`SessionProvider` 内 `commit`（写操作成功路径）；抛 `BizException` |
+| **repositories** | 只查改 ORM；**禁止** `commit`/`rollback` |
+| **models** | SQLAlchemy 映射 |
+| **core** | 横切：统一响应、错误码与异常体系 |
+| **enums** | 业务语义枚举与模块错误低位枚举 |
+| **infrastructure** | DB 引擎、Redis、日志初始化等技术细节 |
+
+## Session
+
+- **Endpoint** 业务路径不注入 `AsyncSession`；测试类健康检查等可用 `Depends(get_db_session)`。
+- **Service** 内 `async with SessionProvider().session()`；写操作成功后 **`await session.commit()`**；异常时由 context 内 `rollback`。
+- **Repository** 只做 `flush`/查询，不提交事务。
+
+## 中间件与异常
+
+- 中间件只做 trace、日志、鉴权、CORS、query 解码等；业务失败 **`raise BizException`**，由 **`ExceptionCaptureMiddleware`** 统一出 JSON。
+- 除 **`ExceptionCaptureMiddleware`** 外，不在各层构造错误 `JSONResponse` 并返回；只抛异常或上抛。
+
+## 升级复杂度
+
+规则复杂、多聚合时再拆 `domain/` 或子域包；当前以 **services + repositories** 清晰为优先。

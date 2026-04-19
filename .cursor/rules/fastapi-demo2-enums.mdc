@@ -1,0 +1,33 @@
+---
+description: 枚举放在 app/enums，ORM/Pydantic 引用方式与禁止项
+alwaysApply: true
+---
+
+# Enum 规范（demo2）
+
+## 原则
+
+枚举表达**业务语义**，不是基础设施实现细节。
+
+## 放置
+
+| 语义 | 路径 |
+|------|------|
+| 业务状态（如用户状态） | `app/enums/user_status.py` |
+| 模块业务错误低位 | `app/enums/user_error_code.py`（新模块可复制命名模式） |
+| 跨模块通用错误低位 | `app/enums/error_code.py` |
+
+**禁止**：在 `app/infrastructure/` 下**单独新建**业务枚举源文件；禁止把大量业务枚举堆进单一 `error_code.py` 而失去模块边界。
+
+## ORM / Pydantic
+
+- ORM 列默认值推荐字符串/值：`server_default=UserStatus.ACTIVATION.value`。
+- Pydantic：`status: UserStatus`，便于 OpenAPI 展示。
+
+## 依赖方向
+
+`enums` 被 `models` / `services` / `schemas` 引用；**禁止** Enum 定义依赖 ORM Model。
+
+## 命名
+
+文件 `snake_case.py`；类 `UserStatus`；成员业务上可读（如 `ACTIVATION`）。
