@@ -12,7 +12,7 @@ _session_factory: async_sessionmaker[AsyncSession] | None = None
 
 
 def get_session_factory() -> async_sessionmaker[AsyncSession] | None:
-    """绑定当前引擎的 ``async_sessionmaker``，供业务代码或 ``get_db_session`` 使用。"""
+    """绑定当前引擎的 ``async_sessionmaker``，供应用层按需创建 Session。"""
     global _session_factory
     if _session_factory is None:
         _session_factory = async_sessionmaker(
@@ -43,7 +43,7 @@ class SessionProvider:
 
 
 async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
-    """FastAPI 依赖：``Depends(get_db_session)`` 获取请求级 Session，异常时回滚。"""
+    """兼容保留：非业务路径使用的请求级 Session 依赖（业务 Endpoint 禁止注入）。"""
     provider = SessionProvider()
     async with provider.session() as session:
         yield session
