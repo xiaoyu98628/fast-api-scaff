@@ -1,5 +1,6 @@
 """统一异常拦截中间件：兜底捕获中间件链路异常并输出统一错误响应。"""
 
+from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -8,9 +9,31 @@ from starlette.responses import JSONResponse
 
 from app.common.enums.error_code import ErrorCode
 from app.common.errors.code_builder import get_error_code_builder
-from app.common.errors.handler import render_known_exception
+from app.common.errors.handler import (
+    build_request_validation_error_response,
+    render_known_exception,
+)
 from app.common.response.json import JsonResponse
 from app.common.utils.logger import Log
+
+
+def register_exception_capture(app: FastAPI) -> None:
+    """统一异常出口（仅此一处注册）：挂载捕获中间件，并挂接校验异常 handler。
+
+    ``RequestValidationError`` 在 FastAPI 路由栈内被处理，不会作为未捕获异常传到
+    ``BaseHTTPMiddleware``，因此必须与中间件在同一入口补充 ``exception_handler``，
+    响应体仍由 ``build_request_validation_error_response`` 生成，与中间件分支一致。
+    """
+
+    @app.exception_handler(RequestValidationError)
+    async def _request_validation_exception_handler(
+        request: Request,
+        exc: RequestValidationError,
+    ) -> JSONResponse:
+        trace_id = getattr(request.state, "trace_id", None)
+        return build_request_validation_error_response(exc, trace_id=trace_id)
+
+    app.add_middleware(ExceptionCaptureMiddleware)
 
 
 class ExceptionCaptureMiddleware(BaseHTTPMiddleware):
@@ -58,13 +81,8 @@ class ExceptionCaptureMiddleware(BaseHTTPMiddleware):
                 ).model_dump(exclude_none=True)
                 return JSONResponse(status_code=exc.status_code, content=body)
             if isinstance(exc, RequestValidationError):
-                code = get_error_code_builder().build(http_status=422, partial=422)
-                body = JsonResponse.error(
-                    code=f"{code:010d}",
-                    message="请求参数校验失败",
-                    data=exc.errors(),
-                ).model_dump(exclude_none=True)
-                return JSONResponse(status_code=422, content=body)
+                tid = getattr(request.state, "trace_id", None)
+                return build_request_validation_error_response(exc, trace_id=tid)
             code = get_error_code_builder().build(
                 http_status=ErrorCode.INTERNAL_ERROR.status_code(),
                 partial=int(ErrorCode.INTERNAL_ERROR),

@@ -2,6 +2,7 @@
 
 import logging
 
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from app.common.errors.biz_exception import BizException
@@ -11,6 +12,22 @@ from app.common.enums.error_code import ErrorCode
 from app.common.response.json import JsonResponse
 
 logger = logging.getLogger("app.request")
+
+
+def build_request_validation_error_response(
+    exc: RequestValidationError,
+    *,
+    trace_id: str | None = None,
+) -> JSONResponse:
+    """请求体验证失败时的统一 JSON（与 ``ExceptionCaptureMiddleware`` 中逻辑一致）。"""
+    code = get_error_code_builder().build(http_status=422, partial=422)
+    body = JsonResponse.error(
+        code=f"{code:010d}",
+        message="请求参数校验失败",
+        data=exc.errors(),
+        trace_id=trace_id,
+    ).model_dump(exclude_none=True)
+    return JSONResponse(status_code=422, content=body)
 
 
 def _build_error_response(*, status_code: int, code: int, message: str):

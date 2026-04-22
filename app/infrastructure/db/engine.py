@@ -14,7 +14,8 @@ def get_engine() -> AsyncEngine | None:
         database_setting = get_setting().database
         _engine = create_async_engine(
             database_setting.url,
-            pool_pre_ping=True,
+            pool_pre_ping=True, # 心跳
+            pool_recycle=3600,  # 回收连接（防止 MySQL 8h 断开）
             echo=database_setting.echo,
             pool_size=database_setting.pool_size,
             max_overflow=database_setting.max_overflow,
