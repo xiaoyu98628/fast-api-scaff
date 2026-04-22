@@ -5,9 +5,9 @@ import logging
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from app.common.errors.biz_exception import BizException
+from app.common.exceptions.biz_exception import BizException
 from app.common.errors.code_builder import get_error_code_builder
-from app.common.errors.system_exception import SystemException
+from app.common.exceptions.system_exception import SystemException
 from app.common.enums.error_code import ErrorCode
 from app.common.response.json import JsonResponse
 

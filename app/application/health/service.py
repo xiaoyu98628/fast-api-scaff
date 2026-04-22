@@ -3,7 +3,7 @@
 from sqlalchemy import text
 
 from app.application.health.errors import HealthErrorCode
-from app.common.errors.system_exception import SystemException
+from app.common.exceptions.system_exception import SystemException
 from app.infrastructure.db.session import get_session_factory
 from app.infrastructure.redis.client import ping_redis
 

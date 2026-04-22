@@ -8,7 +8,7 @@ import secrets
 from app.application.enums.user_status import UserStatus
 from app.application.user.dto import LoginResult, PaginationMeta, UserIndexResult, UserSnapshot
 from app.application.user.errors import UserErrorCode
-from app.common.errors.biz_exception import BizException
+from app.common.exceptions.biz_exception import BizException
 from app.common.utils.jwt import create_access_token
 from app.common.utils.password import hash_password, verify_password
 from app.domain.user.entity import UserEntity

@@ -4,7 +4,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
 from app.application.user.errors import UserErrorCode
-from app.common.errors.biz_exception import BizException
+from app.common.exceptions.biz_exception import BizException
 from app.common.utils.jwt import decode_access_token
 from app.infrastructure.redis.token_store import AccessTokenStore
 from app.interfaces.api.public_paths import PUBLIC_AUTH_SKIP_PATHS
