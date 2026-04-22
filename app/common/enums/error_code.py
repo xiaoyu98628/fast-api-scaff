@@ -1,6 +1,6 @@
 """跨模块通用错误低位（BB×100+CC）；完整十位码由 ErrorCodeBuilder 统一构造。"""
 
-from enum import IntEnum, StrEnum
+from enum import StrEnum
 
 
 class ErrorCode(StrEnum):
