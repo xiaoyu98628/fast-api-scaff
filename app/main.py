@@ -13,7 +13,7 @@ from app.infrastructure.logging.setup import setup_logging
 from app.infrastructure.redis.client import close_redis
 from app.interfaces.api.register import register_api_router
 from app.interfaces.middleware.register import register_middleware
-from config.setting import get_setting
+from config.setting import settings
 
 
 @asynccontextmanager
@@ -26,7 +26,7 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     """构建并返回配置好的 ``FastAPI`` 实例（测试与 ASGI 服务器共用）。"""
-    setting = get_setting()
+    setting = settings()
     setup_logging(setting.logging)
 
     app = FastAPI(
@@ -48,7 +48,7 @@ def main() -> None:
     """命令行直接运行本模块时使用（等价于 uvicorn app.main:app）。"""
     import uvicorn
 
-    setting = get_setting()
+    setting = settings()
     uvicorn.run(
         "app.main:app",
         host="0.0.0.0",

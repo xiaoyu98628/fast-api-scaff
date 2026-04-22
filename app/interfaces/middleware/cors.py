@@ -4,7 +4,7 @@ from typing import Optional
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response, PlainTextResponse
 
-from config.setting import get_setting
+from config.setting import settings
 
 
 class CorsMiddleware(BaseHTTPMiddleware):
@@ -12,7 +12,7 @@ class CorsMiddleware(BaseHTTPMiddleware):
 
     def __init__(self, app):
         super().__init__(app)
-        self.cors_settings = get_setting().cors
+        self.cors_settings = settings().cors
 
     async def dispatch(self, request, call_next):
         origin = request.headers.get("origin")

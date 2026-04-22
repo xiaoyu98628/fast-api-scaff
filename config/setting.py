@@ -12,8 +12,7 @@ from config.logging import LoggingSettings
 from config.redis import RedisSettings
 from config.service import ServiceSettings
 
-
-class Setting(BaseModel):
+class Settings(BaseModel):
     """聚合应用、数据库、Redis 等子配置；新增模块时在此加字段。"""
 
     app: AppSettings
@@ -24,12 +23,11 @@ class Setting(BaseModel):
     service: ServiceSettings
     cors: CorsSettings
 
-
 @lru_cache
-def get_setting() -> Setting:
+def settings() -> Settings:
     """返回缓存的 ``Setting``；测试环境可通过 ``get_setting.cache_clear()`` 刷新。"""
 
-    return Setting(
+    return Settings(
         app=AppSettings(),
         database=DatabaseSettings(),
         jwt=JwtSettings(),

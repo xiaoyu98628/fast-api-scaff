@@ -20,7 +20,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from config.setting import get_setting
+from config.setting import settings
 from app.infrastructure.db.base import Base
 
 # 确保在 autogenerate / upgrade 阶段加载所有模型，避免 Base.metadata 为空导致生成空迁移。
@@ -30,12 +30,12 @@ from app.infrastructure.db.models import user as _user_model  # noqa: F401
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
-settings = get_setting()
+setting = settings()
 # 使用异步驱动生成 AsyncEngine，避免 async_engine_from_config 加载到 pymysql 这类同步驱动。
 config.set_main_option(
     "sqlalchemy.url",
     # SQLAlchemy 的 URL.__str__ 会隐藏密码（***），Alembic 需要真实密码才能鉴权
-    settings.database.url.render_as_string(hide_password=False),
+    setting.database.url.render_as_string(hide_password=False),
 )
 
 # Interpret the config file for Python logging.
