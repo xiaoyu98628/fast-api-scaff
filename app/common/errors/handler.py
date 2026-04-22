@@ -19,15 +19,17 @@ def build_request_validation_error_response(
     *,
     trace_id: str | None = None,
 ) -> JSONResponse:
-    """请求体验证失败时的统一 JSON（与 ``ExceptionCaptureMiddleware`` 中逻辑一致）。"""
-    code = get_error_code_builder().build(http_status=422, partial=422)
+    """请求体验证失败时的统一 JSON（低位与 HTTP 取自 ``ErrorCode.PARAMETER_ERROR``）。"""
+    ec = ErrorCode.PARAMETER_ERROR
+    http_status = ec.status_code()
+    full = get_error_code_builder().build(http_status=http_status, partial=int(ec))
     body = JsonResponse.error(
-        code=f"{code:010d}",
-        message="请求参数校验失败",
+        code=f"{full:010d}",
+        message=ec.message(),
         data=exc.errors(),
         trace_id=trace_id,
     ).model_dump(exclude_none=True)
-    return JSONResponse(status_code=422, content=body)
+    return JSONResponse(status_code=http_status, content=body)
 
 
 def _build_error_response(*, status_code: int, code: int, message: str):

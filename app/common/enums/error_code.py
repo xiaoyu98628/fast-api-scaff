@@ -23,7 +23,10 @@ class ErrorCode(StrEnum):
 
     def message(self) -> str:
         return {
+            ErrorCode.REQUEST_ERROR: "请求错误",
+            ErrorCode.FORBIDDEN_ERROR: "无权限访问",
             ErrorCode.NOT_FOUND: "资源不存在",
+            ErrorCode.PARAMETER_ERROR: "参数错误",
             ErrorCode.INTERNAL_ERROR: "系统异常",
         }[self]
 
