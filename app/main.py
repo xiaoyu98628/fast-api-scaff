@@ -9,10 +9,10 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.infrastructure.db.session import close_db
-from app.infrastructure.logging import setup_logging
+from app.infrastructure.logging.setup import setup_logging
 from app.infrastructure.redis.client import close_redis
-from app.interfaces.api import register_api_router
-from app.interfaces.middleware import register_middleware
+from app.interfaces.api.register import register_api_router
+from app.interfaces.middleware.register import register_middleware
 from config.setting import get_setting
 
 

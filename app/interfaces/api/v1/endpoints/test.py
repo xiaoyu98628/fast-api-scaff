@@ -17,7 +17,7 @@ def get_system_health_service() -> SystemHealthService:
 
 @router.get(path="/health", summary="测试接口")
 async def health(request: Request) -> JsonResponse[dict[str, dict[str, str]]]:
-    Log.exception("health check")
+    Log.info("health check")
     return JsonResponse.success(
         data={"query_params": dict(request.query_params)},
         message="ok",

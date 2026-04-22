@@ -1,0 +1,16 @@
+"""HTTP API 注册入口。"""
+
+from fastapi import FastAPI
+
+from app.interfaces.api.openapi import setup_openapi_security
+from app.interfaces.api.router import api_router
+
+
+def register_api_router(app: FastAPI) -> None:
+    """注册 API 路由。"""
+    app.include_router(api_router)
+    setup_openapi_security(app)
+
+    @app.get(path="/health", summary="健康检测")
+    async def health():
+        return {"message": "Hello World"}
