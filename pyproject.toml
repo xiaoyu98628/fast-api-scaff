@@ -1,0 +1,37 @@
+[project]
+name = "fast-api-scaff"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+authors = [
+    {name = "CaoGaoYu", email = "1765841705@qq.com"}
+]
+dependencies = [
+    "fastapi>=0.136.1",
+    "uvicorn>=0.47.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "black>=24.0.0",
+    "ruff>=0.5.0",
+]
+
+# 目标 Python 版本
+[tool.ty.environment]
+python-version = "3.14"
+
+# 镜像源
+#[[tool.uv.index]]
+#url = "https://mirrors.cloud.tencent.com/pypi/simple"
+#default = true
+
+[tool.black]
+line-length = 150
+
+[tool.ruff]
+line-length = 150
+select = ["E", "F", "I", "N", "W", "UP"]
