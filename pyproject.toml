@@ -1,7 +1,7 @@
 [project]
 name = "fast-api-scaff"
 version = "0.1.0"
-description = "Add your description here"
+description = "A practical FastAPI scaffold with config, middleware, response schema, and database basics."
 readme = "README.md"
 requires-python = ">=3.14"
 authors = [
@@ -10,9 +10,13 @@ authors = [
 dependencies = [
     "fastapi>=0.136.1",
     "uvicorn>=0.47.0",
+
     "sqlalchemy[asyncio]>=2.0.48",
-    "aiomysql>=0.3.2",
-    "aiosqlite>=0.22.1",
+
+    "aiomysql>=0.3.2", # mysql
+    "aiosqlite>=0.22.1", # sqlite
+    "asyncpg>=0.31.0", # postgresql
+
     "pydantic-settings>=2.14.1",
     "pydantic>=2.13.4",
 ]
