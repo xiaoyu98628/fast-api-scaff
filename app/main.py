@@ -3,6 +3,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.infrastructure.database.manager import get_manager
+from app.interfaces.http.api.register import register_route
+from app.interfaces.http.middleware.register import register_middleware
 from config.config import config
 
 
@@ -21,6 +23,11 @@ def create_app() -> FastAPI:
         debug=configure.app.debug,
         lifespan=lifespan,
     )
+
+    # 注册中间件
+    register_middleware(app=app)
+    # 注册路由
+    register_route(app=app)
 
     @app.get(path="/health", summary="健康检测")
     async def health():
