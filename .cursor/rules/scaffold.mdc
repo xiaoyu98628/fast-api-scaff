@@ -97,7 +97,7 @@ async with DB.connection() as session:
 
 - [x] `app/infrastructure/database/` 连接层
 - [x] `lifespan` disconnect
-- [ ] ORM Model 基类
+- [x] ORM Model 基类（`app/models/base.py`：连接名 + 表前缀）
 - [ ] API 路由分包（`app/api/`）
 - [ ] 统一响应格式、中间件、异常处理
 - [ ] 测试目录与 CI

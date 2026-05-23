@@ -49,6 +49,7 @@ fast-api-scaff/
 │   └── config.py            # 配置聚合 + config() 工厂
 ├── app/
 │   ├── main.py              # FastAPI 入口
+│   ├── models/              # ORM Model（base / registry）
 │   └── infrastructure/
 │       └── database/        # manager / connection / connectors / db
 ├── storage/logs/            # 日志
@@ -131,13 +132,31 @@ uv run alembic -c database/alembic.ini revision --autogenerate -m "add_xxx_table
 uv run alembic -c database/alembic.ini upgrade head
 ```
 
-`database/migrations/env.py` 通过 `sync_url()` 读取连接，与 `config/database.py` 保持一致。Model 基类就绪后，在 `env.py` 中设置 `target_metadata` 方可使用 `--autogenerate`。
+`database/migrations/env.py` 通过 `sync_url()` 读取连接，与 `config/database.py` 保持一致。Model 基类就绪后，在 `registry.py` 导入 Model 即可使用 `--autogenerate`。
+
+### ORM Model
+
+```python
+from sqlalchemy import String
+from sqlalchemy.orm import Mapped, mapped_column
+
+from app.models.base import Base
+
+class User(Base):
+    __table_name__ = "users"       # 逻辑表名
+    __connection__ = "mysql"       # 可选，默认 DB_CONNECTION
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(255))
+```
+
+`__tablename__` 自动拼接为 `{connection.prefix}{__table_name__}`。查询仍用 `DB.connection(User.connection_name())`。
 
 ## 待办（Roadmap）
 
 - [x] 数据库连接层（DatabaseManager / Connectors / DB Facade）
 - [x] `lifespan` disconnect
-- [ ] ORM Model 基类
+- [x] ORM Model 基类（`app/models/base.py`）
 - [ ] API 路由分包（`app/api/`）
 - [ ] 统一响应格式与异常处理
 - [ ] 中间件（日志、CORS 等）
