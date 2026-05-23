@@ -6,7 +6,8 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import URL
 
-from paths import BASE_DIR, ENV_FILE
+from config.settings import BASE_SETTINGS_CONFIG
+from paths import BASE_DIR
 
 
 class DbDriver(StrEnum):
@@ -31,10 +32,8 @@ class DatabaseConfig(BaseSettings):
     """数据库配置"""
 
     model_config = SettingsConfigDict(
-        env_file=ENV_FILE,
-        env_file_encoding="utf-8",
+        **BASE_SETTINGS_CONFIG,
         env_prefix="DB_",
-        extra="ignore",
     )
 
     # 当前默认连接
