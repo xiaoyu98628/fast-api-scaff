@@ -1,0 +1,51 @@
+---
+description: Python 基础约定（语法、导入、包结构）
+alwaysApply: true
+---
+
+# Python 约定
+
+目标版本：**Python 3.14+**（`pyproject.toml`）。新代码使用现代语法，避免 `typing.Optional` / `List` / `Dict` 等旧写法（除非与第三方 API 兼容必须保留）。
+
+## 现代类型语法
+
+```python
+# 推荐
+def find_user(user_id: int | None = None) -> dict[str, Any]:
+    ...
+
+# 不推荐
+from typing import Optional, Dict, Any
+def find_user(user_id: Optional[int] = None) -> Dict[str, Any]:
+    ...
+```
+
+## import
+
+优先**显式模块路径**，避免隐式包聚合导入：
+
+```python
+# 推荐
+from config.database import DatabaseConfig
+
+# 不推荐
+from app.database.DatabaseConfig import async_connections
+```
+
+## `__init__.py`
+
+1. 新建包目录一定要有 `__init__.py`；默认为空。
+2. `__init__.py` 文件中严格不可以导出，不做 re-export。
+
+```python
+# 正确：空文件或仅包级 docstring
+
+# 错误
+from .db import get_db
+__all__ = ["get_db"]
+```
+
+## 工具链
+
+- 行宽 **150**（`pyproject.toml` 中 `tool.black` / `tool.ruff`）
+- Ruff 已启用 `UP` 规则，优先用 `match`/`case` 等现代语法
