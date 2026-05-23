@@ -1,13 +1,11 @@
 from app.infrastructure.database.connection import Connection
 from app.infrastructure.database.connectors.factory import ConnectionFactory
 from config.config import config
-from config.database import DatabaseConfig, DbDriver
+from config.database import DatabaseConfig
 
 
-def resolve_connection_name(name: DbDriver | str | None, *, default: str) -> str:
-    if name is None:
-        return default
-    return name.value if isinstance(name, DbDriver) else name
+def resolve_connection_name(name: str | None, *, default: str) -> str:
+    return default if name is None else name
 
 
 class DatabaseManager:
@@ -20,9 +18,9 @@ class DatabaseManager:
 
     @property
     def default_connection(self) -> str:
-        return self._config.connection.value
+        return self._config.connection
 
-    def connection(self, name: DbDriver | str | None = None) -> Connection:
+    def connection(self, name: str | None = None) -> Connection:
         resolved = resolve_connection_name(name, default=self.default_connection)
         if resolved not in self._connections:
             self._connections[resolved] = self._factory.make(resolved, self._config)

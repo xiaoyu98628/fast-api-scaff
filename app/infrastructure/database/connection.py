@@ -3,13 +3,11 @@ from contextlib import asynccontextmanager
 
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from config.database import DbDriver
-
 
 class Connection:
     """连接实例：包装 Engine，提供短生命周期的 Session 上下文。"""
 
-    def __init__(self, name: str, driver: DbDriver, engine: AsyncEngine) -> None:
+    def __init__(self, name: str, driver: str, engine: AsyncEngine) -> None:
         self._name = name
         self._driver = driver
         self._engine = engine
@@ -20,11 +18,11 @@ class Connection:
         return self._name
 
     @property
-    def driver(self) -> DbDriver:
+    def driver(self) -> str:
         return self._driver
 
     @asynccontextmanager
-    async def session(self) -> AsyncGenerator[AsyncSession]:
+    async def session(self) -> AsyncGenerator[AsyncSession, None]:
         if self._sessionmaker is None:
             self._sessionmaker = async_sessionmaker(self._engine, expire_on_commit=False)
 

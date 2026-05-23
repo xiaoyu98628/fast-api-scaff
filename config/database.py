@@ -1,120 +1,85 @@
-from enum import StrEnum
 from functools import cached_property
-from typing import Final
 
-from pydantic import Field
+from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from sqlalchemy import URL
 
 from config.settings import BASE_SETTINGS_CONFIG
 from paths import BASE_DIR
 
 
-class DbDriver(StrEnum):
-    MYSQL = "mysql"
-    SQLITE = "sqlite"
-    POSTGRESQL = "postgresql"
+class ConnectionConfig(BaseModel):
+    """单个数据库连接配置（对应 Laravel connections 数组中的一项）。"""
 
-ASYNC_DRIVERS: Final[dict[DbDriver, str]] = {
-    DbDriver.MYSQL: "mysql+aiomysql",
-    DbDriver.SQLITE: "sqlite+aiosqlite",
-    DbDriver.POSTGRESQL: "postgresql+asyncpg",
-}
-
-SYNC_DRIVERS: Final[dict[DbDriver, str]] = {
-    DbDriver.MYSQL: "mysql+pymysql",
-    DbDriver.SQLITE: "sqlite",
-    DbDriver.POSTGRESQL: "postgresql+psycopg2",
-}
+    driver: str
+    host: str | None = None
+    port: int | None = None
+    database: str | None = None
+    username: str | None = None
+    password: str | None = None
+    charset: str | None = None
+    prefix: str = ""
 
 
 class DatabaseConfig(BaseSettings):
-    """数据库配置"""
+    """数据库配置（对应 Laravel config/database.php）。"""
 
     model_config = SettingsConfigDict(
         **BASE_SETTINGS_CONFIG,
         env_prefix="DB_",
     )
 
-    # 当前默认连接
-    connection: DbDriver = Field(default=DbDriver.MYSQL, description="默认连接名")
-
-    # mysql
-    mysql_host: str = Field(default="127.0.0.1", description="主机")
-    mysql_port: int = Field(default=3306, description="端口")
-    mysql_database: str = Field(default="fast-api", description="库名")
-    mysql_username: str = Field(default="", description="用户名")
-    mysql_password: str = Field(default="", description="密码")
-    mysql_prefix: str = Field(default="", description="表名前缀")
-    mysql_charset: str = Field(default="utf8mb4", description="字符集")
-
-    # postgresql
-    postgresql_host: str = Field(default="127.0.0.1", description="主机")
-    postgresql_port: int = Field(default=5432, description="端口")
-    postgresql_database: str = Field(default="fast-api", description="库名")
-    postgresql_username: str = Field(default="", description="用户名")
-    postgresql_password: str = Field(default="", description="密码")
-    postgresql_prefix: str = Field(default="", description="表名前缀")
-
-    # sqlite
-    sqlite_file: str = Field(default="database/database.sqlite", description="SQLite 文件名")
-
-    # sqlalchemy
+    connection: str = Field(default="mysql", description="默认连接名")
     echo: bool = Field(default=False, description="是否打印 SQL 语句")
     pool_size: int = Field(default=10, description="连接池大小")
     max_overflow: int = Field(default=20, description="连接池溢出大小")
 
-    def _build_url(self, driver: DbDriver, drivername: str) -> URL:
-        match driver:
-            case DbDriver.SQLITE:
-                return URL.create(
-                    drivername=drivername,
-                    database=f"{BASE_DIR}/{self.sqlite_file}"
-                )
-            case DbDriver.MYSQL:
-                return URL.create(
-                    drivername=drivername,
-                    username=self.mysql_username,
-                    password=self.mysql_password,
-                    host=self.mysql_host,
-                    port=self.mysql_port,
-                    database=self.mysql_database,
-                    query={"charset": self.mysql_charset},
-                )
-            case DbDriver.POSTGRESQL:
-                return URL.create(
-                    drivername=drivername,
-                    username=self.postgresql_username,
-                    password=self.postgresql_password,
-                    host=self.postgresql_host,
-                    port=self.postgresql_port,
-                    database=self.postgresql_database,
-                )
+    mysql_host: str = Field(default="127.0.0.1", description="MySQL 主机")
+    mysql_port: int = Field(default=3306, description="MySQL 端口")
+    mysql_database: str = Field(default="fast-api", description="MySQL 库名")
+    mysql_username: str = Field(default="", description="MySQL 用户名")
+    mysql_password: str = Field(default="", description="MySQL 密码")
+    mysql_prefix: str = Field(default="", description="MySQL 表名前缀")
+    mysql_charset: str = Field(default="utf8mb4", description="MySQL 字符集")
 
-    def _build_connections(
-            self,
-            drivers: dict[DbDriver, str],
-            *,
-            as_string: bool = False,
-    ) -> dict[DbDriver, URL | str]:
-        """ 构建连接集合 """
-        result = {}
-        for driver, drivername in drivers.items():
-            url = self._build_url(driver, drivername)
-            result[driver] = (
-                url.render_as_string(hide_password=False)
-                if as_string
-                else url
-            )
+    pgsql_host: str = Field(default="127.0.0.1", description="PostgreSQL 主机")
+    pgsql_port: int = Field(default=5432, description="PostgreSQL 端口")
+    pgsql_database: str = Field(default="fast-api", description="PostgreSQL 库名")
+    pgsql_username: str = Field(default="", description="PostgreSQL 用户名")
+    pgsql_password: str = Field(default="", description="PostgreSQL 密码")
+    pgsql_prefix: str = Field(default="", description="PostgreSQL 表名前缀")
 
-        return result
+    sqlite_database: str = Field(default="database/database.sqlite", description="SQLite 文件路径")
 
     @cached_property
-    def async_connections(self) -> dict[DbDriver, URL | str]:
-        """异步连接"""
-        return self._build_connections(ASYNC_DRIVERS)
+    def connections(self) -> dict[str, ConnectionConfig]:
+        return {
+            "mysql": ConnectionConfig(
+                driver="mysql",
+                host=self.mysql_host,
+                port=self.mysql_port,
+                database=self.mysql_database,
+                username=self.mysql_username,
+                password=self.mysql_password,
+                charset=self.mysql_charset,
+                prefix=self.mysql_prefix,
+            ),
+            "sqlite": ConnectionConfig(
+                driver="sqlite",
+                database=str(BASE_DIR / self.sqlite_database),
+            ),
+            "pgsql": ConnectionConfig(
+                driver="pgsql",
+                host=self.pgsql_host,
+                port=self.pgsql_port,
+                database=self.pgsql_database,
+                username=self.pgsql_username,
+                password=self.pgsql_password,
+                prefix=self.pgsql_prefix,
+            ),
+        }
 
-    @cached_property
-    def sync_connections(self) -> dict[DbDriver, URL | str]:
-        """同步连接"""
-        return self._build_connections(SYNC_DRIVERS, as_string=True)
+    def configuration(self, name: str) -> ConnectionConfig:
+        try:
+            return self.connections[name]
+        except KeyError:
+            raise ValueError(f"Database connection [{name}] not configured.") from None

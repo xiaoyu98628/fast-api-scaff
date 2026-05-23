@@ -13,7 +13,7 @@ fast-api-scaff/
 ├── config/
 │   ├── settings.py          # BASE_SETTINGS_CONFIG（公共 SettingsConfigDict）
 │   ├── app.py               # AppConfig（env_prefix=APP_）
-│   ├── database.py          # DatabaseConfig（env_prefix=DB_）
+│   ├── database.py          # connections 配置 + configuration(name)
 │   └── config.py            # Config 聚合 + config() 工厂
 ├── app/
 │   ├── main.py              # create_app() / lifespan / uvicorn 入口
@@ -75,7 +75,8 @@ uv run python -m config.database
 
 调用链：`DB` → `DatabaseManager` → `ConnectionFactory` → 驱动 Connector → `Connection`
 
-- Session 通过 `Connection.session()` 用时获取、用完关闭，不使用 FastAPI 依赖注入。
+- `config/database.py` 提供 `connections` 与 `configuration(name)`，不含 URL 组装。
+- URL 由各 Connector 的 `make_url()` 在 database 包内完成。
 - `get_manager().connection(name)` 按名称缓存 Connection 实例。
 - Facade 入口：
 

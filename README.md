@@ -63,7 +63,7 @@ fast-api-scaff/
 | 前缀 | 模块 | 说明 |
 |------|------|------|
 | `APP_` | `config/app.py` | 应用名称、环境、调试、端口 |
-| `DB_` | `config/database.py` | 数据库连接、连接池、各驱动参数 |
+| `DB_` | `config/database.py` | 默认连接名、连接池、各命名连接参数（不含 URL） |
 
 代码中读取配置：
 
@@ -102,21 +102,22 @@ model_config = SettingsConfigDict(**BASE_SETTINGS_CONFIG, env_prefix="APP_")
 
 ## 数据库连接
 
-设计思想参考 Laravel `Illuminate\Database`，命名与代码风格遵循 Python 习惯：
+设计思想参考 Laravel `Illuminate\Database`：配置层只定义 `connections`，URL 在 Connector 中组装。
 
 ```
-DB → DatabaseManager → ConnectionFactory → Connector → Connection
+config/database.py → connections / configuration(name)
+                 → Connector.make_url() → ConnectionFactory → Connection
 ```
+
+连接名与驱动解耦，例如 `mysql`、`pgsql`、`sqlite` 为连接名，同驱动可配置多个连接。
 
 ```python
 from app.infrastructure.database.db import DB
-from app.infrastructure.database.manager import get_manager
 
-async with DB.connection() as session:
+async with DB.connection() as session:        # 默认连接
     ...
 
-conn = get_manager().connection("sqlite")
-async with conn.session() as session:
+async with DB.connection("sqlite") as session:
     ...
 ```
 
