@@ -118,10 +118,3 @@ class DatabaseConfig(BaseSettings):
     def sync_connections(self) -> dict[DbDriver, URL | str]:
         """同步连接"""
         return self._build_connections(SYNC_DRIVERS, as_string=True)
-
-
-if __name__ == '__main__':
-    a = DatabaseConfig()
-
-    print(a.sync_connections)
-    print(a.async_connections)
