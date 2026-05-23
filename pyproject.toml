@@ -12,6 +12,7 @@ dependencies = [
     "uvicorn>=0.47.0",
 
     "sqlalchemy[asyncio]>=2.0.48",
+    "alembic>=1.18.4",
 
     "aiomysql>=0.3.2", # mysql async
     "aiosqlite>=0.22.1", # sqlite async
