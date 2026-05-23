@@ -18,6 +18,15 @@ fast-api-scaff/
 │   ├── application/                 # 应用层：用例、应用服务（待扩展）
 │   ├── interfaces/                  # 接口层：HTTP / CLI 等
 │   │   └── http/
+│   │       ├── routers/             # 路由注册与分包（api/v1/endpoints）
+│   │       ├── middleware/          # 中间件注册
+│   │       ├── schemas/             # 请求/响应 DTO（requests / responses）
+│   │       └── response/            # 统一响应（JsonResponse、码表）
+│   │           ├── json.py
+│   │           └── code/
+│   │               ├── contract.py  # CodeDefinition + CodedEnum
+│   │               ├── success_code.py
+│   │               └── error_code.py
 │   └── infrastructure/              # 基础设施层
 │       ├── database/
 │       │   ├── orm/                 # ORM 基建（Base 等）
@@ -43,7 +52,8 @@ interfaces → application → domain
 - **application/**：编排用例，依赖 domain 接口。
 - **infrastructure/persistence/**：ORM Model、`Base`、Alembic `registry`。
 - **infrastructure/database/**：连接管理，Laravel Database 设计思想。
-- **interfaces/**：路由、请求/响应 DTO。
+- **interfaces/**：路由、中间件、统一响应、请求/响应 DTO；不得包含业务编排逻辑。
+- **interfaces/http/response/**：对外 API 契约（`JsonResponse`、10 位响应码），不属于 infrastructure。
 
 ## 配置模式
 
@@ -54,6 +64,78 @@ configure = config()
 
 - `BASE_SETTINGS_CONFIG` 放在 `config/settings.py`。
 - `config/config.py` 只做聚合。
+- `APP_SERVICE_CODE`（`config/app.py` → `service_code`）：三位数字服务码，参与响应码组装，默认 `001`。
+
+## 统一 API 响应
+
+### 响应体结构（`interfaces/http/response/json.py`）
+
+```python
+from app.interfaces.http.response.json import JsonResponse
+from app.interfaces.http.response.code.success_code import SuccessCode
+from app.interfaces.http.response.code.error_code import ErrorCode
+
+return JsonResponse.success(data={"id": 1})
+return JsonResponse.success(data=user, code=SuccessCode.SUCCESS_CREATED)
+return JsonResponse.error(code=ErrorCode.NOT_FOUND_ERROR)
+```
+
+字段：`code`（10 位字符串）、`success`（alias，`is_success`）、`message`、`data`、`trace_id`。
+
+路由直接 `return JsonResponse.success(...)`；保持路由薄，业务逻辑在 application。
+
+### 10 位响应码格式
+
+```
+[ HTTP 3位 ][ 服务码 3位 ][ 低位 4位 ]
+ 200          001           0000     → "2000010000"
+ 422          001           0101     → "4220010101"
+```
+
+- **低位 4 位**：在 `CodeDefinition.code` 中定义（模块内可重复，靠 HTTP 前缀 + 服务码区分）。
+- **完整 10 位**：由 `CodedEnum.full_code()` 组装，读取 `config().app.service_code`；**不需要单独的 builder 模块**。
+- `code` 字段用 **字符串** 返回，避免前导 `0` 丢失。
+
+### 码表约定（`interfaces/http/response/code/`）
+
+| 文件 | 类 | 用途 |
+|------|-----|------|
+| `contract.py` | `CodeDefinition` |  frozen dataclass：`code`（4 位低位）、`message`、`status_code` |
+| `contract.py` | `CodedEnum` | Enum 基类，value 必须是 `CodeDefinition`；提供 `code` / `message` / `status_code` / `full_code()` |
+| `success_code.py` | `SuccessCode` | 通用成功低位（200/201/204 等） |
+| `error_code.py` | `ErrorCode` | 通用 API 错误低位（400/401/403/404/422/500 等） |
+
+新增码表：继承 `CodedEnum`，成员一行一个 `CodeDefinition`；**不要在每个 Enum 重复写 property**。
+
+```python
+class SuccessCode(CodedEnum):
+    SUCCESS_OK = CodeDefinition(code="0000", message="请求成功", status_code=200)
+```
+
+低位分段建议：`0xxx` 成功/通用；`1xxx` user；`2xxx` order（业务模块错误码按需扩展）。
+
+### 业务错误码放哪
+
+| 层级 | 放什么 | 格式 |
+|------|--------|------|
+| `domain/{ctx}/` | 业务语义异常或 4 位业务码 | 不含 HTTP、不含服务码 |
+| `interfaces/http/response/code/` | 对外 API 码表（Success / Error / 模块 error） | `CodeDefinition` + `CodedEnum` |
+| exception handler（待建） | 领域异常 → `ErrorCode` 或模块 `CodedEnum` | 映射后 `JsonResponse.error(...)` |
+
+领域层**不**继承 `CodedEnum`；若 domain 仅有 4 位码，在 handler/mapping 层决定 `status_code` 后调用与 `full_code()` 相同公式组装。
+
+## HTTP 路由分包
+
+```
+interfaces/http/routers/
+├── register.py          # app.include_router 入口
+├── router.py            # /api
+└── v1/
+    ├── router.py        # /api/v1
+    └── endpoints/       # 各资源路由（如 user.py）
+```
+
+新 endpoint：在 `v1/endpoints/` 建模块，`v1/router.py` 挂载；返回 `JsonResponse`。
 
 ## 数据库连接
 
@@ -78,6 +160,9 @@ async with DB.connection() as session:
 - [x] Alembic + sync_url
 - [x] DDD 目录骨架
 - [x] 持久化 Base + User ORM
+- [x] 统一响应（`JsonResponse` + `CodeDefinition` / `CodedEnum` + `SuccessCode` / `ErrorCode`）
+- [x] HTTP 路由分包骨架（`/api/v1/...`）
 - [ ] domain 实体 / 仓储接口
 - [ ] application 用例
-- [ ] interfaces/http 路由分包
+- [ ] 全局异常 handler（领域异常 → `JsonResponse.error`）
+- [ ] 中间件（trace_id、CORS 等）

@@ -2,7 +2,7 @@
 
 基于 FastAPI 的 **DDD** 后端脚手架：配置管理、数据库基础设施、领域分层、Alembic 迁移。
 
-> **当前状态：早期脚手架（v0.1.0）** — 配置层与应用入口已就绪，数据库运行时、API 分包、中间件等待完善。
+> **当前状态：早期脚手架（v0.1.0）** — 配置、数据库连接、统一 API 响应与路由分包骨架已就绪；领域用例、全局异常处理、中间件等待完善。
 
 ## 技术栈
 
@@ -46,7 +46,11 @@ fast-api-scaff/
 │   ├── main.py                      # 应用入口
 │   ├── domain/                      # 领域层：枚举、实体、仓储接口
 │   ├── application/                 # 应用层：用例（待扩展）
-│   ├── interfaces/http/             # 接口层：路由（待扩展）
+│   ├── interfaces/http/             # 接口层
+│   │   ├── routers/                 # /api/v1/... 路由分包
+│   │   ├── middleware/              # 中间件注册
+│   │   ├── schemas/                 # 请求/响应 DTO
+│   │   └── response/                # JsonResponse + 响应码表
 │   └── infrastructure/
 │       ├── database/                # 连接管理
 │       └── persistence/             # ORM Base / Model / registry
@@ -61,7 +65,7 @@ fast-api-scaff/
 
 | 前缀 | 模块 | 说明 |
 |------|------|------|
-| `APP_` | `config/app.py` | 应用名称、环境、调试、端口 |
+| `APP_` | `config/app.py` | 应用名称、环境、调试、端口、**服务码**（`APP_SERVICE_CODE`，三位数字） |
 | `DB_` | `config/database.py` | 默认连接名、连接池、各命名连接参数（不含 URL） |
 
 代码中读取配置：
@@ -164,16 +168,81 @@ class User(Base):
 
 在 `persistence/registry.py` 导入后，Alembic `--autogenerate` 可检测变更。
 
+## 统一 API 响应
+
+对外 JSON 结构由 `app/interfaces/http/response/json.py` 中的 `JsonResponse` 定义：
+
+| 字段 | 说明 |
+|------|------|
+| `code` | 10 位字符串响应码（见下文） |
+| `success` | 是否成功（模型字段 `is_success`） |
+| `message` | 提示文案 |
+| `data` | 业务数据，可为 `null` |
+| `trace_id` | 链路 ID（待中间件接入） |
+
+### 10 位响应码
+
+格式：`[HTTP 3位][服务码 3位][低位 4位]`
+
+```
+200 + 001 + 0000  →  "2000010000"   # 请求成功
+404 + 001 + 0102  →  "4040010102"   # 数据不存在
+```
+
+- **低位 4 位**在码表中定义（`CodeDefinition.code`），同一 HTTP 段内可按模块分段（如 `1xxx` 用户、`2xxx` 订单）。
+- **服务码**来自环境变量 `APP_SERVICE_CODE`（默认 `001`），多服务部署时每服务唯一。
+- 完整码由 `CodedEnum.full_code()` 自动组装，无需单独 builder。
+
+### 码表与基类
+
+位于 `app/interfaces/http/response/code/`：
+
+| 文件 | 说明 |
+|------|------|
+| `contract.py` | `CodeDefinition`（低位 + 文案 + HTTP 状态）、`CodedEnum` 基类 |
+| `success_code.py` | `SuccessCode` — 通用成功码 |
+| `error_code.py` | `ErrorCode` — 通用 API 错误码 |
+
+新增码表：继承 `CodedEnum`，每个成员一行 `CodeDefinition`，不要在子类重复写 `code` / `message` / `status_code` property。
+
+```python
+from app.interfaces.http.response.json import JsonResponse
+from app.interfaces.http.response.code.success_code import SuccessCode
+from app.interfaces.http.response.code.error_code import ErrorCode
+
+# 路由中直接返回
+return JsonResponse.success(data={"id": 1})
+return JsonResponse.success(data=user, code=SuccessCode.SUCCESS_CREATED)
+return JsonResponse.error(code=ErrorCode.NOT_FOUND_ERROR, message="用户不存在")  # message 可覆盖默认文案
+```
+
+### 业务错误放哪
+
+- **领域语义**（如「用户不存在」）：`domain/` 或 `application/` — 异常或 4 位业务码，不含 HTTP / 服务码。
+- **对外 API 码表**：`interfaces/http/response/code/` — `SuccessCode`、`ErrorCode` 及按模块扩展的 `CodedEnum`。
+- **映射**：全局 exception handler（待建）将领域异常转为 `ErrorCode` 或模块码表，再 `JsonResponse.error(...)`。
+
+## HTTP 路由
+
+```
+/api/v1/users/...   ← routers/v1/endpoints/user.py
+```
+
+注册链：`main.py` → `routers/register.py` → `router.py`（`/api`）→ `v1/router.py`（`/v1`）→ `endpoints/`。
+
+新接口：在 `routers/v1/endpoints/` 增加模块并在 `v1/router.py` 挂载；路由保持薄，只转发到 application 并返回 `JsonResponse`。
+
 ## 待办（Roadmap）
 
 - [x] 数据库连接层（DatabaseManager / Connectors / DB Facade）
 - [x] `lifespan` disconnect
 - [x] DDD 目录骨架 + 持久化 User ORM
+- [x] 统一 API 响应（`JsonResponse` + `CodedEnum` + `SuccessCode` / `ErrorCode`）
+- [x] HTTP 路由分包骨架（`/api/v1`）
 - [ ] domain 实体 / 仓储接口
 - [ ] application 用例
-- [ ] interfaces/http 路由分包
-- [ ] 统一响应格式与异常处理
-- [ ] 中间件（日志、CORS 等）
+- [ ] 全局异常 handler（领域异常 → `JsonResponse.error`）
+- [ ] 中间件（trace_id、CORS 等）
 - [ ] 测试与 CI
 
 ## 开发工具
