@@ -17,7 +17,17 @@ fast-api-scaff/
 │   └── config.py            # Config 聚合 + config() 工厂
 ├── app/
 │   ├── main.py              # create_app() / lifespan / uvicorn 入口
-│   └── infrastructure/      # 基础设施（数据库等，待完善）
+│   └── infrastructure/
+│       └── database/                    # 对齐 Laravel Illuminate\Database（当前仅连接层）
+│           ├── database_manager.py      # DatabaseManager
+│           ├── connection.py            # Connection
+│           ├── db.py                    # DB Facade
+│           └── connectors/
+│               ├── connector.py         # Connector 基类
+│               ├── connection_factory.py
+│               ├── mysql_connector.py
+│               ├── sqlite_connector.py
+│               └── postgresql_connector.py
 └── storage/logs/            # 日志目录
 ```
 
@@ -48,7 +58,7 @@ configure = config()
 ## 应用入口
 
 - `create_app() -> FastAPI` 集中创建应用；模块级 `app = create_app()` 供 ASGI 引用。
-- 生命周期逻辑放 `lifespan`（当前为空，数据库 connect/disconnect 待接入）。
+- 生命周期逻辑放 `lifespan`（关闭时 disconnect 数据库连接）。
 - 启动：`uv run python -m app.main` 或 `uvicorn app.main:app --reload`。
 
 ## 运行子模块
@@ -59,10 +69,33 @@ configure = config()
 uv run python -m config.database
 ```
 
+## 数据库连接（对齐 Laravel Illuminate\Database）
+
+调用链：`DB` → `DatabaseManager` → `ConnectionFactory` → `*Connector` → `Connection`
+
+- 不使用 FastAPI 依赖注入；Session 通过 `Connection.session()` 用时获取、用完关闭。
+- `DatabaseManager.connection(name)` 按名称缓存 `Connection`（类似 `DB::connection('mysql')`）。
+- Facade 入口：
+
+```python
+from app.infrastructure.database.db import DB
+
+async with DB.connection() as session:
+    ...
+    await session.commit()
+
+async with DB.connection("sqlite") as session:
+    ...
+```
+
+- `lifespan` 关闭时 `get_database_manager().disconnect()`。
+- Query Builder / Model / Migration 后续再补。
+
 ## 当前进度（未完成）
 
-- [ ] `app/infrastructure/database/` 运行时层（engine / session / 依赖注入）
-- [ ] `lifespan` 接入数据库生命周期
+- [x] `app/infrastructure/database/` 连接层
+- [x] `lifespan` disconnect
+- [ ] ORM Model 基类
 - [ ] API 路由分包（`app/api/`）
 - [ ] 统一响应格式、中间件、异常处理
 - [ ] 测试目录与 CI

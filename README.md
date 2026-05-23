@@ -49,7 +49,8 @@ fast-api-scaff/
 │   └── config.py            # 配置聚合 + config() 工厂
 ├── app/
 │   ├── main.py              # FastAPI 入口
-│   └── infrastructure/      # 基础设施（待完善）
+│   └── infrastructure/
+│       └── database/        # DatabaseManager / Connection / Connectors / DB Facade
 ├── storage/logs/            # 日志
 ├── .env.sample              # 环境变量模板
 └── pyproject.toml
@@ -99,10 +100,27 @@ model_config = SettingsConfigDict(**BASE_SETTINGS_CONFIG, env_prefix="APP_")
 - 配置公共项放 `config/settings.py`，聚合放 `config/config.py`
 - 包内模块用 `python -m` 运行，避免 `python config/xxx.py` 导致包名冲突
 
+## 数据库连接
+
+结构对齐 Laravel `Illuminate\Database`，当前仅实现连接获取：
+
+```
+DB → DatabaseManager → ConnectionFactory → *Connector → Connection
+```
+
+```python
+from app.infrastructure.database.db import DB
+
+async with DB.connection() as session:
+    result = await session.execute(...)
+    await session.commit()
+```
+
 ## 待办（Roadmap）
 
-- [ ] 数据库运行时层（`app/infrastructure/database/`）
-- [ ] `lifespan` 接入数据库连接生命周期
+- [x] 数据库连接层（DatabaseManager / Connectors / DB Facade）
+- [x] `lifespan` disconnect
+- [ ] ORM Model 基类
 - [ ] API 路由分包（`app/api/`）
 - [ ] 统一响应格式与异常处理
 - [ ] 中间件（日志、CORS 等）
