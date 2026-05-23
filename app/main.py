@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.infrastructure.database.manager import get_manager
-from app.interfaces.http.api.register import register_route
+from app.interfaces.http.routers.register import register_route
 from app.interfaces.http.middleware.register import register_middleware
 from config.config import config
 
