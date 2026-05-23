@@ -24,7 +24,7 @@ class QueryParamDecodeMiddleware(BaseHTTPMiddleware):
         query_params = dict(request.query_params)
 
         # =========================
-        # 1️⃣ 处理 f 参数（加密数据）
+        # 1 处理 f 参数（加密数据）
         # =========================
         encoded_value = query_params.get(self.param_name, None)
 
@@ -32,7 +32,7 @@ class QueryParamDecodeMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         # =========================
-        # 2️⃣ 解密（安全保护）
+        # 2 解密（安全保护）
         # =========================
         try:
             decoded_data = DataCodec.decode(encoded_value)
@@ -41,13 +41,13 @@ class QueryParamDecodeMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         # =========================
-        # 3️⃣ 校验数据类型
+        # 3 校验数据类型
         # =========================
         if not isinstance(decoded_data, dict):
             return await call_next(request)
 
         # =========================
-        # 4️⃣  重写 request（核心）
+        # 4 重写 request（核心）
         # =========================
         _rewrite_query_params(request, decoded_data)
 
