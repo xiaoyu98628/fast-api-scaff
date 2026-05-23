@@ -1,7 +1,13 @@
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
 from config.config import config
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    yield
 
 
 def create_app() -> FastAPI:
@@ -11,6 +17,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title=configure.app.name,
         debug=configure.app.debug,
+        lifespan=lifespan,
     )
 
     @app.get(path="/health", summary="健康检测")

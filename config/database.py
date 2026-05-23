@@ -1,13 +1,12 @@
 from enum import StrEnum
 from functools import cached_property
-from pathlib import Path
 from typing import Final
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import URL
 
-from paths import DATABASE_DIR, ENV_FILE
+from paths import BASE_DIR, ENV_FILE
 
 
 class DbDriver(StrEnum):
@@ -39,55 +38,58 @@ class DatabaseConfig(BaseSettings):
     )
 
     # 当前默认连接
-    connection: DbDriver = Field(default=DbDriver.MYSQL, alias="CONNECTION", description="默认连接名")
+    connection: DbDriver = Field(default=DbDriver.MYSQL, description="默认连接名")
 
-    # 通用配置
-    host: str = Field(default="127.0.0.1", description="主机")
-    port: int | None = Field(default=None, description="端口；未设置时按驱动使用默认值")
+    # mysql
+    mysql_host: str = Field(default="127.0.0.1", description="主机")
+    mysql_port: int = Field(default=3306, description="端口")
+    mysql_database: str = Field(default="fast-api", description="库名")
+    mysql_username: str = Field(default="", description="用户名")
+    mysql_password: str = Field(default="", description="密码")
+    mysql_prefix: str = Field(default="", description="表名前缀")
+    mysql_charset: str = Field(default="utf8mb4", description="字符集")
 
-    database: str = Field(default="fast-api", description="库名")
-    username: str = Field(default="", description="用户名")
-    password: str = Field(default="", description="密码")
+    # postgresql
+    postgresql_host: str = Field(default="127.0.0.1", description="主机")
+    postgresql_port: int = Field(default=5432, description="端口")
+    postgresql_database: str = Field(default="fast-api", description="库名")
+    postgresql_username: str = Field(default="", description="用户名")
+    postgresql_password: str = Field(default="", description="密码")
+    postgresql_prefix: str = Field(default="", description="表名前缀")
 
-    # 表前缀
-    prefix: str = Field(default="", description="表名前缀")
-
-    # mysql 专用
-    charset: str = Field(default="utf8mb4", description="字符集")
-
-    # sqlite 专用
-    sqlite_path: Path = Field(default_factory=lambda: DATABASE_DIR / "database.db", description="SQLite 文件路径")
+    # sqlite
+    sqlite_file: str = Field(default="database/database.sqlite", description="SQLite 文件名")
 
     # sqlalchemy
-    echo: bool = False
-    pool_size: int = 10
-    max_overflow: int = 20
+    echo: bool = Field(default=False, description="是否打印 SQL 语句")
+    pool_size: int = Field(default=10, description="连接池大小")
+    max_overflow: int = Field(default=20, description="连接池溢出大小")
 
     def _build_url(self, driver: DbDriver, drivername: str) -> URL:
         match driver:
             case DbDriver.SQLITE:
                 return URL.create(
                     drivername=drivername,
-                    database=str(self.sqlite_path)
+                    database=f"{BASE_DIR}/{self.sqlite_file}"
                 )
             case DbDriver.MYSQL:
                 return URL.create(
                     drivername=drivername,
-                    username=self.username,
-                    password=self.password,
-                    host=self.host,
-                    port=self.port or 3306,
-                    database=self.database,
-                    query={"charset": self.charset},
+                    username=self.mysql_username,
+                    password=self.mysql_password,
+                    host=self.mysql_host,
+                    port=self.mysql_port,
+                    database=self.mysql_database,
+                    query={"charset": self.mysql_charset},
                 )
             case DbDriver.POSTGRESQL:
                 return URL.create(
                     drivername=drivername,
-                    username=self.username,
-                    password=self.password,
-                    host=self.host,
-                    port=self.port or 5432,
-                    database=self.database,
+                    username=self.postgresql_username,
+                    password=self.postgresql_password,
+                    host=self.postgresql_host,
+                    port=self.postgresql_port,
+                    database=self.postgresql_database,
                 )
 
     def _build_connections(
@@ -116,4 +118,11 @@ class DatabaseConfig(BaseSettings):
     @cached_property
     def sync_connections(self) -> dict[DbDriver, URL | str]:
         """同步连接"""
-        return self._build_connections( SYNC_DRIVERS, as_string=True, )
+        return self._build_connections(SYNC_DRIVERS, as_string=True)
+
+
+if __name__ == '__main__':
+    a = DatabaseConfig()
+
+    print(a.sync_connections)
+    print(a.async_connections)
