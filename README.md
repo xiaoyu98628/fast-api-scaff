@@ -121,17 +121,17 @@ async with DB.connection("sqlite") as session:
     ...
 ```
 
-### 迁移（同步连接）
+### 迁移（Alembic）
 
-```python
-from app.infrastructure.database.sync import sync_engine, sync_url
+在项目根目录执行：
 
-# Alembic env.py 常用
-alembic_cfg.set_main_option("sqlalchemy.url", sync_url())
-
-# 或直接使用同步 Engine
-engine = sync_engine()
+```bash
+uv run alembic -c database/alembic.ini current
+uv run alembic -c database/alembic.ini revision --autogenerate -m "add_xxx_table"
+uv run alembic -c database/alembic.ini upgrade head
 ```
+
+`database/migrations/env.py` 通过 `sync_url()` 读取连接，与 `config/database.py` 保持一致。Model 基类就绪后，在 `env.py` 中设置 `target_metadata` 方可使用 `--autogenerate`。
 
 ## 待办（Roadmap）
 
