@@ -1,0 +1,70 @@
+---
+description: fast-api-scaff 脚手架约定与当前进度
+alwaysApply: true
+---
+
+# 脚手架约定
+
+## 目录结构
+
+```
+fast-api-scaff/
+├── paths.py                 # BASE_DIR / ENV_FILE / DATABASE_DIR
+├── config/
+│   ├── settings.py          # BASE_SETTINGS_CONFIG（公共 SettingsConfigDict）
+│   ├── app.py               # AppConfig（env_prefix=APP_）
+│   ├── database.py          # DatabaseConfig（env_prefix=DB_）
+│   └── config.py            # Config 聚合 + config() 工厂
+├── app/
+│   ├── main.py              # create_app() / lifespan / uvicorn 入口
+│   └── infrastructure/      # 基础设施（数据库等，待完善）
+└── storage/logs/            # 日志目录
+```
+
+## 分层职责
+
+- **config/**：环境变量与配置模型，不含 HTTP / 业务逻辑。
+- **app/**：应用入口、生命周期、路由（当前仅 `/health` 内联在 `create_app()`）。
+- **app/infrastructure/**：可复用基础设施，不依赖 HTTP 层。
+- **paths.py**：路径常量唯一来源，配置模块引用 `ENV_FILE`，不自行拼路径。
+
+## 配置模式
+
+```python
+# config/settings.py — 公共部分，不含 env_prefix
+BASE_SETTINGS_CONFIG = SettingsConfigDict(...)
+
+# config/app.py / database.py — 展开并补充前缀
+model_config = SettingsConfigDict(**BASE_SETTINGS_CONFIG, env_prefix="APP_")
+
+# 读取配置
+from config.config import config
+configure = config()
+```
+
+- `BASE_SETTINGS_CONFIG` **必须**放在 `config/settings.py`，不可放在 `config/config.py`（会循环导入）。
+- `config/config.py` 只做聚合，通过 `config()` 获取实例。
+
+## 应用入口
+
+- `create_app() -> FastAPI` 集中创建应用；模块级 `app = create_app()` 供 ASGI 引用。
+- 生命周期逻辑放 `lifespan`（当前为空，数据库 connect/disconnect 待接入）。
+- 启动：`uv run python -m app.main` 或 `uvicorn app.main:app --reload`。
+
+## 运行子模块
+
+包内模块禁止 `python config/database.py` 直接运行（包名冲突）。调试配置用：
+
+```bash
+uv run python -m config.database
+```
+
+## 当前进度（未完成）
+
+- [ ] `app/infrastructure/database/` 运行时层（engine / session / 依赖注入）
+- [ ] `lifespan` 接入数据库生命周期
+- [ ] API 路由分包（`app/api/`）
+- [ ] 统一响应格式、中间件、异常处理
+- [ ] 测试目录与 CI
+
+扩展脚手架时遵循现有分层，不破坏 `config/settings.py` 与显式导入约定。
