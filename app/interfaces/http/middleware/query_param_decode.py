@@ -6,7 +6,7 @@ from urllib.parse import urlencode
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
-from app.shared.utils.codec import DataCodec
+from app.interfaces.http.support.codec.data_codec import DataCodec
 
 
 def _rewrite_query_params(request: Request, params: dict[str, Any]) -> None:

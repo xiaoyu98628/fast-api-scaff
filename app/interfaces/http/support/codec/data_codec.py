@@ -67,34 +67,3 @@ class DataCodec:
             return json.loads(url_decoded)
         except Exception:
             return {}
-
-class SensitiveDataCodec:
-    """
-    加解密工具
-    """
-
-    @staticmethod
-    def encrypt(plaintext: str):
-        """
-        加密
-        """
-        pass
-
-    @staticmethod
-    def decrypt(encoded: str) -> str:
-        """
-        解密
-        """
-        pass
-
-# 测试
-if __name__ == "__main__":
-    encoded_str = DataCodec.encode({
-        "name": "张三",
-        "age": 18,
-        "sex": '男',
-    })
-    print("编码:", encoded_str)
-
-    decoded_dic = DataCodec.decode(encoded_str)
-    print("解码:", decoded_dic)
