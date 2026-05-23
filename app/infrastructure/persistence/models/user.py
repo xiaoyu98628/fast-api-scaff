@@ -3,8 +3,8 @@ from datetime import datetime
 from sqlalchemy import CHAR, DateTime, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.models.base import Base
-from app.models.user_status import UserStatus
+from app.domain.user.enums import UserStatus
+from app.infrastructure.database.orm.base import Base
 
 
 class User(Base):
@@ -18,7 +18,7 @@ class User(Base):
         String(16),
         default=UserStatus.ACTIVATION.value,
         server_default=UserStatus.ACTIVATION.value,
-        comment="状态[activation:激活,locking:锁定]",
+        comment="状态[activation:激活,locking:locking]",
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime,

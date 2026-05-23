@@ -3,103 +3,81 @@ description: fast-api-scaff 脚手架约定与当前进度
 alwaysApply: true
 ---
 
-# 脚手架约定
+# 脚手架约定（DDD）
 
 ## 目录结构
 
 ```
 fast-api-scaff/
-├── paths.py                 # BASE_DIR / ENV_FILE / DATABASE_DIR
-├── config/
-│   ├── settings.py          # BASE_SETTINGS_CONFIG（公共 SettingsConfigDict）
-│   ├── app.py               # AppConfig（env_prefix=APP_）
-│   ├── database.py          # connections 配置 + configuration(name)
-│   └── config.py            # Config 聚合 + config() 工厂
+├── config/                          # 配置（跨层共享）
 ├── app/
-│   ├── main.py              # create_app() / lifespan / uvicorn 入口
-│   └── infrastructure/
-│       └── database/              # 设计思想参考 Laravel Database，Python 命名
-│           ├── manager.py         # DatabaseManager + get_manager()
-│           ├── connection.py      # Connection
-│           ├── db.py              # DB Facade（异步）
-│           └── sync.py            # sync_url / sync_engine（迁移）
-│           └── connectors/
-│               ├── connector.py   # BaseConnector
-│               ├── factory.py     # ConnectionFactory
-│               ├── mysql.py
-│               ├── sqlite.py
-│               └── postgresql.py
-└── storage/logs/            # 日志目录
+│   ├── main.py                      # 应用入口 / lifespan
+│   ├── domain/                      # 领域层：实体、值对象、枚举、仓储接口
+│   │   └── user/
+│   │       └── enums.py
+│   ├── application/                 # 应用层：用例、应用服务（待扩展）
+│   ├── interfaces/                  # 接口层：HTTP / CLI 等
+│   │   └── http/
+│   └── infrastructure/              # 基础设施层
+│       ├── database/
+│       │   ├── orm/                 # ORM 基建（Base 等）
+│       │   │   └── base.py
+│       │   ├── connectors/
+│       │   └── ...
+│       └── persistence/             # Model / registry
+│           └── models/
+│               └── user.py
+└── database/                        # Alembic 迁移
 ```
 
-## 分层职责
+## 分层依赖（单向）
 
-- **config/**：环境变量与配置模型，不含 HTTP / 业务逻辑。
-- **app/**：应用入口、生命周期、路由（当前仅 `/health` 内联在 `create_app()`）。
-- **app/infrastructure/**：可复用基础设施，不依赖 HTTP 层。
-- **paths.py**：路径常量唯一来源，配置模块引用 `ENV_FILE`，不自行拼路径。
+```
+interfaces → application → domain
+                ↓              ↑
+         infrastructure ──────┘
+              （实现 domain 仓储接口；ORM 不得反向依赖 application/interfaces）
+```
+
+- **domain/**：纯业务概念，不依赖 SQLAlchemy / FastAPI。
+- **application/**：编排用例，依赖 domain 接口。
+- **infrastructure/persistence/**：ORM Model、`Base`、Alembic `registry`。
+- **infrastructure/database/**：连接管理，Laravel Database 设计思想。
+- **interfaces/**：路由、请求/响应 DTO。
 
 ## 配置模式
 
 ```python
-# config/settings.py — 公共部分，不含 env_prefix
-BASE_SETTINGS_CONFIG = SettingsConfigDict(...)
-
-# config/app.py / database.py — 展开并补充前缀
-model_config = SettingsConfigDict(**BASE_SETTINGS_CONFIG, env_prefix="APP_")
-
-# 读取配置
 from config.config import config
 configure = config()
 ```
 
-- `BASE_SETTINGS_CONFIG` **必须**放在 `config/settings.py`，不可放在 `config/config.py`（会循环导入）。
-- `config/config.py` 只做聚合，通过 `config()` 获取实例。
-
-## 应用入口
-
-- `create_app() -> FastAPI` 集中创建应用；模块级 `app = create_app()` 供 ASGI 引用。
-- 生命周期逻辑放 `lifespan`（关闭时 disconnect 数据库连接）。
-- 启动：`uv run python -m app.main` 或 `uvicorn app.main:app --reload`。
-
-## 运行子模块
-
-包内模块禁止 `python config/database.py` 直接运行（包名冲突）。调试配置用：
-
-```bash
-uv run python -m config.database
-```
+- `BASE_SETTINGS_CONFIG` 放在 `config/settings.py`。
+- `config/config.py` 只做聚合。
 
 ## 数据库连接
-
-设计思想参考 Laravel `Illuminate\Database`（Manager → Factory → Connector → Connection），文件与 API 使用 Python 风格命名。
-
-调用链：`DB` → `DatabaseManager` → `ConnectionFactory` → 驱动 Connector → `Connection`
-
-- `config/database.py` 提供 `connections` 与 `configuration(name)`，不含 URL 组装。
-- 异步 URL / Engine：各 Connector 的 `make_async_url()` / `connect()`。
-- 同步 URL / Engine（迁移）：`make_sync_url()` / `connect_sync()`，入口见 `database/sync.py`。
-- `get_manager().connection(name)` 按名称缓存 Connection 实例。
-- Facade 入口：
 
 ```python
 from app.infrastructure.database.db import DB
 
 async with DB.connection() as session:
     ...
-    await session.commit()
 ```
 
-- `lifespan` 关闭时 `get_manager().disconnect()`。
-- Query Builder / Model / Migration 后续再补。
+迁移：`app/infrastructure/database/sync.py` → `database/migrations/env.py`
 
-## 当前进度（未完成）
+## ORM Model（持久化模型）
 
-- [x] `app/infrastructure/database/` 连接层
-- [x] `lifespan` disconnect
-- [x] ORM Model 基类（`app/models/base.py`：连接名 + 表前缀）
-- [ ] API 路由分包（`app/api/`）
-- [ ] 统一响应格式、中间件、异常处理
-- [ ] 测试目录与 CI
+- 放在 `infrastructure/persistence/models/`，继承 `infrastructure/database/orm/base.py` 的 `Base`。
+- 领域枚举从 `domain/` 引用，例如 `from app.domain.user.enums import UserStatus`。
+- 新建 Model 后在 `persistence/registry.py` 导入。
 
-扩展脚手架时遵循现有分层，不破坏 `config/settings.py` 与显式导入约定。
+## 当前进度
+
+- [x] 数据库连接层
+- [x] Alembic + sync_url
+- [x] DDD 目录骨架
+- [x] 持久化 Base + User ORM
+- [ ] domain 实体 / 仓储接口
+- [ ] application 用例
+- [ ] interfaces/http 路由分包

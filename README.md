@@ -1,6 +1,6 @@
 # fast-api-scaff
 
-基于 FastAPI 的后端脚手架，目标提供配置管理、应用生命周期、数据库基础设施、统一响应等常用能力。
+基于 FastAPI 的 **DDD** 后端脚手架：配置管理、数据库基础设施、领域分层、Alembic 迁移。
 
 > **当前状态：早期脚手架（v0.1.0）** — 配置层与应用入口已就绪，数据库运行时、API 分包、中间件等待完善。
 
@@ -37,25 +37,23 @@ uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
 访问 [http://127.0.0.1:8000/health](http://127.0.0.1:8000/health) 验证服务。
 
-## 目录结构
+## 目录结构（DDD）
 
 ```
 fast-api-scaff/
-├── paths.py                 # 项目路径常量
-├── config/                  # 配置层
-│   ├── settings.py          # BASE_SETTINGS_CONFIG（各域公共 SettingsConfigDict）
-│   ├── app.py               # 应用配置（APP_ 前缀）
-│   ├── database.py          # 数据库配置（DB_ 前缀）
-│   └── config.py            # 配置聚合 + config() 工厂
+├── config/                          # 配置
 ├── app/
-│   ├── main.py              # FastAPI 入口
-│   ├── models/              # ORM Model（base / registry）
+│   ├── main.py                      # 应用入口
+│   ├── domain/                      # 领域层：枚举、实体、仓储接口
+│   ├── application/                 # 应用层：用例（待扩展）
+│   ├── interfaces/http/             # 接口层：路由（待扩展）
 │   └── infrastructure/
-│       └── database/        # manager / connection / connectors / db
-├── storage/logs/            # 日志
-├── .env.sample              # 环境变量模板
-└── pyproject.toml
+│       ├── database/                # 连接管理
+│       └── persistence/             # ORM Base / Model / registry
+└── database/                        # Alembic 迁移
 ```
+
+依赖方向：`interfaces → application → domain`；`infrastructure` 实现 domain 接口，ORM 位于 `persistence/models/`。
 
 ## 配置说明
 
@@ -134,30 +132,29 @@ uv run alembic -c database/alembic.ini upgrade head
 
 `database/migrations/env.py` 通过 `sync_url()` 读取连接，与 `config/database.py` 保持一致。Model 基类就绪后，在 `registry.py` 导入 Model 即可使用 `--autogenerate`。
 
-### ORM Model
+### 持久化 Model
+
+ORM 属于基础设施，放在 `infrastructure/persistence/models/`：
 
 ```python
-from sqlalchemy import String
-from sqlalchemy.orm import Mapped, mapped_column
-
-from app.models.base import Base
+from app.domain.user.enums import UserStatus
+from app.infrastructure.database.orm.base import Base
 
 class User(Base):
-    __table_name__ = "users"       # 逻辑表名
-    __connection__ = "mysql"       # 可选，默认 DB_CONNECTION
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(255))
+    __table_name__ = "users"
+    ...
 ```
 
-`__tablename__` 自动拼接为 `{connection.prefix}{__table_name__}`。查询仍用 `DB.connection(User.connection_name())`。
+在 `persistence/registry.py` 导入后，Alembic `--autogenerate` 可检测变更。
 
 ## 待办（Roadmap）
 
 - [x] 数据库连接层（DatabaseManager / Connectors / DB Facade）
 - [x] `lifespan` disconnect
-- [x] ORM Model 基类（`app/models/base.py`）
-- [ ] API 路由分包（`app/api/`）
+- [x] DDD 目录骨架 + 持久化 User ORM
+- [ ] domain 实体 / 仓储接口
+- [ ] application 用例
+- [ ] interfaces/http 路由分包
 - [ ] 统一响应格式与异常处理
 - [ ] 中间件（日志、CORS 等）
 - [ ] 测试与 CI
