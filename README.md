@@ -125,9 +125,26 @@ async with DB.connection("sqlite") as session:
 在项目根目录执行：
 
 ```bash
-uv run alembic -c database/alembic.ini current
-uv run alembic -c database/alembic.ini revision --autogenerate -m "add_xxx_table"
-uv run alembic -c database/alembic.ini upgrade head
+# 创建迁移
+alembic -c database/alembic.ini revision --autogenerate -m "add_xxx_table"
+
+# 应用到最新
+alembic -c database/alembic.ini upgrade head
+
+# 当前版本
+alembic -c database/alembic.ini current
+
+# 历史
+alembic -c database/alembic.ini history
+
+# 回滚一步
+alembic -c database/alembic.ini downgrade -1
+
+# 回滚到指定 revision
+alembic -c database/alembic.ini downgrade <revision_id>
+
+# 回滚到最初
+alembic -c database/alembic.ini downgrade base
 ```
 
 `database/migrations/env.py` 通过 `sync_url()` 读取连接，与 `config/database.py` 保持一致。Model 基类就绪后，在 `registry.py` 导入 Model 即可使用 `--autogenerate`。
