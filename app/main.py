@@ -2,14 +2,14 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.infrastructure.database.database_manager import get_database_manager
+from app.infrastructure.database.manager import get_manager
 from config.config import config
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     yield
-    await get_database_manager().disconnect()
+    await get_manager().disconnect()
 
 
 def create_app() -> FastAPI:

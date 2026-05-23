@@ -50,7 +50,7 @@ fast-api-scaff/
 ├── app/
 │   ├── main.py              # FastAPI 入口
 │   └── infrastructure/
-│       └── database/        # DatabaseManager / Connection / Connectors / DB Facade
+│       └── database/        # manager / connection / connectors / db
 ├── storage/logs/            # 日志
 ├── .env.sample              # 环境变量模板
 └── pyproject.toml
@@ -102,18 +102,22 @@ model_config = SettingsConfigDict(**BASE_SETTINGS_CONFIG, env_prefix="APP_")
 
 ## 数据库连接
 
-结构对齐 Laravel `Illuminate\Database`，当前仅实现连接获取：
+设计思想参考 Laravel `Illuminate\Database`，命名与代码风格遵循 Python 习惯：
 
 ```
-DB → DatabaseManager → ConnectionFactory → *Connector → Connection
+DB → DatabaseManager → ConnectionFactory → Connector → Connection
 ```
 
 ```python
 from app.infrastructure.database.db import DB
+from app.infrastructure.database.manager import get_manager
 
 async with DB.connection() as session:
-    result = await session.execute(...)
-    await session.commit()
+    ...
+
+conn = get_manager().connection("sqlite")
+async with conn.session() as session:
+    ...
 ```
 
 ## 待办（Roadmap）

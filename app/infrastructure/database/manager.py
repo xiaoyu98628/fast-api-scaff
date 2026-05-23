@@ -1,30 +1,31 @@
 from app.infrastructure.database.connection import Connection
-from app.infrastructure.database.connectors.connection_factory import ConnectionFactory
+from app.infrastructure.database.connectors.factory import ConnectionFactory
 from config.config import config
 from config.database import DatabaseConfig, DbDriver
 
 
+def resolve_connection_name(name: DbDriver | str | None, *, default: str) -> str:
+    if name is None:
+        return default
+    return name.value if isinstance(name, DbDriver) else name
+
+
 class DatabaseManager:
-    """数据库管理器（对应 Laravel Database\\DatabaseManager）。"""
+    """数据库管理器：按连接名解析、缓存并返回 Connection。"""
 
     def __init__(self, database_config: DatabaseConfig) -> None:
         self._config = database_config
         self._factory = ConnectionFactory()
         self._connections: dict[str, Connection] = {}
 
-    def get_default_connection(self) -> str:
+    @property
+    def default_connection(self) -> str:
         return self._config.connection.value
 
-    def _resolve_name(self, name: DbDriver | str | None) -> str:
-        if name is None:
-            return self.get_default_connection()
-        return name.value if isinstance(name, DbDriver) else name
-
     def connection(self, name: DbDriver | str | None = None) -> Connection:
-        resolved = self._resolve_name(name)
+        resolved = resolve_connection_name(name, default=self.default_connection)
         if resolved not in self._connections:
-            driver = DbDriver(resolved)
-            self._connections[resolved] = self._factory.make(driver, self._config, resolved)
+            self._connections[resolved] = self._factory.make(resolved, self._config)
         return self._connections[resolved]
 
     async def disconnect(self) -> None:
@@ -36,7 +37,7 @@ class DatabaseManager:
 _manager: DatabaseManager | None = None
 
 
-def get_database_manager() -> DatabaseManager:
+def get_manager() -> DatabaseManager:
     global _manager
     if _manager is None:
         _manager = DatabaseManager(config().database)

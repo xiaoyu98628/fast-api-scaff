@@ -7,7 +7,7 @@ from config.database import DbDriver
 
 
 class Connection:
-    """数据库连接（对应 Laravel Database\\Connection，包装 Engine / Session）。"""
+    """连接实例：包装 Engine，提供短生命周期的 Session 上下文。"""
 
     def __init__(self, name: str, driver: DbDriver, engine: AsyncEngine) -> None:
         self._name = name

@@ -18,16 +18,16 @@ fast-api-scaff/
 ├── app/
 │   ├── main.py              # create_app() / lifespan / uvicorn 入口
 │   └── infrastructure/
-│       └── database/                    # 对齐 Laravel Illuminate\Database（当前仅连接层）
-│           ├── database_manager.py      # DatabaseManager
-│           ├── connection.py            # Connection
-│           ├── db.py                    # DB Facade
+│       └── database/              # 设计思想参考 Laravel Database，Python 命名
+│           ├── manager.py         # DatabaseManager + get_manager()
+│           ├── connection.py      # Connection
+│           ├── db.py              # DB Facade
 │           └── connectors/
-│               ├── connector.py         # Connector 基类
-│               ├── connection_factory.py
-│               ├── mysql_connector.py
-│               ├── sqlite_connector.py
-│               └── postgresql_connector.py
+│               ├── connector.py   # BaseConnector
+│               ├── factory.py     # ConnectionFactory
+│               ├── mysql.py
+│               ├── sqlite.py
+│               └── postgresql.py
 └── storage/logs/            # 日志目录
 ```
 
@@ -69,12 +69,14 @@ configure = config()
 uv run python -m config.database
 ```
 
-## 数据库连接（对齐 Laravel Illuminate\Database）
+## 数据库连接
 
-调用链：`DB` → `DatabaseManager` → `ConnectionFactory` → `*Connector` → `Connection`
+设计思想参考 Laravel `Illuminate\Database`（Manager → Factory → Connector → Connection），文件与 API 使用 Python 风格命名。
 
-- 不使用 FastAPI 依赖注入；Session 通过 `Connection.session()` 用时获取、用完关闭。
-- `DatabaseManager.connection(name)` 按名称缓存 `Connection`（类似 `DB::connection('mysql')`）。
+调用链：`DB` → `DatabaseManager` → `ConnectionFactory` → 驱动 Connector → `Connection`
+
+- Session 通过 `Connection.session()` 用时获取、用完关闭，不使用 FastAPI 依赖注入。
+- `get_manager().connection(name)` 按名称缓存 Connection 实例。
 - Facade 入口：
 
 ```python
@@ -83,12 +85,9 @@ from app.infrastructure.database.db import DB
 async with DB.connection() as session:
     ...
     await session.commit()
-
-async with DB.connection("sqlite") as session:
-    ...
 ```
 
-- `lifespan` 关闭时 `get_database_manager().disconnect()`。
+- `lifespan` 关闭时 `get_manager().disconnect()`。
 - Query Builder / Model / Migration 后续再补。
 
 ## 当前进度（未完成）
