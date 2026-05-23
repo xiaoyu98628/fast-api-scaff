@@ -21,7 +21,8 @@ fast-api-scaff/
 │       └── database/              # 设计思想参考 Laravel Database，Python 命名
 │           ├── manager.py         # DatabaseManager + get_manager()
 │           ├── connection.py      # Connection
-│           ├── db.py              # DB Facade
+│           ├── db.py              # DB Facade（异步）
+│           └── sync.py            # sync_url / sync_engine（迁移）
 │           └── connectors/
 │               ├── connector.py   # BaseConnector
 │               ├── factory.py     # ConnectionFactory
@@ -76,7 +77,8 @@ uv run python -m config.database
 调用链：`DB` → `DatabaseManager` → `ConnectionFactory` → 驱动 Connector → `Connection`
 
 - `config/database.py` 提供 `connections` 与 `configuration(name)`，不含 URL 组装。
-- URL 由各 Connector 的 `make_url()` 在 database 包内完成。
+- 异步 URL / Engine：各 Connector 的 `make_async_url()` / `connect()`。
+- 同步 URL / Engine（迁移）：`make_sync_url()` / `connect_sync()`，入口见 `database/sync.py`。
 - `get_manager().connection(name)` 按名称缓存 Connection 实例。
 - Facade 入口：
 

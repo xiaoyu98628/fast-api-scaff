@@ -5,9 +5,15 @@ from config.database import ConnectionConfig, DatabaseConfig
 
 
 class SqliteConnector(BaseConnector):
-    def make_url(self, connection_config: ConnectionConfig) -> URL:
+    def make_async_url(self, connection_config: ConnectionConfig) -> URL:
         return URL.create(
             drivername="sqlite+aiosqlite",
+            database=connection_config.database,
+        )
+
+    def make_sync_url(self, connection_config: ConnectionConfig) -> URL:
+        return URL.create(
+            drivername="sqlite",
             database=connection_config.database,
         )
 

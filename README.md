@@ -121,6 +121,18 @@ async with DB.connection("sqlite") as session:
     ...
 ```
 
+### 迁移（同步连接）
+
+```python
+from app.infrastructure.database.sync import sync_engine, sync_url
+
+# Alembic env.py 常用
+alembic_cfg.set_main_option("sqlalchemy.url", sync_url())
+
+# 或直接使用同步 Engine
+engine = sync_engine()
+```
+
 ## 待办（Roadmap）
 
 - [x] 数据库连接层（DatabaseManager / Connectors / DB Facade）

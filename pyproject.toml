@@ -13,9 +13,12 @@ dependencies = [
 
     "sqlalchemy[asyncio]>=2.0.48",
 
-    "aiomysql>=0.3.2", # mysql
-    "aiosqlite>=0.22.1", # sqlite
-    "asyncpg>=0.31.0", # postgresql
+    "aiomysql>=0.3.2", # mysql async
+    "aiosqlite>=0.22.1", # sqlite async
+    "asyncpg>=0.31.0", # postgresql async
+
+    "pymysql>=1.1.0", # mysql sync (migrations)
+    "psycopg2-binary>=2.9.0", # postgresql sync (migrations)
 
     "pydantic-settings>=2.14.1",
     "pydantic>=2.13.4",

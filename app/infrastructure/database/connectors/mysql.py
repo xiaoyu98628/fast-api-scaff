@@ -5,10 +5,10 @@ from config.database import ConnectionConfig, DatabaseConfig
 
 
 class MysqlConnector(BaseConnector):
-    def make_url(self, connection_config: ConnectionConfig) -> URL:
+    def _make_url(self, connection_config: ConnectionConfig, drivername: str) -> URL:
         query = {"charset": connection_config.charset} if connection_config.charset else {}
         return URL.create(
-            drivername="mysql+aiomysql",
+            drivername=drivername,
             username=connection_config.username or None,
             password=connection_config.password or None,
             host=connection_config.host,
@@ -16,6 +16,12 @@ class MysqlConnector(BaseConnector):
             database=connection_config.database,
             query=query,
         )
+
+    def make_async_url(self, connection_config: ConnectionConfig) -> URL:
+        return self._make_url(connection_config, "mysql+aiomysql")
+
+    def make_sync_url(self, connection_config: ConnectionConfig) -> URL:
+        return self._make_url(connection_config, "mysql+pymysql")
 
     def engine_options(self, connection_config: ConnectionConfig, database_config: DatabaseConfig) -> dict:
         return {

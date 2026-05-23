@@ -5,15 +5,21 @@ from config.database import ConnectionConfig, DatabaseConfig
 
 
 class PostgresqlConnector(BaseConnector):
-    def make_url(self, connection_config: ConnectionConfig) -> URL:
+    def _make_url(self, connection_config: ConnectionConfig, drivername: str) -> URL:
         return URL.create(
-            drivername="postgresql+asyncpg",
+            drivername=drivername,
             username=connection_config.username or None,
             password=connection_config.password or None,
             host=connection_config.host,
             port=connection_config.port,
             database=connection_config.database,
         )
+
+    def make_async_url(self, connection_config: ConnectionConfig) -> URL:
+        return self._make_url(connection_config, "postgresql+asyncpg")
+
+    def make_sync_url(self, connection_config: ConnectionConfig) -> URL:
+        return self._make_url(connection_config, "postgresql+psycopg2")
 
     def engine_options(self, connection_config: ConnectionConfig, database_config: DatabaseConfig) -> dict:
         return {
