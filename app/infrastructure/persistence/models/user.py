@@ -10,7 +10,7 @@ from app.infrastructure.database.orm.base import Base
 class User(Base):
     __table_name__ = "users"
 
-    id: Mapped[str] = mapped_column(CHAR(26), primary_key=True, comment="编号")
+    id: Mapped[str] = mapped_column(CHAR(26), primary_key=True, comment="编号（ULID）")
     username: Mapped[str] = mapped_column(String(64), nullable=False, comment="用户名")
     password: Mapped[str] = mapped_column(String(128), nullable=False, comment="密码")
     nickname: Mapped[str] = mapped_column(String(64), nullable=False, comment="昵称")

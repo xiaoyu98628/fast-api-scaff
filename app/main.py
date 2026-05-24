@@ -3,8 +3,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.infrastructure.database.manager import get_manager
-from app.interfaces.http.routers.register import register_route
+from app.interfaces.http.handlers.register import register_exception_handlers
 from app.interfaces.http.middleware.register import register_middleware
+from app.interfaces.http.routers.register import register_route
 from config.config import config
 
 
@@ -26,6 +27,7 @@ def create_app() -> FastAPI:
 
     # 注册中间件
     register_middleware(app=app)
+    register_exception_handlers(app=app)
     # 注册路由
     register_route(app=app)
 
