@@ -3,9 +3,9 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.interfaces.http.response.code.contract import CodedEnum
-from app.interfaces.http.response.code.error_code import ErrorCode
-from app.interfaces.http.response.code.success_code import SuccessCode
+from app.interfaces.http.support.response.code.contract import CodedEnum
+from app.interfaces.http.support.response.code.error_code import ErrorCode
+from app.interfaces.http.support.response.code.success_code import SuccessCode
 
 
 class JsonResponse[T](BaseModel):

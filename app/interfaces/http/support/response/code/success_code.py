@@ -1,6 +1,6 @@
 """通用成功码低位定义。"""
 
-from app.interfaces.http.response.code.contract import CodeDefinition, CodedEnum
+from app.interfaces.http.support.response.code.contract import CodeDefinition, CodedEnum
 
 
 class SuccessCode(CodedEnum):

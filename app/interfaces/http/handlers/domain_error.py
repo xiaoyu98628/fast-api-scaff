@@ -1,6 +1,6 @@
 from app.domain.user.exceptions import DomainError, InvalidUserUpdateError, UsernameAlreadyExistsError, UserNotFoundError
-from app.interfaces.http.response.code.error_code import ErrorCode
-from app.interfaces.http.response.json import JsonResponse
+from app.interfaces.http.support.response.code.error_code import ErrorCode
+from app.interfaces.http.support.response.json import JsonResponse
 
 
 def to_error_response(error: DomainError) -> JsonResponse:

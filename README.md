@@ -206,9 +206,9 @@ class User(Base):
 新增码表：继承 `CodedEnum`，每个成员一行 `CodeDefinition`，不要在子类重复写 `code` / `message` / `status_code` property。
 
 ```python
-from app.interfaces.http.response.json import JsonResponse
-from app.interfaces.http.response.code.success_code import SuccessCode
-from app.interfaces.http.response.code.error_code import ErrorCode
+from app.interfaces.http.support.response.json import JsonResponse
+from app.interfaces.http.support.response.code.error_code import ErrorCode
+from app.interfaces.http.support.response.code.success_code import SuccessCode
 
 # 路由中直接返回
 return JsonResponse.success(data={"id": 1})
