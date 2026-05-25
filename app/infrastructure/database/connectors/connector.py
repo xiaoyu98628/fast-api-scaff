@@ -18,6 +18,19 @@ class BaseConnector(ABC):
         url = self.make_sync_url(connection_config)
         return create_engine(url, **self.engine_options(connection_config, database_config))
 
+    def engine_options(self, connection_config: ConnectionConfig, database_config: DatabaseConfig) -> dict:
+        options: dict = {
+            "echo": database_config.echo,
+            "pool_size": database_config.pool_size,
+            "max_overflow": database_config.max_overflow,
+        }
+        options.update(self._driver_engine_options(connection_config, database_config))
+        return options
+
+    def _driver_engine_options(self, connection_config: ConnectionConfig, database_config: DatabaseConfig) -> dict:
+        """驱动特有引擎参数，由子类覆盖。"""
+        return {}
+
     @abstractmethod
     def make_async_url(self, connection_config: ConnectionConfig) -> URL | str:
         """组装异步 SQLAlchemy URL。"""
@@ -25,7 +38,3 @@ class BaseConnector(ABC):
     @abstractmethod
     def make_sync_url(self, connection_config: ConnectionConfig) -> URL | str:
         """组装同步 SQLAlchemy URL（Alembic / 迁移）。"""
-
-    @abstractmethod
-    def engine_options(self, connection_config: ConnectionConfig, database_config: DatabaseConfig) -> dict:
-        """返回传给 create_engine / create_async_engine 的引擎参数。"""

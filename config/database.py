@@ -29,7 +29,7 @@ class DatabaseConfig(BaseSettings):
     )
 
     connection: str = Field(default="mysql", description="默认连接名")
-    echo: bool = Field(default=False, description="是否打印 SQL 语句")
+    echo: bool = Field(default=False, description="是否在控制台输出 SQL（db.log 始终记录）")
     pool_size: int = Field(default=10, description="连接池大小")
     max_overflow: int = Field(default=20, description="连接池溢出大小")
 

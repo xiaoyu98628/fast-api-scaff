@@ -21,11 +21,8 @@ class PostgresqlConnector(BaseConnector):
     def make_sync_url(self, connection_config: ConnectionConfig) -> URL:
         return self._make_url(connection_config, "postgresql+psycopg2")
 
-    def engine_options(self, connection_config: ConnectionConfig, database_config: DatabaseConfig) -> dict:
+    def _driver_engine_options(self, connection_config: ConnectionConfig, database_config: DatabaseConfig) -> dict:
         return {
-            "echo": database_config.echo,
-            "pool_size": database_config.pool_size,
-            "max_overflow": database_config.max_overflow,
-            "pool_recycle": 3600,  # 回收连接（防止 MySQL 断开）
-            "pool_pre_ping": True,  # 心跳
+            "pool_recycle": 3600, # 回收连接（防止 MySQL 断开）
+            "pool_pre_ping": True, # 心跳
         }

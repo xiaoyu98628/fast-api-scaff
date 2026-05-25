@@ -1,7 +1,7 @@
 from sqlalchemy import URL
 
 from app.infrastructure.database.connectors.connector import BaseConnector
-from config.database import ConnectionConfig, DatabaseConfig
+from config.database import ConnectionConfig
 
 
 class SqliteConnector(BaseConnector):
@@ -17,5 +17,3 @@ class SqliteConnector(BaseConnector):
             database=connection_config.database,
         )
 
-    def engine_options(self, connection_config: ConnectionConfig, database_config: DatabaseConfig) -> dict:
-        return {"echo": database_config.echo}
