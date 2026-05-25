@@ -8,10 +8,10 @@ authors = [
     {name = "CaoGaoYu", email = "1765841705@qq.com"}
 ]
 dependencies = [
-    "fastapi>=0.136.1",
-    "uvicorn>=0.47.0",
+    "fastapi>=0.136.3",
+    "uvicorn>=0.48.0",
 
-    "sqlalchemy[asyncio]>=2.0.48",
+    "sqlalchemy[asyncio]>=2.0.50",
     "alembic>=1.18.4",
 
     "aiomysql>=0.3.2", # mysql async
