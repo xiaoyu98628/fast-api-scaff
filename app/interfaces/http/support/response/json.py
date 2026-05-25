@@ -38,6 +38,7 @@ class JsonResponse[T](BaseModel):
             is_success=True,
             message=success_message,
             data=data,
+            # todo 带完善
             trace_id="",
         )
 
@@ -57,5 +58,6 @@ class JsonResponse[T](BaseModel):
             is_success=False,
             message=error_message,
             data=data,
+            # todo 带完善
             trace_id="",
         )
