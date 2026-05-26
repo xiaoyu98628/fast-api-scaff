@@ -3,30 +3,37 @@ from logging import Formatter, Handler
 from logging.handlers import RotatingFileHandler, TimedRotatingFileHandler
 from pathlib import Path
 
+from app.infrastructure.logging.channel import ChannelDefinition
 from app.infrastructure.logging.filters import TraceIdFilter
-from config.logging import LogChannel, LoggingConfig
+from config.logging import LoggingConfig
 
 DEFAULT_LOG_FORMAT = "[%(asctime)s] | %(levelname)s | %(name)s | trace_id=%(trace_id)s | %(message)s"
 DEFAULT_LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 
-class _EnsureLogDirMixin:
-    """配合 ``delay=True``：首次 ``emit`` 时再创建目录与日志文件。"""
+def _ensure_log_file(base_filename: str) -> None:
+    """``delay=True`` 下首次 ``_open`` 调用：仅当目标文件不存在时创建目录。"""
+    log_path = Path(base_filename)
+    if log_path.exists():
+        return
+    log_path.parent.mkdir(parents=True, exist_ok=True)
 
+
+class _LazyOpenMixin:
     def _open(self):
-        Path(self.baseFilename).parent.mkdir(parents=True, exist_ok=True)
+        _ensure_log_file(self.baseFilename)
         return super()._open()
 
 
-class LazyFileHandler(_EnsureLogDirMixin, logging.FileHandler):
+class LazyFileHandler(_LazyOpenMixin, logging.FileHandler):
     pass
 
 
-class LazyRotatingFileHandler(_EnsureLogDirMixin, RotatingFileHandler):
+class LazyRotatingFileHandler(_LazyOpenMixin, RotatingFileHandler):
     pass
 
 
-class LazyTimedRotatingFileHandler(_EnsureLogDirMixin, TimedRotatingFileHandler):
+class LazyTimedRotatingFileHandler(_LazyOpenMixin, TimedRotatingFileHandler):
     pass
 
 
@@ -42,7 +49,7 @@ def _configure_handler(handler: Handler, *, level_name: str, json_enabled: bool)
     return handler
 
 
-def build_file_handler(log_path: str | Path, channel: LogChannel, settings: LoggingConfig) -> Handler:
+def build_file_handler(log_path: str | Path, channel: ChannelDefinition, settings: LoggingConfig) -> Handler:
     log_path = Path(log_path)
     driver = channel.driver.lower()
 

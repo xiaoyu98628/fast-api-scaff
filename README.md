@@ -170,7 +170,7 @@ class User(Base):
 
 ## 日志
 
-基建只负责 `configure_logging()` 注册；各层使用标准库 `logging.getLogger(...)`。
+基建：`configure_logging()` → `LogManager` 读 `config/logging.py` 的 `LOG_CHANNELS`；各层使用标准库 `logging.getLogger(...)`。
 
 - **路径**：`storage/logs/{app-slug}/`（由 `APP_NAME` 生成，非扁平）
 - **文件**：`app.log`（业务，`app.*` 下 `getLogger(__name__)`）、`request.log`（单行访问日志）、`db.log`（SQL）、`exception.log`
@@ -255,11 +255,13 @@ return JsonResponse.error(code=ErrorCode.NOT_FOUND_ERROR, message="用户不存�
 - [x] `lifespan` disconnect
 - [x] DDD 目录骨架 + 持久化 User ORM
 - [x] 统一 API 响应（`JsonResponse` + `CodedEnum` + `SuccessCode` / `ErrorCode`）
-- [x] HTTP 路由分包骨架（`/api/v1`）
-- [ ] domain 实体 / 仓储接口
-- [ ] application 用例
-- [ ] 全局异常 handler（领域异常 → `JsonResponse.error`）
-- [ ] 中间件（trace_id、CORS 等）
+- [x] HTTP 路由分包（`api/v1`、`ws/v1`）
+- [x] domain 实体 / 仓储接口（User 模块）
+- [x] application 用例（UserService）
+- [x] 领域异常 handler（`DomainError` → `JsonResponse.error`）
+- [x] 中间件（`RequestScope` / trace_id、`CORS`、`request_log` 等）
+- [x] 日志（`LogManager` + `LOG_CHANNELS`）
+- [ ] 全局异常 handler 补全（422 校验 / 500 未捕获 / `HTTPException` 等）
 - [ ] 测试与 CI
 
 ## 开发工具

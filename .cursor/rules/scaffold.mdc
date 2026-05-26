@@ -30,7 +30,7 @@ fast-api-scaff/
 │   │               └── code/
 │   └── infrastructure/              # 基础设施层
 │       ├── context/                 # 请求作用域 ContextVar（request_scope）
-│       ├── logging/                 # 日志装配（setup、formatters）
+│       ├── logging/                 # 日志装配（manager、formatters）
 │       ├── database/
 │       │   ├── orm/                 # ORM 基建（Base 等）
 │       │   │   └── base.py
@@ -58,8 +58,8 @@ interfaces → application → domain
 - **interfaces/**：路由、中间件、统一响应、请求/响应 DTO；不得包含业务编排逻辑。
 - **interfaces/http/support/response/**：对外 API 契约（`JsonResponse`、10 位响应码），不属于 infrastructure。
 - **infrastructure/context/**：请求作用域 `ContextVar`；`bind_request_scope` / `get_scope_extra`；domain 不依赖。
-- **infrastructure/logging/**：日志 handler/formatter 装配；各层用 `logging.getLogger(__name__)`，不 import 基建打日志。
-- **config/logging.py**：`channels()` 声明通道；`LOG_DIR` + `APP_NAME` → `storage/logs/{slug}/`。
+- **config/logging.py**：``LOG_`` env + ``LOG_CHANNELS`` 声明；装配见 ``infrastructure/logging/manager``。
+- **infrastructure/logging/**：``manager``（LogManager）、``handlers``、``formatters``、``filters``。
 
 ## 配置模式
 
@@ -76,7 +76,7 @@ configure = config()
 
 ### 日志
 
-- 启动：`configure_logging()` 只注册 handler；业务用标准库 `logging.getLogger`。
+- 启动：`configure_logging()` → `LogManager` 读 `LOG_CHANNELS` 装配 handler。
 - **路径**：`storage/logs/{app-slug}/`；**轮转**：`LOG_DRIVER=single|daily|rotating`。
 - **文件**：`app.log`（`app.*` 下 `getLogger(__name__)`）、`request.log`（单行访问）、`db.log`、`exception.log`；`LOG_LEVEL` 控制 app 门槛。
 - **请求体**：默认不记；`LOG_REQUEST_BODY=true` 开启。
@@ -184,9 +184,11 @@ async with DB.connection() as session:
 - [x] DDD 目录骨架
 - [x] 持久化 Base + User ORM
 - [x] 统一响应（`JsonResponse` + `CodeDefinition` / `CodedEnum` + `SuccessCode` / `ErrorCode`）
-- [x] HTTP 路由分包骨架（`/api/v1/...`）
-- [ ] domain 实体 / 仓储接口
-- [ ] application 用例
-- [ ] 全局异常 handler（领域异常 → `JsonResponse.error`）
-- [x] 日志（config + infrastructure/logging + access_log）
-- [x] 中间件（request_scope、request_log、CORS）
+- [x] HTTP 路由分包（`api/v1`、`ws/v1`）
+- [x] domain 实体 / 仓储接口（User 模块）
+- [x] application 用例（UserService）
+- [x] 领域异常 handler（`DomainError` → `JsonResponse.error`）
+- [x] 日志（`LogManager` + `LOG_CHANNELS` + `request.log`）
+- [x] 中间件（`request_scope`、trace_id、`request_log`、CORS）
+- [ ] 全局异常 handler 补全（422 / 500 / `HTTPException` 等）
+- [ ] 测试与 CI
