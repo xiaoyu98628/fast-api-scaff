@@ -3,6 +3,9 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
+DEFAULT_LOG_FORMAT = "[%(asctime)s] | %(levelname)s | %(name)s | trace_id=%(trace_id)s | %(message)s"
+DEFAULT_LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
+
 
 class JsonFormatter(logging.Formatter):
     """将 LogRecord 格式化为单行 JSON。"""
@@ -48,3 +51,13 @@ class JsonFormatter(logging.Formatter):
             payload[key] = value
 
         return json.dumps(payload, ensure_ascii=False, default=str)
+
+
+def build_text_formatter() -> logging.Formatter:
+    return logging.Formatter(DEFAULT_LOG_FORMAT, DEFAULT_LOG_DATE_FORMAT)
+
+
+def build_formatter(*, json_enabled: bool) -> logging.Formatter:
+    if json_enabled:
+        return JsonFormatter()
+    return build_text_formatter()

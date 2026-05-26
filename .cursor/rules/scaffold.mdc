@@ -58,7 +58,7 @@ interfaces → application → domain
 - **interfaces/**：路由、中间件、统一响应、请求/响应 DTO；不得包含业务编排逻辑。
 - **interfaces/http/support/response/**：对外 API 契约（`JsonResponse`、10 位响应码），不属于 infrastructure。
 - **infrastructure/context/**：请求作用域 `ContextVar`；`bind_request_scope` / `get_scope_extra`；domain 不依赖。
-- **config/logging.py**：``LOG_`` env + ``LOG_CHANNELS`` 声明；装配见 ``infrastructure/logging/manager``。
+- **config/logging.py**：``LOG_`` env + ``LoggingConfig.channels``（每通道 ``path``）；装配见 ``infrastructure/logging/manager``。
 - **infrastructure/logging/**：``manager``（LogManager）、``handlers``、``formatters``、``filters``。
 
 ## 配置模式
@@ -76,10 +76,11 @@ configure = config()
 
 ### 日志
 
-- 启动：`configure_logging()` → `LogManager` 读 `LOG_CHANNELS` 装配 handler。
-- **路径**：`storage/logs/{app-slug}/`；**轮转**：`LOG_DRIVER=single|daily|rotating`。
-- **文件**：`app.log`（`app.*` 下 `getLogger(__name__)`）、`request.log`（单行访问）、`db.log`、`exception.log`；`LOG_LEVEL` 控制 app 门槛。
-- **请求体**：默认不记；`LOG_REQUEST_BODY=true` 开启。
+- 启动：`configure_logging()` → `LogManager` 读 `LoggingConfig.channels` 装配 handler。
+- **路径**：各通道 ``path`` 在 ``config/logging.py`` → ``LoggingConfig.channels`` 定义。
+- **文件**：`app.log`、`request.log`、`db.log`、`exception.log`；`LOG_LEVEL` 控制所有通道。
+- **轮转**：`LOG_DRIVER=single|daily|rotating`
+- **访问日志**：`request.log` 每个请求两条（request / response）。
 - **请求上下文**：`infrastructure/context/request_scope.py`（trace、Request、headers、extra）；`RequestScopeMiddleware` 绑定/重置。
 - **trace_id**：`TraceIdFilter` 读 `get_trace_id()`，写入日志行与 `JsonResponse`。
 - **request**：`logging.getLogger("app.request")`；**exception**：`app.channel.exception`。

@@ -1,14 +1,12 @@
 import logging
-from logging import Formatter, Handler
+from logging import Handler
 from logging.handlers import RotatingFileHandler, TimedRotatingFileHandler
 from pathlib import Path
 
 from app.infrastructure.logging.channel import ChannelDefinition
 from app.infrastructure.logging.filters import TraceIdFilter
+from app.infrastructure.logging.formatters import build_formatter
 from config.logging import LoggingConfig
-
-DEFAULT_LOG_FORMAT = "[%(asctime)s] | %(levelname)s | %(name)s | trace_id=%(trace_id)s | %(message)s"
-DEFAULT_LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 
 def _ensure_log_file(base_filename: str) -> None:
@@ -39,12 +37,7 @@ class LazyTimedRotatingFileHandler(_LazyOpenMixin, TimedRotatingFileHandler):
 
 def _configure_handler(handler: Handler, *, level_name: str, json_enabled: bool) -> Handler:
     handler.setLevel(getattr(logging, level_name.upper(), logging.DEBUG))
-    if json_enabled:
-        from app.infrastructure.logging.formatters import JsonFormatter
-
-        handler.setFormatter(JsonFormatter())
-    else:
-        handler.setFormatter(Formatter(DEFAULT_LOG_FORMAT, DEFAULT_LOG_DATE_FORMAT))
+    handler.setFormatter(build_formatter(json_enabled=json_enabled))
     handler.addFilter(TraceIdFilter())
     return handler
 

@@ -2,22 +2,20 @@
 
 import logging
 from logging import Handler, Logger
+from pathlib import Path
 
 from app.infrastructure.logging.channel import ChannelDefinition
 from app.infrastructure.logging.handlers import build_console_handler, build_file_handler
-from app.infrastructure.logging.support import log_dir, resolve_level
 from config.config import config
-from config.logging import LOG_CHANNELS, LoggingConfig
+from config.logging import LoggingConfig
 
 _configured = False
 
 
 class LogManager:
-    def __init__(self, settings: LoggingConfig, *, app_name: str, app_debug: bool) -> None:
+    def __init__(self, settings: LoggingConfig) -> None:
         self._settings = settings
-        self._app_name = app_name
-        self._app_debug = app_debug
-        self._level = resolve_level(settings, app_debug=app_debug)
+        self._level = settings.level
         self._console_handler: Handler | None = None
         self._file_handlers: dict[str, Handler] = {}
 
@@ -26,7 +24,7 @@ class LogManager:
         if _configured:
             return
 
-        channels = {channel.name: channel for channel in self._channels()}
+        channels = self._channels()
 
         if self._settings.console_enabled:
             self._console_handler = build_console_handler(self._settings, level_name=self._level)
@@ -42,25 +40,17 @@ class LogManager:
 
         _configured = True
 
-    def _channels(self) -> list[ChannelDefinition]:
-        base_dir = log_dir(self._settings, self._app_name)
-        driver = self._settings.driver
-        channels: list[ChannelDefinition] = []
-
-        for name, raw in LOG_CHANNELS.items():
-            also_raw = raw.get("also") or []
-            also = tuple(also_raw) if isinstance(also_raw, list) else ()
-            level_raw = raw.get("level")
-            channels.append(
-                ChannelDefinition(
-                    name=name,
-                    logger=str(raw["logger"]),
-                    path=base_dir / str(raw["path"]),
-                    level=str(level_raw or self._level),
-                    driver=driver,
-                    also=also,
-                    console=bool(raw.get("console")),
-                )
+    def _channels(self) -> dict[str, ChannelDefinition]:
+        channels: dict[str, ChannelDefinition] = {}
+        for name, channel in self._settings.channels.items():
+            channels[name] = ChannelDefinition(
+                name=name,
+                logger=channel.logger,
+                path=Path(channel.path),
+                level=channel.level,
+                driver=channel.driver,
+                also=tuple(channel.also),
+                console=channel.console,
             )
         return channels
 
@@ -117,5 +107,4 @@ class LogManager:
 
 
 def configure_logging() -> None:
-    cfg = config()
-    LogManager(cfg.logging, app_name=cfg.app.name, app_debug=cfg.app.debug).configure()
+    LogManager(config().logging).configure()

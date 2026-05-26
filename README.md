@@ -170,12 +170,13 @@ class User(Base):
 
 ## 日志
 
-基建：`configure_logging()` → `LogManager` 读 `config/logging.py` 的 `LOG_CHANNELS`；各层使用标准库 `logging.getLogger(...)`。
+基建：`configure_logging()` → `LogManager` 读 `LoggingConfig.channels`；各层使用标准库 `logging.getLogger(...)`。
 
-- **路径**：`storage/logs/{app-slug}/`（由 `APP_NAME` 生成，非扁平）
+- **路径**：各通道完整路径在 `config/logging.py` → `LoggingConfig.channels` 中定义（默认 `storage/logs/{APP_NAME}/`）
 - **文件**：`app.log`（业务，`app.*` 下 `getLogger(__name__)`）、`request.log`（单行访问日志）、`db.log`（SQL）、`exception.log`
-- **级别**：`LOG_LEVEL` 控制 `app.log` 与控制台门槛（默认 `APP_DEBUG=true` → DEBUG，否则 INFO）
-- **请求体**：默认不记录；需排查参数时设 `LOG_REQUEST_BODY=true`
+- **级别**：`LOG_LEVEL` 控制所有通道与控制台（默认 `DEBUG`）
+- **格式**：`LOG_JSON=false` 文本行；`LOG_JSON=true` 单行 JSON
+- **访问日志**：`request.log` 每个请求两条（request / response；敏感字段脱敏，超长截断）
 - **请求上下文**：`infrastructure/context/request_scope.py`（trace、Request、headers、`set_scope_extra`）
 - **trace_id**：`RequestScopeMiddleware` + `TraceIdFilter`；访问日志与 `JsonResponse` 均带出
 - **轮转**：`LOG_DRIVER=single|daily|rotating`
@@ -260,7 +261,7 @@ return JsonResponse.error(code=ErrorCode.NOT_FOUND_ERROR, message="用户不存�
 - [x] application 用例（UserService）
 - [x] 领域异常 handler（`DomainError` → `JsonResponse.error`）
 - [x] 中间件（`RequestScope` / trace_id、`CORS`、`request_log` 等）
-- [x] 日志（`LogManager` + `LOG_CHANNELS`）
+- [x] 日志（`LogManager` + `LoggingConfig.channels` + `request.log`）
 - [ ] 全局异常 handler 补全（422 校验 / 500 未捕获 / `HTTPException` 等）
 - [ ] 测试与 CI
 
