@@ -239,12 +239,15 @@ return JsonResponse.error(code=ErrorCode.NOT_FOUND_ERROR, message="用户不存�
 ## HTTP 路由
 
 ```
-/api/v1/users/...   ← routers/v1/endpoints/user.py
+/api/v1/users/...   ← api/v1/endpoints/user.py
+/ws/v1/...          ← ws/v1/endpoints/（待扩展）
 ```
 
-注册链：`main.py` → `routers/register.py` → `router.py`（`/api`）→ `v1/router.py`（`/v1`）→ `endpoints/`。
+注册链：`main.py` → `routers/register.py` → `api/v1/router`（`/api` + `/v1`）、`ws/v1/router`（`/ws` + `/v1`）。
 
-新接口：在 `routers/v1/endpoints/` 增加模块并在 `v1/router.py` 挂载；路由保持薄，只转发到 application 并返回 `JsonResponse`。
+- 新 REST：在 `api/v1/endpoints/` 增加模块并在 `api/v1/router.py` 挂载。
+- 新 WebSocket：在 `ws/v1/endpoints/` 增加模块并在 `ws/v1/router.py` 挂载。
+- 路由保持薄，只转发到 application 并返回 `JsonResponse`（REST）。
 
 ## 待办（Roadmap）
 

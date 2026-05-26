@@ -18,7 +18,9 @@ fast-api-scaff/
 │   ├── application/                 # 应用层：用例、应用服务（待扩展）
 │   ├── interfaces/                  # 接口层：HTTP / CLI 等
 │   │   └── http/
-│   │       ├── routers/             # 路由注册与分包（api/v1/endpoints）
+│   │       ├── api/                 # REST：api/v1/endpoints
+│   │       ├── ws/                  # WebSocket：ws/v1/endpoints
+│   │       ├── routers/             # register.py 挂载入口
 │   │       ├── middleware/          # 中间件注册
 │   │       ├── schemas/             # 请求/响应 DTO（requests / responses）
 │   │       └── support/
@@ -142,15 +144,21 @@ class SuccessCode(CodedEnum):
 ## HTTP 路由分包
 
 ```
-interfaces/http/routers/
-├── register.py          # app.include_router 入口
-├── router.py            # /api
-└── v1/
-    ├── router.py        # /api/v1
-    └── endpoints/       # 各资源路由（如 user.py）
+interfaces/http/
+├── routers/
+│   └── register.py          # app.include_router 入口
+├── api/
+│   └── v1/
+│       ├── router.py        # /api/v1
+│       └── endpoints/       # REST（如 user.py）
+└── ws/
+    └── v1/
+        ├── router.py        # /ws/v1
+        └── endpoints/       # WebSocket（待扩展）
 ```
 
-新 endpoint：在 `v1/endpoints/` 建模块，`v1/router.py` 挂载；返回 `JsonResponse`。
+- REST：`/api/v1/...` — 在 `api/v1/endpoints/` 建模块，`api/v1/router.py` 挂载；返回 `JsonResponse`。
+- WebSocket：`/ws/v1/...` — 在 `ws/v1/endpoints/` 建模块，`ws/v1/router.py` 挂载。
 
 ## 数据库连接
 
