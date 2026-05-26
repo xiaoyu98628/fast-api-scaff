@@ -21,13 +21,14 @@ fast-api-scaff/
 │   │       ├── routers/             # 路由注册与分包（api/v1/endpoints）
 │   │       ├── middleware/          # 中间件注册
 │   │       ├── schemas/             # 请求/响应 DTO（requests / responses）
-│   │       └── response/            # 统一响应（JsonResponse、码表）
-│   │           ├── json.py
-│   │           └── code/
-│   │               ├── contract.py  # CodeDefinition + CodedEnum
-│   │               ├── success_code.py
-│   │               └── error_code.py
+│   │       └── support/
+│   │           ├── codec/
+│   │           └── response/        # 统一响应（JsonResponse、码表）
+│   │               ├── json.py
+│   │               └── code/
 │   └── infrastructure/              # 基础设施层
+│       ├── context/                 # 请求作用域 ContextVar（request_scope）
+│       ├── logging/                 # 日志装配（setup、formatters）
 │       ├── database/
 │       │   ├── orm/                 # ORM 基建（Base 等）
 │       │   │   └── base.py
@@ -53,7 +54,10 @@ interfaces → application → domain
 - **infrastructure/persistence/**：ORM Model、`Base`、Alembic `registry`。
 - **infrastructure/database/**：连接管理，Laravel Database 设计思想。
 - **interfaces/**：路由、中间件、统一响应、请求/响应 DTO；不得包含业务编排逻辑。
-- **interfaces/http/response/**：对外 API 契约（`JsonResponse`、10 位响应码），不属于 infrastructure。
+- **interfaces/http/support/response/**：对外 API 契约（`JsonResponse`、10 位响应码），不属于 infrastructure。
+- **infrastructure/context/**：请求作用域 `ContextVar`；`bind_request_scope` / `get_scope_extra`；domain 不依赖。
+- **infrastructure/logging/**：日志 handler/formatter 装配；各层用 `logging.getLogger(__name__)`，不 import 基建打日志。
+- **config/logging.py**：`channels()` 声明通道；`LOG_DIR` + `APP_NAME` → `storage/logs/{slug}/`。
 
 ## 配置模式
 
@@ -68,12 +72,23 @@ configure = config()
 
 ## 统一 API 响应
 
-### 响应体结构（`interfaces/http/response/json.py`）
+### 日志
+
+- 启动：`configure_logging()` 只注册 handler；业务用标准库 `logging.getLogger`。
+- **路径**：`storage/logs/{app-slug}/`；**轮转**：`LOG_DRIVER=single|daily|rotating`。
+- **文件**：`app.log`（`app.*` 下 `getLogger(__name__)`）、`request.log`（单行访问）、`db.log`、`exception.log`；`LOG_LEVEL` 控制 app 门槛。
+- **请求体**：默认不记；`LOG_REQUEST_BODY=true` 开启。
+- **请求上下文**：`infrastructure/context/request_scope.py`（trace、Request、headers、extra）；`RequestScopeMiddleware` 绑定/重置。
+- **trace_id**：`TraceIdFilter` 读 `get_trace_id()`，写入日志行与 `JsonResponse`。
+- **request**：`logging.getLogger("app.request")`；**exception**：`app.channel.exception`。
+- **domain**：默认不打日志。
+
+### 响应体结构（`interfaces/http/support/response/json.py`）
 
 ```python
-from app.interfaces.http.response.json import JsonResponse
-from app.interfaces.http.response.code.success_code import SuccessCode
-from app.interfaces.http.response.code.error_code import ErrorCode
+from app.interfaces.http.support.response.json import JsonResponse
+from app.interfaces.http.support.response.code.success_code import SuccessCode
+from app.interfaces.http.support.response.code.error_code import ErrorCode
 
 return JsonResponse.success(data={"id": 1})
 return JsonResponse.success(data=user, code=SuccessCode.SUCCESS_CREATED)
@@ -96,7 +111,7 @@ return JsonResponse.error(code=ErrorCode.NOT_FOUND_ERROR)
 - **完整 10 位**：由 `CodedEnum.full_code()` 组装，读取 `config().app.service_code`；**不需要单独的 builder 模块**。
 - `code` 字段用 **字符串** 返回，避免前导 `0` 丢失。
 
-### 码表约定（`interfaces/http/response/code/`）
+### 码表约定（`interfaces/http/support/response/code/`）
 
 | 文件 | 类 | 用途 |
 |------|-----|------|
@@ -119,7 +134,7 @@ class SuccessCode(CodedEnum):
 | 层级 | 放什么 | 格式 |
 |------|--------|------|
 | `domain/{ctx}/` | 业务语义异常或 4 位业务码 | 不含 HTTP、不含服务码 |
-| `interfaces/http/response/code/` | 对外 API 码表（Success / Error / 模块 error） | `CodeDefinition` + `CodedEnum` |
+| `interfaces/http/support/response/code/` | 对外 API 码表（Success / Error / 模块 error） | `CodeDefinition` + `CodedEnum` |
 | exception handler（待建） | 领域异常 → `ErrorCode` 或模块 `CodedEnum` | 映射后 `JsonResponse.error(...)` |
 
 领域层**不**继承 `CodedEnum`；若 domain 仅有 4 位码，在 handler/mapping 层决定 `status_code` 后调用与 `full_code()` 相同公式组装。
@@ -165,4 +180,5 @@ async with DB.connection() as session:
 - [ ] domain 实体 / 仓储接口
 - [ ] application 用例
 - [ ] 全局异常 handler（领域异常 → `JsonResponse.error`）
-- [ ] 中间件（trace_id、CORS 等）
+- [x] 日志（config + infrastructure/logging + access_log）
+- [x] 中间件（request_scope、request_log、CORS）

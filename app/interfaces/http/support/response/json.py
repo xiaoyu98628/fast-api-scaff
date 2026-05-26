@@ -3,6 +3,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.infrastructure.context.request_scope import trace_id_for_json
 from app.interfaces.http.support.response.code.contract import CodedEnum
 from app.interfaces.http.support.response.code.error_code import ErrorCode
 from app.interfaces.http.support.response.code.success_code import SuccessCode
@@ -38,8 +39,7 @@ class JsonResponse[T](BaseModel):
             is_success=True,
             message=success_message,
             data=data,
-            # todo 带完善
-            trace_id="",
+            trace_id=trace_id_for_json(explicit=trace_id),
         )
 
     @classmethod
@@ -58,6 +58,5 @@ class JsonResponse[T](BaseModel):
             is_success=False,
             message=error_message,
             data=data,
-            # todo 带完善
-            trace_id="",
+            trace_id=trace_id_for_json(explicit=trace_id),
         )

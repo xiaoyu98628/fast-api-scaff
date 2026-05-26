@@ -9,5 +9,8 @@ from app.interfaces.http.handlers.domain_error import to_error_response
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(DomainError)
     async def domain_error_handler(_: Request, error: DomainError) -> JSONResponse:
-        response = to_error_response(error)
-        return JSONResponse(content=response.model_dump(by_alias=True, mode="json"))
+        response, status_code = to_error_response(error)
+        return JSONResponse(
+            content=response.model_dump(by_alias=True, mode="json"),
+            status_code=status_code,
+        )

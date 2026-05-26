@@ -2,13 +2,17 @@
 from pydantic import BaseModel
 
 from config.app import AppConfig
+from config.cors import CorsConfig
 from config.database import DatabaseConfig
+from config.logging import LoggingConfig
 
 
 class Config(BaseModel):
 
     app: AppConfig
     database: DatabaseConfig
+    logging: LoggingConfig
+    cors: CorsConfig
 
 
 def config() -> Config:
@@ -16,4 +20,6 @@ def config() -> Config:
     return Config(
         app=AppConfig(),
         database=DatabaseConfig(),
+        logging=LoggingConfig(),
+        cors=CorsConfig(),
     )

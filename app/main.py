@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.infrastructure.database.manager import get_manager
+from app.infrastructure.logging.setup import configure_logging
 from app.interfaces.http.handlers.register import register_exception_handlers
 from app.interfaces.http.middleware.register import register_middleware
 from app.interfaces.http.routers.register import register_route
@@ -17,6 +18,8 @@ async def lifespan(_: FastAPI):
 
 def create_app() -> FastAPI:
     """创建 FastAPI 应用。"""
+    configure_logging()
+
     configure = config()
 
     app = FastAPI(
@@ -42,6 +45,7 @@ app = create_app()
 def main() -> None:
     import uvicorn
 
+    configure_logging()
     configure = config()
     uvicorn.run(
         "app.main:app",

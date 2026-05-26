@@ -1,3 +1,5 @@
+import logging
+
 from app.application.support.pagination import PageResult
 from app.application.support.ulid import generate_ulid
 from app.application.user.security import hash_password
@@ -6,6 +8,8 @@ from app.domain.user.enums import UserStatus
 from app.domain.user.exceptions import InvalidUserUpdateError, UsernameAlreadyExistsError, UserNotFoundError
 from app.infrastructure.database.session import SessionProvider
 from app.infrastructure.persistence.repositories.user import UserRepositoryImpl
+
+logger = logging.getLogger(__name__)
 
 
 class UserService:
@@ -36,6 +40,7 @@ class UserService:
                 status=status,
             )
             await session.commit()
+            logger.info("user created", extra={"user_id": user.id, "username": user.username})
             return user
 
     async def get_user(self, user_id: str) -> User:
@@ -69,6 +74,7 @@ class UserService:
                 raise UserNotFoundError(user_id)
 
             await session.commit()
+            logger.info("user updated", extra={"user_id": user.id})
             return user
 
     async def delete_user(self, user_id: str) -> None:
@@ -78,6 +84,7 @@ class UserService:
             if not deleted:
                 raise UserNotFoundError(user_id)
             await session.commit()
+            logger.info("user deleted", extra={"user_id": user_id})
 
     async def list_users(
         self,
@@ -92,6 +99,10 @@ class UserService:
                 page=page,
                 page_size=page_size,
                 keyword=keyword,
+            )
+            logger.debug(
+                "users listed",
+                extra={"page": page, "page_size": page_size, "total": total, "keyword": keyword},
             )
             return PageResult(
                 items=items,

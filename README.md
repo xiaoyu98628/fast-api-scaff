@@ -168,6 +168,20 @@ class User(Base):
 
 在 `persistence/registry.py` 导入后，Alembic `--autogenerate` 可检测变更。
 
+## 日志
+
+基建只负责 `configure_logging()` 注册；各层使用标准库 `logging.getLogger(...)`。
+
+- **路径**：`storage/logs/{app-slug}/`（由 `APP_NAME` 生成，非扁平）
+- **文件**：`app.log`（业务，`app.*` 下 `getLogger(__name__)`）、`request.log`（单行访问日志）、`db.log`（SQL）、`exception.log`
+- **级别**：`LOG_LEVEL` 控制 `app.log` 与控制台门槛（默认 `APP_DEBUG=true` → DEBUG，否则 INFO）
+- **请求体**：默认不记录；需排查参数时设 `LOG_REQUEST_BODY=true`
+- **请求上下文**：`infrastructure/context/request_scope.py`（trace、Request、headers、`set_scope_extra`）
+- **trace_id**：`RequestScopeMiddleware` + `TraceIdFilter`；访问日志与 `JsonResponse` 均带出
+- **轮转**：`LOG_DRIVER=single|daily|rotating`
+
+常用 logger：`__name__`（应用）、`app.request`（HTTP）、`app.channel.exception`（领域异常）。
+
 ## 统一 API 响应
 
 对外 JSON 结构由 `app/interfaces/http/response/json.py` 中的 `JsonResponse` 定义：
@@ -178,7 +192,7 @@ class User(Base):
 | `success` | 是否成功（模型字段 `is_success`） |
 | `message` | 提示文案 |
 | `data` | 业务数据，可为 `null` |
-| `trace_id` | 链路 ID（待中间件接入） |
+| `trace_id` | 链路 ID（`RequestScopeMiddleware` + ContextVar） |
 
 ### 10 位响应码
 
