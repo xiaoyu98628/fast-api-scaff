@@ -27,8 +27,6 @@ def configure_logging() -> None:
     level = log_settings.resolved_level(app_debug=cfg.app.debug)
     channels = log_settings.channels(cfg.app.name, app_debug=cfg.app.debug)
 
-    log_settings.app_log_dir(cfg.app.name).mkdir(parents=True, exist_ok=True)
-
     console_handler = build_console_handler(log_settings, level_name=level) if log_settings.console_enabled else None
 
     channel_handlers: dict[str, Handler] = {}
@@ -71,7 +69,3 @@ def configure_logging() -> None:
     py_warnings.propagate = False
 
     _configured = True
-    logging.getLogger(__name__).debug(
-        "logging configured",
-        extra={"log_dir": str(log_settings.app_log_dir(cfg.app.name)), "level": level},
-    )

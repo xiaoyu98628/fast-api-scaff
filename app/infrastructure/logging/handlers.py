@@ -10,6 +10,26 @@ DEFAULT_LOG_FORMAT = "[%(asctime)s] | %(levelname)s | %(name)s | trace_id=%(trac
 DEFAULT_LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 
+class _EnsureLogDirMixin:
+    """配合 ``delay=True``：首次 ``emit`` 时再创建目录与日志文件。"""
+
+    def _open(self):
+        Path(self.baseFilename).parent.mkdir(parents=True, exist_ok=True)
+        return super()._open()
+
+
+class LazyFileHandler(_EnsureLogDirMixin, logging.FileHandler):
+    pass
+
+
+class LazyRotatingFileHandler(_EnsureLogDirMixin, RotatingFileHandler):
+    pass
+
+
+class LazyTimedRotatingFileHandler(_EnsureLogDirMixin, TimedRotatingFileHandler):
+    pass
+
+
 def _configure_handler(handler: Handler, *, level_name: str, json_enabled: bool) -> Handler:
     handler.setLevel(getattr(logging, level_name.upper(), logging.DEBUG))
     if json_enabled:
@@ -24,11 +44,10 @@ def _configure_handler(handler: Handler, *, level_name: str, json_enabled: bool)
 
 def build_file_handler(log_path: str | Path, channel: LogChannel, settings: LoggingConfig) -> Handler:
     log_path = Path(log_path)
-    log_path.parent.mkdir(parents=True, exist_ok=True)
     driver = channel.driver.lower()
 
     if driver == "daily":
-        handler: Handler = TimedRotatingFileHandler(
+        handler: Handler = LazyTimedRotatingFileHandler(
             filename=log_path,
             when="midnight",
             backupCount=settings.backup_count,
@@ -36,7 +55,7 @@ def build_file_handler(log_path: str | Path, channel: LogChannel, settings: Logg
             delay=True,
         )
     elif driver == "rotating":
-        handler = RotatingFileHandler(
+        handler = LazyRotatingFileHandler(
             filename=log_path,
             maxBytes=settings.max_bytes,
             backupCount=settings.backup_count,
@@ -44,7 +63,7 @@ def build_file_handler(log_path: str | Path, channel: LogChannel, settings: Logg
             delay=True,
         )
     else:
-        handler = logging.FileHandler(filename=log_path, encoding="utf-8", delay=True)
+        handler = LazyFileHandler(filename=log_path, encoding="utf-8", delay=True)
 
     return _configure_handler(handler, level_name=channel.level, json_enabled=settings.json_enabled)
 
