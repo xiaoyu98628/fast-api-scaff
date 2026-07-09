@@ -22,7 +22,7 @@ class Connection:
         return self._driver
 
     @asynccontextmanager
-    async def session(self) -> AsyncGenerator[AsyncSession, None]:
+    async def session(self) -> AsyncGenerator[AsyncSession]:
         if self._sessionmaker is None:
             self._sessionmaker = async_sessionmaker(self._engine, expire_on_commit=False)
 

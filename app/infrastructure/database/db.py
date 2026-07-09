@@ -11,6 +11,6 @@ class DB:
 
     @staticmethod
     @asynccontextmanager
-    async def connection(name: str | None = None) -> AsyncGenerator[AsyncSession, None]:
+    async def connection(name: str | None = None) -> AsyncGenerator[AsyncSession]:
         async with get_manager().connection(name).session() as session:
             yield session

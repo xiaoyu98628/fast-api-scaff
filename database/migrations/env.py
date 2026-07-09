@@ -4,8 +4,8 @@ from alembic import context
 from sqlalchemy import create_engine, pool
 
 import app.infrastructure.persistence.registry as _persistence_registry  # noqa: F401
-from app.infrastructure.database.sync import sync_url
 from app.infrastructure.database.orm.base import Base
+from app.infrastructure.database.sync import sync_url
 
 config = context.config
 

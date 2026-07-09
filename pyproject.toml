@@ -8,11 +8,11 @@ authors = [
     {name = "CaoGaoYu", email = "1765841705@qq.com"}
 ]
 dependencies = [
-    "fastapi>=0.136.3",
-    "uvicorn>=0.48.0",
+    "fastapi>=0.139.0",
+    "uvicorn>=0.51.0",
 
-    "sqlalchemy[asyncio]>=2.0.50",
-    "alembic>=1.18.4",
+    "sqlalchemy[asyncio]>=2.0.51",
+    "alembic>=1.18.5",
 
     "aiomysql>=0.3.2", # mysql async
     "aiosqlite>=0.22.1", # sqlite async
@@ -21,16 +21,21 @@ dependencies = [
     "pymysql>=1.1.0", # mysql sync (migrations)
     "psycopg2-binary>=2.9.0", # postgresql sync (migrations)
 
-    "pydantic-settings>=2.14.1",
+    "pydantic-settings>=2.14.2",
     "pydantic>=2.13.4",
 ]
 
 [project.optional-dependencies]
+test = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "httpx>=0.28.0",
+]
 dev = [
-    "pytest>=8.0.0",
-    "pytest-asyncio>=0.24.0",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
     "black>=24.0.0",
-    "ruff>=0.5.0",
+    "ruff>=0.15.20",
 ]
 
 # 目标 Python 版本
@@ -47,4 +52,6 @@ line-length = 150
 
 [tool.ruff]
 line-length = 150
+
+[tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]

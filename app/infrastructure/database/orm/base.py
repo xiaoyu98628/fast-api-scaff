@@ -24,12 +24,12 @@ class Base(DeclarativeBase):
         return config().database.configuration(cls.connection_name()).prefix
 
     @declared_attr.directive
-    def __tablename__(cls) -> str:
-        logical_name = cls.__dict__.get("__table_name__")
+    def __tablename__(self) -> str:
+        logical_name = self.__dict__.get("__table_name__")
         if logical_name is None:
-            raise TypeError(f"{cls.__name__} must define __table_name__")
+            raise TypeError(f"{self.__name__} must define __table_name__")
 
-        connection = cls.__dict__.get("__connection__")
+        connection = self.__dict__.get("__connection__")
         connection_name = connection if connection is not None else config().database.connection
         prefix = config().database.configuration(connection_name).prefix
         return f"{prefix}{logical_name}"
