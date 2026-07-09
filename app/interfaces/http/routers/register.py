@@ -7,3 +7,7 @@ from app.interfaces.http.ws.router import ws_router
 def register_route(app: FastAPI) -> None:
     app.include_router(api_router)
     app.include_router(ws_router)
+
+    @app.get(path="/health", summary="健康检测")
+    async def health():
+        return {"message": "Hello World"}

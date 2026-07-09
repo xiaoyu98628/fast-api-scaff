@@ -22,23 +22,19 @@ def create_app() -> FastAPI:
 
     configure = config()
 
-    app = FastAPI(
+    fastapi_app = FastAPI(
         title=configure.app.name,
         debug=configure.app.debug,
         lifespan=lifespan,
     )
 
     # 注册中间件
-    register_middleware(app=app)
-    register_exception_handlers(app=app)
+    register_middleware(app=fastapi_app)
+    register_exception_handlers(app=fastapi_app)
     # 注册路由
-    register_route(app=app)
+    register_route(app=fastapi_app)
 
-    @app.get(path="/health", summary="健康检测")
-    async def health():
-        return {"message": "Hello World"}
-
-    return app
+    return fastapi_app
 
 app = create_app()
 
