@@ -1,0 +1,40 @@
+[project]
+name = "fast-api-scaff"
+version = "3.0.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+authors = [
+    {name = "CaoGaoYu", email = "1765841705@qq.com"}
+]
+dependencies = [
+    "fastapi>=0.141.1",
+    "uvicorn[standard]>=0.52.1",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "httpx>=0.28.0",
+]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "black>=24.0.0",
+    "ruff>=0.15.21",
+    "ty>=0.0.59",
+]
+
+# 目标 Python 版本
+[tool.ty.environment]
+python-version = "3.14"
+
+[tool.black]
+line-length = 150
+
+[tool.ruff]
+line-length = 150
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "C901", "PLR0912", "PLR0915"]
