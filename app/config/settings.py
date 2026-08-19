@@ -4,6 +4,7 @@ from pydantic import BaseModel, ConfigDict
 
 from app.config.app import AppSettings
 from app.config.cache import CacheSettings
+from app.config.cors import CorsSettings
 from app.config.database import DatabaseSettings
 
 
@@ -15,6 +16,7 @@ class Settings(BaseModel):
     app: AppSettings
     database: DatabaseSettings
     cache: CacheSettings
+    cors: CorsSettings
 
 
 @lru_cache(maxsize=1)
@@ -24,4 +26,5 @@ def load_settings() -> Settings:
         app=AppSettings(),
         database=DatabaseSettings(),
         cache=CacheSettings(),
+        cors=CorsSettings(),
     )
