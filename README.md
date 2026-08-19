@@ -1,0 +1,343 @@
+# fast-api-scaff
+
+基于 FastAPI 的 Python 3.14+ 后端脚手架。项目通过应用容器统一管理数据库和缓存等应用级资源，并采用延迟校验、延迟创建和延迟连接的方式，使未被业务使用的基础设施不会阻塞服务启动。
+
+## 环境要求
+
+- Python 3.14+
+- [uv](https://docs.astral.sh/uv/)
+
+## 安装与启动
+
+安装开发依赖：
+
+```shell
+uv sync --extra dev
+```
+
+复制环境变量示例并按本地环境修改：
+
+```shell
+cp sample.env .env
+```
+
+启动开发服务：
+
+```shell
+uv run uvicorn app.main:app --reload
+```
+
+## 应用容器
+
+数据库和缓存管理器都保存在 `ApplicationContainer` 中。FastAPI 生命周期启动时会创建容器，并将其保存到 `app.state.container`；应用关闭时，容器会统一释放已经创建的数据库和缓存资源。
+
+Controller 可以通过 `Request` 获取容器：
+
+```python
+from fastapi import Request
+
+from app.bootstrap.container import ApplicationContainer
+
+
+async def example(request: Request) -> dict[str, object]:
+    container: ApplicationContainer = request.app.state.container
+    return {
+        "databases": container.databases.connection_names,
+        "caches": container.caches.connection_names,
+    }
+```
+
+业务代码应通过容器中的管理器获取资源，不要自行创建数据库 Engine、Redis 客户端或 Memcached 客户端。
+
+## 延迟加载行为
+
+数据库和缓存都不会在应用启动阶段连接外部服务。
+
+| 阶段 | 数据库 | 缓存 |
+|------|--------|------|
+| 应用启动 | 读取原始配置，不校验具体连接 | 读取原始配置，不校验具体连接 |
+| 第一次获取资源 | 校验指定连接并创建 Engine | 校验指定连接并创建客户端 |
+| 第一次执行命令 | 建立数据库连接 | 连接 Redis 或 Memcached |
+| 应用关闭 | 释放已创建的 Engine | 关闭已创建的客户端和连接池 |
+
+因此，没有被业务使用的数据库或缓存即使配置不完整，也不会阻塞应用启动。配置修改后需要重启服务，使应用重新读取配置快照。
+
+## 数据库
+
+### 支持的数据库
+
+- PostgreSQL：`postgresql` 或 `pgsql`
+- MySQL：`mysql`
+- SQLite：`sqlite`
+
+PostgreSQL 和 MySQL 使用异步连接池，SQLite 使用异步驱动。当前项目尚未集成数据库迁移工具，也不会在启动时自动创建数据表。
+
+### 配置方式
+
+数据库环境变量使用以下结构：
+
+```text
+DB_DEFAULT=默认连接名
+DB_CONNECTIONS__连接名__配置项=配置值
+```
+
+例如配置一个默认 PostgreSQL 连接：
+
+```env
+DB_DEFAULT=main
+
+DB_CONNECTIONS__MAIN__DRIVER=postgresql
+DB_CONNECTIONS__MAIN__HOST=127.0.0.1
+DB_CONNECTIONS__MAIN__PORT=5432
+DB_CONNECTIONS__MAIN__DATABASE=fast-api
+DB_CONNECTIONS__MAIN__USERNAME=postgres
+DB_CONNECTIONS__MAIN__PASSWORD=postgres
+DB_CONNECTIONS__MAIN__POOL_SIZE=10
+DB_CONNECTIONS__MAIN__MAX_OVERFLOW=20
+```
+
+增加一个 MySQL 命名连接：
+
+```env
+DB_CONNECTIONS__LEGACY__DRIVER=mysql
+DB_CONNECTIONS__LEGACY__HOST=127.0.0.1
+DB_CONNECTIONS__LEGACY__PORT=3306
+DB_CONNECTIONS__LEGACY__DATABASE=legacy
+DB_CONNECTIONS__LEGACY__USERNAME=root
+DB_CONNECTIONS__LEGACY__PASSWORD=root
+DB_CONNECTIONS__LEGACY__CHARSET=utf8mb4
+```
+
+增加一个 SQLite 命名连接：
+
+```env
+DB_CONNECTIONS__LOCAL__DRIVER=sqlite
+DB_CONNECTIONS__LOCAL__DATABASE=data/database.sqlite
+```
+
+SQLite 相对路径基于项目的 `storage` 目录解析。上面的配置最终指向：
+
+```text
+storage/data/database.sqlite
+```
+
+也可以使用绝对路径或 `:memory:` 内存数据库。
+
+### 使用默认数据库
+
+通过 `container.databases.session()` 获取默认数据库会话：
+
+```python
+from fastapi import Request
+from sqlalchemy import text
+
+from app.bootstrap.container import ApplicationContainer
+
+
+async def database_example(request: Request) -> dict[str, int]:
+    container: ApplicationContainer = request.app.state.container
+
+    async with container.databases.session() as session:
+        result = await session.execute(text("SELECT 1"))
+
+    return {"value": result.scalar_one()}
+```
+
+`session()` 本身不会自动提交写操作。需要事务时使用 `session.begin()`：
+
+```python
+async with container.databases.session() as session:
+    async with session.begin():
+        await session.execute(...)
+```
+
+### 使用命名数据库
+
+将连接名传给 `session()`：
+
+```python
+async with container.databases.session("legacy") as session:
+    result = await session.execute(...)
+```
+
+需要直接访问 SQLAlchemy Engine 时，可以使用：
+
+```python
+engine = await container.databases.get_engine()
+legacy_engine = await container.databases.get_engine("legacy")
+```
+
+通常业务查询应优先使用 `session()`，不要在业务代码中自行关闭 Session 或 Engine；应用容器会统一管理 Engine 生命周期。
+
+## 缓存
+
+### 支持的缓存
+
+- Redis：官方异步客户端 `redis.asyncio`
+- Memcached：异步客户端 `memcachio`，当前配置要求提供 SASL 用户名和密码
+
+项目没有提供 Memory 缓存。Redis 和 Memcached 对业务层暴露相同的 `CacheClient` 协议。
+
+### 配置方式
+
+缓存环境变量使用以下结构：
+
+```text
+CACHE_DEFAULT=默认连接名
+CACHE_KEY_PREFIX=全局默认前缀
+CACHE_CONNECTIONS__连接名__配置项=配置值
+```
+
+配置默认 Redis 连接：
+
+```env
+CACHE_DEFAULT=session
+CACHE_KEY_PREFIX=fast-api-scaff:
+
+CACHE_CONNECTIONS__SESSION__DRIVER=redis
+CACHE_CONNECTIONS__SESSION__HOST=127.0.0.1
+CACHE_CONNECTIONS__SESSION__PORT=6379
+CACHE_CONNECTIONS__SESSION__DATABASE=0
+CACHE_CONNECTIONS__SESSION__MAX_CONNECTIONS=10
+```
+
+配置带 SASL 认证的 Memcached 命名连接：
+
+```env
+CACHE_CONNECTIONS__PAGE__DRIVER=memcached
+CACHE_CONNECTIONS__PAGE__HOST=127.0.0.1
+CACHE_CONNECTIONS__PAGE__PORT=11211
+CACHE_CONNECTIONS__PAGE__USERNAME=memcached
+CACHE_CONNECTIONS__PAGE__PASSWORD=memcached
+CACHE_CONNECTIONS__PAGE__MIN_CONNECTIONS=1
+CACHE_CONNECTIONS__PAGE__MAX_CONNECTIONS=10
+CACHE_CONNECTIONS__PAGE__KEY_PREFIX=page:
+```
+
+Redis 和 Memcached 共用以下连接池配置：
+
+- `MAX_CONNECTIONS`：最大连接数，默认 `10`
+- `CONNECT_TIMEOUT`：连接超时秒数，默认 `5.0`
+- `READ_TIMEOUT`：读取超时秒数，默认 `5.0`
+
+Memcached 额外支持：
+
+- `MIN_CONNECTIONS`：最小连接数，默认 `1`
+- `BLOCKING_TIMEOUT`：等待可用连接的超时秒数，默认 `5.0`
+
+### key 前缀
+
+`CACHE_KEY_PREFIX` 是所有缓存连接共享的默认前缀。连接没有配置自己的 `KEY_PREFIX` 时，会继承全局前缀：
+
+```text
+CACHE_KEY_PREFIX=fast-api-scaff:
+业务 key=user:1
+实际 key=fast-api-scaff:user:1
+```
+
+连接级 `KEY_PREFIX` 会完整覆盖全局配置，不会和全局前缀自动拼接：
+
+```env
+CACHE_KEY_PREFIX=fast-api-scaff:
+CACHE_CONNECTIONS__PAGE__KEY_PREFIX=page:
+```
+
+此时 `PAGE` 连接中的 `user:1` 最终是 `page:user:1`。如果需要组合形式，应显式配置：
+
+```env
+CACHE_CONNECTIONS__PAGE__KEY_PREFIX=fast-api-scaff:page:
+```
+
+### 使用默认缓存
+
+通过 `container.caches.get()` 获取默认缓存：
+
+```python
+from fastapi import Request
+
+from app.bootstrap.container import ApplicationContainer
+from app.platform.cache.client import CacheClient
+
+
+async def cache_example(request: Request) -> dict[str, object]:
+    container: ApplicationContainer = request.app.state.container
+    cache: CacheClient = await container.caches.get()
+
+    await cache.set("user:1", b"xiaoyu", ttl=60)
+    value = await cache.get("user:1")
+
+    return {"value": value.decode() if value is not None else None}
+```
+
+缓存值统一使用 `bytes`。字符串需要在写入前编码，读取后解码：
+
+```python
+await cache.set("name", "xiaoyu".encode(), ttl=60)
+
+value = await cache.get("name")
+name = value.decode() if value is not None else None
+```
+
+`ttl` 的单位是秒，只能是正整数；传入 `None` 表示不过期。
+
+### 使用命名缓存
+
+将连接名传给 `container.caches.get()`：
+
+```python
+page_cache: CacheClient = await container.caches.get("page")
+await page_cache.set("home", b"content", ttl=300)
+```
+
+其他缓存操作：
+
+```python
+exists = await cache.exists("user:1")
+deleted = await cache.delete("user:1")
+healthy = await cache.ping()
+```
+
+业务代码只依赖：
+
+```python
+from app.platform.cache.client import CacheClient
+```
+
+不要在 Controller 或 Service 中直接导入 `RedisCache`、`MemcachedCache`，也不要自行实例化具体客户端。具体实现由缓存工厂根据连接配置选择，客户端生命周期由应用容器统一管理。
+
+## 项目结构
+
+```text
+app/
+├── bootstrap/              # 应用创建、容器装配和生命周期
+├── config/                 # 原始配置和具体连接配置模型
+├── platform/
+│   ├── database/           # 数据库资源、工厂和管理器
+│   ├── cache/              # 缓存协议、工厂和管理器
+│   │   └── backends/       # Redis、Memcached 等具体实现
+│   └── resources/          # 通用延迟资源管理
+└── runtime/                # 项目运行路径
+```
+
+## 开发验证
+
+运行测试：
+
+```shell
+uv run python -m pytest -q
+```
+
+运行 Ruff：
+
+```shell
+uv run ruff check app tests
+uv run ruff format --check app tests
+```
+
+运行类型检查：
+
+```shell
+uv run ty check app tests
+```
+
+完整环境变量示例见 [`sample.env`](sample.env)。
