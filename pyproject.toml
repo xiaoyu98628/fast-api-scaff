@@ -11,6 +11,11 @@ dependencies = [
     "fastapi>=0.141.1",
     "uvicorn[standard]>=0.52.3",
     "pydantic-settings>=2.15.0",
+
+    "sqlalchemy[asyncio]>=2.0.52",
+    "aiosqlite>=0.22.1",
+    "asyncmy>=0.2.14",
+    "asyncpg>=0.31.0",
 ]
 
 [project.optional-dependencies]

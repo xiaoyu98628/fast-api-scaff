@@ -1,6 +1,8 @@
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
+from app.platform.database.manager import DatabaseManager
+
 type AsyncCallback = Callable[[], Awaitable[None]]
 type Callback = Callable[[], None]
 
@@ -9,6 +11,7 @@ type Callback = Callable[[], None]
 class ApplicationContainer:
     """保存应用入口依赖并统一管理应用级资源的生命周期。"""
 
+    databases: DatabaseManager
     startup_callbacks: tuple[AsyncCallback, ...] = ()
     async_shutdown_callbacks: tuple[AsyncCallback, ...] = ()
     shutdown_callbacks: tuple[Callback, ...] = ()
