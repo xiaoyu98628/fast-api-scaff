@@ -1,13 +1,16 @@
 from app.bootstrap.container import ApplicationContainer
 from app.config.settings import Settings
+from app.platform.cache.manager import CacheManager
 from app.platform.database.manager import DatabaseManager
 
 
 def build_application_container(settings: Settings) -> ApplicationContainer:
     """构建并连接应用所需的组件。"""
     databases = DatabaseManager(settings.database)
+    caches = CacheManager(settings.cache)
 
     return ApplicationContainer(
         databases=databases,
-        async_shutdown_callbacks=(databases.aclose,),
+        caches=caches,
+        async_shutdown_callbacks=(databases.aclose, caches.aclose),
     )

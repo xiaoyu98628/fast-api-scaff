@@ -3,6 +3,7 @@ from functools import lru_cache
 from pydantic import BaseModel, ConfigDict
 
 from app.config.app import AppSettings
+from app.config.cache import CacheSettings
 from app.config.database import DatabaseSettings
 
 
@@ -13,6 +14,7 @@ class Settings(BaseModel):
 
     app: AppSettings
     database: DatabaseSettings
+    cache: CacheSettings
 
 
 @lru_cache(maxsize=1)
@@ -21,4 +23,5 @@ def load_settings() -> Settings:
     return Settings(
         app=AppSettings(),
         database=DatabaseSettings(),
+        cache=CacheSettings(),
     )

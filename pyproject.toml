@@ -16,6 +16,9 @@ dependencies = [
     "aiosqlite>=0.22.1",
     "asyncmy>=0.2.14",
     "asyncpg>=0.31.0",
+
+    "redis>=8.1.0",
+    "memcachio>=0.5.1",
 ]
 
 [project.optional-dependencies]

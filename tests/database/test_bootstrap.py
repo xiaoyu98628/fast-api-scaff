@@ -2,8 +2,10 @@ import pytest
 
 from app.bootstrap.app import create_app
 from app.config.app import AppSettings
+from app.config.cache import CacheSettings
 from app.config.database import DatabaseSettings
 from app.config.settings import Settings
+from app.platform.cache.manager import CacheManager
 from app.platform.database.manager import DatabaseManager
 
 
@@ -12,6 +14,7 @@ async def test_empty_database_config_does_not_block_application_startup() -> Non
     settings = Settings(
         app=AppSettings(_env_file=None),
         database=DatabaseSettings(_env_file=None),
+        cache=CacheSettings(_env_file=None),
     )
     app = create_app(settings)
 
@@ -20,3 +23,5 @@ async def test_empty_database_config_does_not_block_application_startup() -> Non
 
         assert isinstance(container.databases, DatabaseManager)
         assert container.databases.connection_names == ()
+        assert isinstance(container.caches, CacheManager)
+        assert container.caches.connection_names == ()
