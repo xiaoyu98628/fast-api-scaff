@@ -11,7 +11,7 @@ def test_cors_defaults_are_safe_for_wildcard_origin() -> None:
     assert settings.allow_methods == ["*"]
     assert settings.allow_headers == ["*"]
     assert settings.allow_credentials is False
-    assert settings.expose_headers == []
+    assert settings.expose_headers == ["*"]
     assert settings.max_age == 600
 
 

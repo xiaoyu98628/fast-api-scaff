@@ -71,7 +71,7 @@ CORS_ALLOW_ORIGINS=["*"]
 CORS_ALLOW_METHODS=["*"]
 CORS_ALLOW_HEADERS=["*"]
 CORS_ALLOW_CREDENTIALS=false
-CORS_EXPOSE_HEADERS=[]
+CORS_EXPOSE_HEADERS=["*"]
 CORS_MAX_AGE=600
 ```
 
@@ -82,7 +82,7 @@ CORS_ALLOW_ORIGINS=["https://app.example.com"]
 CORS_ALLOW_CREDENTIALS=true
 ```
 
-`CORS_ALLOW_ORIGINS` 包含 `"*"` 时不能同时启用 `CORS_ALLOW_CREDENTIALS`，非法组合会在加载配置时被拒绝。`X-Request-ID` 始终对浏览器暴露，`CORS_EXPOSE_HEADERS` 用于配置除此之外需要暴露的响应头。
+`CORS_ALLOW_ORIGINS` 包含 `"*"` 时不能同时启用 `CORS_ALLOW_CREDENTIALS`，非法组合会在加载配置时被拒绝。`X-Request-ID` 始终对浏览器暴露。默认的 `CORS_EXPOSE_HEADERS=["*"]` 会向不携带凭证的跨域请求暴露所有可访问的响应头；携带凭证时，`"*"` 不具备通配语义，但 `X-Request-ID` 仍会被明确暴露。生产环境可以根据需要将 `CORS_EXPOSE_HEADERS` 改为明确的响应头列表。
 
 CORS 中间件作用于整个 FastAPI 应用，包括 `/health`、`/docs` 和 `/openapi.json`。浏览器来源不在允许列表中时，普通请求仍可能正常返回业务响应，但响应不会包含允许该来源跨域读取的响应头；不合法的预检请求由 CORS 中间件返回失败响应。
 

@@ -19,12 +19,12 @@ from app.config.settings import Settings
 REQUEST_ID_HEADER = HeaderKeys.request_id.value
 
 
-def build_settings() -> Settings:
+def build_settings(cors: CorsSettings | None = None) -> Settings:
     return Settings(
         app=AppSettings(_env_file=None),
         database=DatabaseSettings(_env_file=None),
         cache=CacheSettings(_env_file=None),
-        cors=CorsSettings(_env_file=None),
+        cors=cors if cors is not None else CorsSettings(_env_file=None),
     )
 
 
@@ -95,6 +95,33 @@ async def test_request_id_is_exposed_to_cross_origin_clients() -> None:
 
     assert response.status_code == 200
     assert REQUEST_ID_HEADER.lower() in exposed_headers
+    assert REQUEST_ID_HEADER in response.headers
+
+
+@pytest.mark.asyncio
+async def test_request_id_is_explicitly_exposed_with_credentials_and_wildcard() -> None:
+    origin = "https://app.example.com"
+    app = create_app(
+        build_settings(
+            CorsSettings(
+                allow_origins=[origin],
+                allow_credentials=True,
+                expose_headers=["*"],
+                _env_file=None,
+            )
+        )
+    )
+
+    async with create_test_client(app) as client:
+        client.cookies.set("session", "test-session")
+        response = await client.get("/health", headers={"Origin": origin})
+
+    exposed_headers = {header.strip().lower() for header in response.headers["access-control-expose-headers"].split(",")}
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == origin
+    assert response.headers["access-control-allow-credentials"] == "true"
+    assert exposed_headers == {REQUEST_ID_HEADER.lower(), "*"}
     assert REQUEST_ID_HEADER in response.headers
 
 
