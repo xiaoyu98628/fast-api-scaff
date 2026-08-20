@@ -7,7 +7,6 @@ from app.config.cors import CorsSettings
 def test_cors_defaults_are_safe_for_wildcard_origin() -> None:
     settings = CorsSettings(_env_file=None)
 
-    assert settings.enabled is True
     assert settings.allow_origins == ["*"]
     assert settings.allow_methods == ["*"]
     assert settings.allow_headers == ["*"]
@@ -17,7 +16,6 @@ def test_cors_defaults_are_safe_for_wildcard_origin() -> None:
 
 
 def test_cors_environment_is_loaded(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("CORS_ENABLED", "false")
     monkeypatch.setenv("CORS_ALLOW_ORIGINS", '["https://app.example.com"]')
     monkeypatch.setenv("CORS_ALLOW_METHODS", '["GET", "POST"]')
     monkeypatch.setenv("CORS_ALLOW_HEADERS", '["Authorization"]')
@@ -27,7 +25,6 @@ def test_cors_environment_is_loaded(monkeypatch: pytest.MonkeyPatch) -> None:
 
     settings = CorsSettings(_env_file=None)
 
-    assert settings.enabled is False
     assert settings.allow_origins == ["https://app.example.com"]
     assert settings.allow_methods == ["GET", "POST"]
     assert settings.allow_headers == ["Authorization"]

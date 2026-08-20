@@ -18,7 +18,7 @@ async def test_invalid_cache_connection_does_not_block_application_startup() -> 
             connections={"broken": {"driver": "memcached"}},
             _env_file=None,
         ),
-        cors=CorsSettings(enabled=False, _env_file=None),
+        cors=CorsSettings(_env_file=None),
     )
     app = create_app(settings)
 

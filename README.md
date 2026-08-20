@@ -64,10 +64,9 @@ async def example(request: Request) -> dict[str, object]:
 
 ## 跨域访问
 
-应用使用 FastAPI 官方的 `CORSMiddleware` 统一处理跨域访问。CORS 默认开启并允许任意来源、方法和请求头，但默认不允许携带 Cookie 等凭证：
+应用始终注册 FastAPI 官方的 `CORSMiddleware` 统一处理跨域访问。默认允许任意来源、方法和请求头，但不允许携带 Cookie 等凭证：
 
 ```env
-CORS_ENABLED=true
 CORS_ALLOW_ORIGINS=["*"]
 CORS_ALLOW_METHODS=["*"]
 CORS_ALLOW_HEADERS=["*"]
@@ -83,7 +82,7 @@ CORS_ALLOW_ORIGINS=["https://app.example.com"]
 CORS_ALLOW_CREDENTIALS=true
 ```
 
-`CORS_ALLOW_ORIGINS` 包含 `"*"` 时不能同时启用 `CORS_ALLOW_CREDENTIALS`，非法组合会在加载配置时被拒绝。设置 `CORS_ENABLED=false` 后不会注册 CORS 中间件。
+`CORS_ALLOW_ORIGINS` 包含 `"*"` 时不能同时启用 `CORS_ALLOW_CREDENTIALS`，非法组合会在加载配置时被拒绝。
 
 CORS 中间件作用于整个 FastAPI 应用，包括 `/health`、`/docs` 和 `/openapi.json`。浏览器来源不在允许列表中时，普通请求仍可能正常返回业务响应，但响应不会包含允许该来源跨域读取的响应头；不合法的预检请求由 CORS 中间件返回失败响应。
 

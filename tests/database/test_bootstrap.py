@@ -16,7 +16,7 @@ async def test_empty_database_config_does_not_block_application_startup() -> Non
         app=AppSettings(_env_file=None),
         database=DatabaseSettings(_env_file=None),
         cache=CacheSettings(_env_file=None),
-        cors=CorsSettings(enabled=False, _env_file=None),
+        cors=CorsSettings(_env_file=None),
     )
     app = create_app(settings)
 

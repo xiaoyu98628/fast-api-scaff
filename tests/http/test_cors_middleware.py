@@ -30,25 +30,10 @@ async def create_test_client(app: FastAPI) -> AsyncIterator[AsyncClient]:
             yield client
 
 
-@pytest.mark.asyncio
-async def test_disabled_cors_is_not_registered() -> None:
-    app = create_app(build_settings(CorsSettings(enabled=False, _env_file=None)))
+def test_cors_is_always_registered() -> None:
+    app = create_app(build_settings(CorsSettings(_env_file=None)))
 
-    assert all(middleware.cls is not CORSMiddleware for middleware in app.user_middleware)
-
-    async with create_test_client(app) as client:
-        response = await client.get("/health", headers={"Origin": "https://app.example.com"})
-        preflight = await client.options(
-            "/health",
-            headers={
-                "Origin": "https://app.example.com",
-                "Access-Control-Request-Method": "GET",
-            },
-        )
-
-    assert response.status_code == 200
-    assert "access-control-allow-origin" not in response.headers
-    assert preflight.status_code == 405
+    assert any(middleware.cls is CORSMiddleware for middleware in app.user_middleware)
 
 
 @pytest.mark.asyncio

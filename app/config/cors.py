@@ -15,7 +15,6 @@ class CorsSettings(BaseSettings):
         frozen=True,
     )
 
-    enabled: bool = True
     allow_origins: list[str] = Field(default_factory=lambda: ["*"])
     allow_methods: list[str] = Field(default_factory=lambda: ["*"])
     allow_headers: list[str] = Field(default_factory=lambda: ["*"])
