@@ -82,9 +82,30 @@ CORS_ALLOW_ORIGINS=["https://app.example.com"]
 CORS_ALLOW_CREDENTIALS=true
 ```
 
-`CORS_ALLOW_ORIGINS` 包含 `"*"` 时不能同时启用 `CORS_ALLOW_CREDENTIALS`，非法组合会在加载配置时被拒绝。
+`CORS_ALLOW_ORIGINS` 包含 `"*"` 时不能同时启用 `CORS_ALLOW_CREDENTIALS`，非法组合会在加载配置时被拒绝。`X-Request-ID` 始终对浏览器暴露，`CORS_EXPOSE_HEADERS` 用于配置除此之外需要暴露的响应头。
 
 CORS 中间件作用于整个 FastAPI 应用，包括 `/health`、`/docs` 和 `/openapi.json`。浏览器来源不在允许列表中时，普通请求仍可能正常返回业务响应，但响应不会包含允许该来源跨域读取的响应头；不合法的预检请求由 CORS 中间件返回失败响应。
+
+## 请求上下文
+
+应用使用 `starlette-context` 的 `RawContextMiddleware` 管理请求级上下文，并通过 `RequestIdPlugin` 处理 `X-Request-ID`：
+
+- 请求未携带 `X-Request-ID` 时自动生成 UUID4；
+- 请求携带合法 UUID 时沿用该值；
+- 请求携带的值不是合法 UUID 时返回 `400 Bad Request`；
+- 正常响应会返回与当前请求上下文一致的 `X-Request-ID`。
+
+请求处理期间可以从公共上下文读取请求 ID：
+
+```python
+from starlette_context import context
+from starlette_context.header_keys import HeaderKeys
+
+
+request_id = context[HeaderKeys.request_id]
+```
+
+公共上下文用于 `request_id`、`trace_id` 等技术元数据，不用于隐式传递当前用户、租户、权限或事务等业务依赖。上下文只能在请求处理周期内访问。
 
 ## 数据库
 
@@ -280,7 +301,7 @@ CACHE_CONNECTIONS__PAGE__KEY_PREFIX=fast-api-scaff:page:
 from fastapi import Request
 
 from app.bootstrap.container import ApplicationContainer
-from app.platform.cache.client import CacheClient
+from app.infrastructure.cache.client import CacheClient
 
 
 async def cache_example(request: Request) -> dict[str, object]:
@@ -324,7 +345,7 @@ healthy = await cache.ping()
 业务代码只依赖：
 
 ```python
-from app.platform.cache.client import CacheClient
+from app.infrastructure.cache.client import CacheClient
 ```
 
 不要在 Controller 或 Service 中直接导入 `RedisCache`、`MemcachedCache`，也不要自行实例化具体客户端。具体实现由缓存工厂根据连接配置选择，客户端生命周期由应用容器统一管理。
@@ -335,10 +356,11 @@ from app.platform.cache.client import CacheClient
 app/
 ├── bootstrap/              # 应用创建、容器装配和生命周期
 ├── config/                 # 原始配置和具体连接配置模型
-├── platform/
+├── infrastructure/
 │   ├── database/           # 数据库资源、工厂和管理器
 │   ├── cache/              # 缓存协议、工厂和管理器
 │   │   └── backends/       # Redis、Memcached 等具体实现
+│   ├── http/               # HTTP 中间件和请求上下文装配
 │   └── resources/          # 通用延迟资源管理
 └── runtime/                # 项目运行路径
 ```

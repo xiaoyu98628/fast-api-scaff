@@ -4,8 +4,8 @@ import pytest
 from memcachio import Client, MemcachedItem
 from redis.asyncio import Redis
 
-from app.platform.cache.backends.memcached_cache import MemcachedCache
-from app.platform.cache.backends.redis_cache import RedisCache
+from app.infrastructure.cache.backends.memcached_cache import MemcachedCache
+from app.infrastructure.cache.backends.redis_cache import RedisCache
 
 
 @pytest.mark.asyncio

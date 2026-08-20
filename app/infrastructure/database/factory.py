@@ -8,8 +8,8 @@ from app.config.database import (
     PostgreSQLConnectionSettings,
     SQLiteConnectionSettings,
 )
-from app.platform.database.errors import DatabaseDriverError
-from app.platform.database.resource import DatabaseResource
+from app.infrastructure.database.errors import DatabaseDriverError
+from app.infrastructure.database.resource import DatabaseResource
 
 
 async def create_database_resource(settings: DatabaseConnectionSettings) -> DatabaseResource:

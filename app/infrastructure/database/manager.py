@@ -6,10 +6,10 @@ from pydantic import TypeAdapter, ValidationError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from app.config.database import DatabaseConnectionSettings, DatabaseSettings
-from app.platform.database.errors import DatabaseConfigurationError
-from app.platform.database.factory import close_database_resource, create_database_resource
-from app.platform.database.resource import DatabaseResource
-from app.platform.resources.lazy import AsyncLazy
+from app.infrastructure.database.errors import DatabaseConfigurationError
+from app.infrastructure.database.factory import close_database_resource, create_database_resource
+from app.infrastructure.database.resource import DatabaseResource
+from app.infrastructure.resources.lazy import AsyncLazy
 
 DATABASE_CONNECTION_ADAPTER = TypeAdapter(DatabaseConnectionSettings)
 

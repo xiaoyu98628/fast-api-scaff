@@ -3,8 +3,8 @@ import asyncio
 import pytest
 
 from app.config.database import DatabaseSettings
-from app.platform.database.errors import DatabaseConfigurationError
-from app.platform.database.manager import DatabaseManager
+from app.infrastructure.database.errors import DatabaseConfigurationError
+from app.infrastructure.database.manager import DatabaseManager
 
 
 @pytest.mark.asyncio

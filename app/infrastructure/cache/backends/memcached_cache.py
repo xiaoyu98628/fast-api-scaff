@@ -1,6 +1,6 @@
 from memcachio import Client
 
-from app.platform.cache.backends.base import BaseCache
+from app.infrastructure.cache.backends.base import BaseCache
 
 
 class MemcachedCache(BaseCache):

@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from app.platform.resources.lazy import AsyncLazy
+from app.infrastructure.resources.lazy import AsyncLazy
 
 
 @pytest.mark.asyncio

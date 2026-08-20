@@ -3,10 +3,10 @@ from functools import partial
 from pydantic import TypeAdapter, ValidationError
 
 from app.config.cache import CacheConnectionSettings, CacheSettings
-from app.platform.cache.client import CacheClient
-from app.platform.cache.errors import CacheConfigurationError
-from app.platform.cache.factory import close_cache_client, create_cache_client
-from app.platform.resources.lazy import AsyncLazy
+from app.infrastructure.cache.client import CacheClient
+from app.infrastructure.cache.errors import CacheConfigurationError
+from app.infrastructure.cache.factory import close_cache_client, create_cache_client
+from app.infrastructure.resources.lazy import AsyncLazy
 
 CACHE_CONNECTION_ADAPTER = TypeAdapter(CacheConnectionSettings)
 

@@ -5,9 +5,9 @@ from pydantic import SecretStr
 from redis.asyncio import Redis
 
 from app.config.cache import CacheConnectionSettings, MemcachedConnectionSettings, RedisConnectionSettings
-from app.platform.cache.backends.memcached_cache import MemcachedCache
-from app.platform.cache.backends.redis_cache import RedisCache
-from app.platform.cache.client import CacheClient
+from app.infrastructure.cache.backends.memcached_cache import MemcachedCache
+from app.infrastructure.cache.backends.redis_cache import RedisCache
+from app.infrastructure.cache.client import CacheClient
 
 
 async def create_cache_client(

@@ -11,6 +11,7 @@ dependencies = [
     "fastapi>=0.141.1",
     "uvicorn[standard]>=0.52.3",
     "pydantic-settings>=2.15.0",
+    "starlette-context>=0.5.1",
 
     "sqlalchemy[asyncio]>=2.0.52",
     "aiosqlite>=0.22.1",

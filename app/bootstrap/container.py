@@ -1,8 +1,8 @@
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
-from app.platform.cache.manager import CacheManager
-from app.platform.database.manager import DatabaseManager
+from app.infrastructure.cache.manager import CacheManager
+from app.infrastructure.database.manager import DatabaseManager
 
 type AsyncCallback = Callable[[], Awaitable[None]]
 type Callback = Callable[[], None]

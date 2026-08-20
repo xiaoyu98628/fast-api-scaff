@@ -1,6 +1,6 @@
 from redis.asyncio import Redis
 
-from app.platform.cache.backends.base import BaseCache
+from app.infrastructure.cache.backends.base import BaseCache
 
 
 class RedisCache(BaseCache):

@@ -2,7 +2,7 @@ import pytest
 from sqlalchemy import text
 
 from app.config.database import DatabaseSettings
-from app.platform.database.manager import DatabaseManager
+from app.infrastructure.database.manager import DatabaseManager
 
 
 @pytest.mark.asyncio

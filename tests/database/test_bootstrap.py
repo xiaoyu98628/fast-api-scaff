@@ -6,8 +6,8 @@ from app.config.cache import CacheSettings
 from app.config.cors import CorsSettings
 from app.config.database import DatabaseSettings
 from app.config.settings import Settings
-from app.platform.cache.manager import CacheManager
-from app.platform.database.manager import DatabaseManager
+from app.infrastructure.cache.manager import CacheManager
+from app.infrastructure.database.manager import DatabaseManager
 
 
 @pytest.mark.asyncio

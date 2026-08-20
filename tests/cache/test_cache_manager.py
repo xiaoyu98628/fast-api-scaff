@@ -3,10 +3,10 @@ import asyncio
 import pytest
 
 from app.config.cache import CacheSettings
-from app.platform.cache.backends.memcached_cache import MemcachedCache
-from app.platform.cache.backends.redis_cache import RedisCache
-from app.platform.cache.errors import CacheConfigurationError
-from app.platform.cache.manager import CacheManager
+from app.infrastructure.cache.backends.memcached_cache import MemcachedCache
+from app.infrastructure.cache.backends.redis_cache import RedisCache
+from app.infrastructure.cache.errors import CacheConfigurationError
+from app.infrastructure.cache.manager import CacheManager
 
 
 @pytest.mark.asyncio
