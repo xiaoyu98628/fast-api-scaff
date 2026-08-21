@@ -362,7 +362,9 @@ app/
 │   │   └── backends/       # Redis、Memcached 等具体实现
 │   └── resources/          # 通用延迟资源管理
 ├── interfaces/
-│   └── http/               # HTTP 入站接口、中间件和请求上下文装配
+│   └── http/               # HTTP 入站接口
+│       ├── middleware/     # 中间件和请求上下文装配
+│       └── routes/         # 系统路由和应用路由注册
 └── runtime/                # 项目运行路径
 ```
 

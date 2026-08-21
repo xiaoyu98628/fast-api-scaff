@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 
-from app.bootstrap.routes import register_routes
 from app.config.settings import Settings
+from app.interfaces.http.routes.register import register_routes
 
 
 def configure_http_app(app: FastAPI, settings: Settings) -> None:
