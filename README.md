@@ -107,6 +107,40 @@ request_id = context[HeaderKeys.request_id]
 
 公共上下文用于 `request_id`、`trace_id` 等技术元数据，不用于隐式传递当前用户、租户、权限或事务等业务依赖。上下文只能在请求处理周期内访问。
 
+## 统一响应
+
+普通 JSON API 使用统一响应结构。`code` 由三位 HTTP 状态码、三位服务编码和四位局部响应码组成，`APP_SERVICE_CODE` 用于配置当前服务的三位编码：
+
+```env
+APP_SERVICE_CODE=001
+```
+
+健康检测响应示例：
+
+```json
+{
+  "code": "2000010000",
+  "success": true,
+  "message": "请求成功",
+  "data": {
+    "message": "ok"
+  },
+  "request_id": "550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+HTTP 状态码仍然表达请求的实际结果，不会因为使用统一响应而全部返回 `200`。`204 No Content`、文件下载、流式响应和 API 文档端点不使用统一 JSON 响应。`request_id` 与响应头 `X-Request-ID` 保持一致。
+
+HTTP 接口通过 `ApiResponseFactory` 构造响应，业务用例只返回业务结果，不依赖 HTTP 响应模型：
+
+```python
+from app.interfaces.http.response.json import ApiResponse, ApiResponseFactory
+
+
+async def example(responses: ApiResponseFactory) -> ApiResponse[dict[str, int]]:
+    return responses.success(data={"value": 1})
+```
+
 ## 数据库
 
 ### 支持的数据库
@@ -364,6 +398,7 @@ app/
 ├── interfaces/
 │   └── http/               # HTTP 入站接口
 │       ├── middleware/     # 中间件和请求上下文装配
+│       ├── response/       # 统一响应模型和响应码
 │       └── routes/         # 系统路由和应用路由注册
 └── runtime/                # 项目运行路径
 ```

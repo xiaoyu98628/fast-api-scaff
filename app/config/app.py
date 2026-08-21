@@ -19,3 +19,4 @@ class AppSettings(BaseSettings):
     debug: bool = False
     host: str = "0.0.0.0"
     port: int = Field(default=8000, ge=1, le=65535)
+    service_code: str = Field(default="001", pattern=r"^\d{3}$")

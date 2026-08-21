@@ -33,6 +33,10 @@ def test_openapi_metadata_and_swagger_settings() -> None:
         "version": "1.2.3",
     }
     assert schema["paths"]["/health"]["get"]["tags"] == ["system"]
+    health_response = schema["paths"]["/health"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+    response_schema_name = health_response["$ref"].rsplit("/", maxsplit=1)[-1]
+    response_schema = schema["components"]["schemas"][response_schema_name]
+    assert set(response_schema["properties"]) == {"code", "success", "message", "data", "request_id"}
     assert app.swagger_ui_parameters is not None
     assert app.swagger_ui_parameters["filter"] is True
     assert app.swagger_ui_parameters["displayRequestDuration"] is True
