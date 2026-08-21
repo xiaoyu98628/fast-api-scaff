@@ -97,6 +97,12 @@ def find() -> Optional[Dict[str, str]]:
 - 禁止在 `__init__.py` 中声明 `__all__`、常量、函数或类，也不能执行注册等初始化逻辑。
 - 包初始化之外的逻辑应放在含义明确的独立模块中。
 
+## 模块与包命名
+
+- 项目内禁止使用 `platform` 作为包名或模块名，包括 `platform/`、`platform.py` 和 `app.platform`，避免与 Python 标准库 `platform` 发生导入解析冲突。
+- 新增包或模块前，必须检查名称是否与 Python 标准库模块重名；存在冲突风险时，应改用含义明确且无冲突的名称。
+- 跨限界上下文共用的 HTTP 技术能力沿用 `app.infrastructure.http`，不得建议迁移或新增到 `app.platform`。
+
 ## 导入
 
 - 使用绝对且显式的模块路径，从符号实际定义的模块导入。
