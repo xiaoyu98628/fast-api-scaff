@@ -101,7 +101,7 @@ def find() -> Optional[Dict[str, str]]:
 
 - 项目内禁止使用 `platform` 作为包名或模块名，包括 `platform/`、`platform.py` 和 `app.platform`，避免与 Python 标准库 `platform` 发生导入解析冲突。
 - 新增包或模块前，必须检查名称是否与 Python 标准库模块重名；存在冲突风险时，应改用含义明确且无冲突的名称。
-- 跨限界上下文共用的 HTTP 技术能力沿用 `app.infrastructure.http`，不得建议迁移或新增到 `app.platform`。
+- 应用宿主的 HTTP 入站能力统一放在 `app.interfaces.http`，包括路由装配、中间件、统一响应和异常到 HTTP 的映射；不得建议迁移或新增到 `app.platform`。
 
 ## 导入
 

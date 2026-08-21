@@ -360,8 +360,9 @@ app/
 │   ├── database/           # 数据库资源、工厂和管理器
 │   ├── cache/              # 缓存协议、工厂和管理器
 │   │   └── backends/       # Redis、Memcached 等具体实现
-│   ├── http/               # HTTP 中间件和请求上下文装配
 │   └── resources/          # 通用延迟资源管理
+├── interfaces/
+│   └── http/               # HTTP 入站接口、中间件和请求上下文装配
 └── runtime/                # 项目运行路径
 ```
 

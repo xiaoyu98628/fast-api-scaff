@@ -6,7 +6,7 @@ from app.bootstrap.build import build_application_container
 from app.bootstrap.configure import configure_http_app
 from app.bootstrap.lifespan import create_lifespan
 from app.config.settings import Settings, load_settings
-from app.infrastructure.http.middleware.registry import build_http_middlewares
+from app.interfaces.http.middleware.registry import build_http_middlewares
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
