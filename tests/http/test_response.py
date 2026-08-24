@@ -8,11 +8,11 @@ from app.config.cache import CacheSettings
 from app.config.cors import CorsSettings
 from app.config.database import DatabaseSettings
 from app.config.settings import Settings
-from app.interfaces.http.response.codes.builder import ResponseCodeBuilder
-from app.interfaces.http.response.codes.contract import CodeDefinition
-from app.interfaces.http.response.codes.error_code import ErrorCode
-from app.interfaces.http.response.codes.success_code import SuccessCode
-from app.interfaces.http.response.json import ApiResponseFactory
+from app.interfaces.http.shared.response.codes.builder import ResponseCodeBuilder
+from app.interfaces.http.shared.response.codes.contract import CodeDefinition
+from app.interfaces.http.shared.response.codes.error_code import ErrorCode
+from app.interfaces.http.shared.response.codes.success_code import SuccessCode
+from app.interfaces.http.shared.response.json import ApiResponseFactory
 
 
 def build_settings(service_code: str = "001") -> Settings:

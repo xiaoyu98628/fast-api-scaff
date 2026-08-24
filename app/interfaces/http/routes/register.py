@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-from app.interfaces.http.response.json import ApiResponse, ApiResponseFactory
+from app.interfaces.http.shared.response.json import ApiResponse, ApiResponseFactory
 
 
 def register_routes(app: FastAPI, responses: ApiResponseFactory) -> None:

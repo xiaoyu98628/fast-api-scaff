@@ -1,4 +1,4 @@
-from app.interfaces.http.response.codes.contract import CodeContract
+from app.interfaces.http.shared.response.codes.contract import CodeContract
 
 
 class ResponseCodeBuilder:

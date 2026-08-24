@@ -1,8 +1,8 @@
 from fastapi import FastAPI
 
 from app.config.settings import Settings
-from app.interfaces.http.response.json import ApiResponseFactory
 from app.interfaces.http.routes.register import register_routes
+from app.interfaces.http.shared.response.json import ApiResponseFactory
 
 
 def configure_http_app(app: FastAPI, settings: Settings) -> None:

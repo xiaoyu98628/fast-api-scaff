@@ -134,7 +134,7 @@ HTTP 状态码仍然表达请求的实际结果，不会因为使用统一响应
 HTTP 接口通过 `ApiResponseFactory` 构造响应，业务用例只返回业务结果，不依赖 HTTP 响应模型：
 
 ```python
-from app.interfaces.http.response.json import ApiResponse, ApiResponseFactory
+from app.interfaces.http.shared.response.json import ApiResponse, ApiResponseFactory
 
 
 async def example(responses: ApiResponseFactory) -> ApiResponse[dict[str, int]]:
@@ -398,7 +398,8 @@ app/
 ├── interfaces/
 │   └── http/               # HTTP 入站接口
 │       ├── middleware/     # 中间件和请求上下文装配
-│       ├── response/       # 统一响应模型和响应码
+│       ├── shared/         # HTTP 接口层共享能力
+│       │   └── response/   # 统一响应模型和响应码
 │       └── routes/         # 系统路由和应用路由注册
 └── runtime/                # 项目运行路径
 ```

@@ -5,10 +5,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from starlette_context import context
 from starlette_context.header_keys import HeaderKeys
 
-from app.interfaces.http.response.codes.builder import ResponseCodeBuilder
-from app.interfaces.http.response.codes.contract import CodeContract
-from app.interfaces.http.response.codes.error_code import ErrorCode
-from app.interfaces.http.response.codes.success_code import SuccessCode
+from app.interfaces.http.shared.response.codes.builder import ResponseCodeBuilder
+from app.interfaces.http.shared.response.codes.contract import CodeContract
+from app.interfaces.http.shared.response.codes.error_code import ErrorCode
+from app.interfaces.http.shared.response.codes.success_code import SuccessCode
 
 
 class ApiResponse[T](BaseModel):

@@ -1,4 +1,4 @@
-from app.interfaces.http.response.codes.contract import CodeDefinition, CodedEnum
+from app.interfaces.http.shared.response.codes.contract import CodeDefinition, CodedEnum
 
 
 class SuccessCode(CodedEnum):
