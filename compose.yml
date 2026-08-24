@@ -1,0 +1,21 @@
+services:
+  service:
+    build:
+      context: ./
+      dockerfile: Dockerfile
+    env_file:
+      - ./.env
+    container_name: ${APP_NAME}
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    volumes:
+      - .:/app
+      - /app/.venv
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    restart: no
+    networks:
+      - fast-api-scaff
+
+networks:
+  fast-api-scaff:
+    name: fast-api-scaff

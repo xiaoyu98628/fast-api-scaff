@@ -21,10 +21,32 @@ uv sync --extra dev
 cp sample.env .env
 ```
 
+应用名称、版本、运行环境、调试模式与服务编码通过以下环境变量配置：
+
+```env
+APP_NAME=fast-api-scaff
+APP_VERSION=3.0.0
+APP_ENV=local
+APP_DEBUG=false
+APP_SERVICE_CODE=001
+```
+
+Docker 容器内的 Uvicorn 固定监听 `0.0.0.0:8000`。Compose 使用 `APP_PORT` 配置宿主机发布端口，默认将宿主机的 `8000` 端口映射到容器的 `8000` 端口：
+
+```env
+APP_PORT=8000
+```
+
 启动开发服务：
 
 ```shell
 uv run uvicorn app.main:app --reload
+```
+
+通过 Compose 启动带热重载的开发服务：
+
+```shell
+docker compose up --build
 ```
 
 ## 应用容器
