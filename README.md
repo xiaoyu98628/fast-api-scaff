@@ -6,6 +6,7 @@
 
 - Python 3.14+
 - [uv](https://docs.astral.sh/uv/)
+- Docker 与 Docker Compose（仅使用容器启动时需要）
 
 ## 安装与启动
 
@@ -226,8 +227,11 @@ DB_CONNECTIONS__MAIN__PORT=5432
 DB_CONNECTIONS__MAIN__DATABASE=fast-api
 DB_CONNECTIONS__MAIN__USERNAME=postgres
 DB_CONNECTIONS__MAIN__PASSWORD=postgres
+DB_CONNECTIONS__MAIN__ECHO=false
 DB_CONNECTIONS__MAIN__POOL_SIZE=10
 DB_CONNECTIONS__MAIN__MAX_OVERFLOW=20
+DB_CONNECTIONS__MAIN__POOL_PRE_PING=true
+DB_CONNECTIONS__MAIN__POOL_RECYCLE=3600
 ```
 
 增加一个 MySQL 命名连接：
@@ -256,6 +260,13 @@ storage/data/database.sqlite
 ```
 
 也可以使用绝对路径或 `:memory:` 内存数据库。
+
+所有数据库连接都支持 `ECHO`，默认值为 `false`。PostgreSQL 和 MySQL 额外支持以下连接池配置：
+
+- `POOL_SIZE`：连接池常驻连接数，默认 `10`；
+- `MAX_OVERFLOW`：连接池允许临时增加的连接数，默认 `20`；
+- `POOL_PRE_PING`：取出连接前是否检查连接有效性，默认 `true`；
+- `POOL_RECYCLE`：连接回收间隔秒数，默认 `3600`，设置为 `-1` 表示不按时间回收。
 
 ### 使用默认数据库
 
@@ -333,7 +344,10 @@ CACHE_CONNECTIONS__SESSION__HOST=127.0.0.1
 CACHE_CONNECTIONS__SESSION__PORT=6379
 CACHE_CONNECTIONS__SESSION__DATABASE=0
 CACHE_CONNECTIONS__SESSION__MAX_CONNECTIONS=10
+CACHE_CONNECTIONS__SESSION__SSL=false
 ```
+
+Redis 还支持可选的 `USERNAME`、`PASSWORD` 认证配置。
 
 配置带 SASL 认证的 Memcached 命名连接：
 
@@ -346,6 +360,7 @@ CACHE_CONNECTIONS__PAGE__PASSWORD=memcached
 CACHE_CONNECTIONS__PAGE__MIN_CONNECTIONS=1
 CACHE_CONNECTIONS__PAGE__MAX_CONNECTIONS=10
 CACHE_CONNECTIONS__PAGE__KEY_PREFIX=page:
+CACHE_CONNECTIONS__PAGE__SSL=false
 ```
 
 Redis 和 Memcached 共用以下连接池配置：
@@ -353,6 +368,7 @@ Redis 和 Memcached 共用以下连接池配置：
 - `MAX_CONNECTIONS`：最大连接数，默认 `10`
 - `CONNECT_TIMEOUT`：连接超时秒数，默认 `5.0`
 - `READ_TIMEOUT`：读取超时秒数，默认 `5.0`
+- `SSL`：是否启用 TLS，默认 `false`
 
 Memcached 额外支持：
 
@@ -452,6 +468,8 @@ app/
 │   └── resources/          # 通用延迟资源管理
 ├── interfaces/
 │   └── http/               # HTTP 入站接口
+│       ├── controllers/    # 业务 Controller 和版本化 Router
+│       ├── exceptions/     # HTTP 异常及异常处理器
 │       ├── middleware/     # 中间件和请求上下文装配
 │       ├── shared/         # HTTP 接口层共享能力
 │       │   └── response/   # 统一响应模型和响应码
@@ -480,4 +498,4 @@ uv run ruff format --check app tests
 uv run ty check app tests
 ```
 
-完整环境变量示例见 [`sample.env`](sample.env)。
+完整环境变量示例见 [`sample.env`](sample.env)。未在示例中显式列出的可选配置使用代码中的默认值。
