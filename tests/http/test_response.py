@@ -37,7 +37,9 @@ def test_response_code_definition_and_builder() -> None:
     builder = ResponseCodeBuilder("001")
 
     assert builder.build(SuccessCode.OK) == "2000010000"
-    assert builder.build(ErrorCode.NOT_FOUND) == "4040014041"
+    assert builder.build(ErrorCode.ROUTE_NOT_FOUND) == "4040010101"
+    assert builder.build(ErrorCode.RESOURCE_NOT_FOUND) == "4040010102"
+    assert builder.build(ErrorCode.CONFLICT) == "4090010101"
     assert builder.service_code == "001"
 
     with pytest.raises(ValueError, match="四位数字"):
@@ -61,9 +63,9 @@ def test_response_factory_builds_success_and_error() -> None:
         "request_id": "request-success",
     }
     assert error.model_dump() == {
-        "code": "4221234221",
+        "code": "4221230101",
         "success": False,
-        "message": "请求参数不合法",
+        "message": "请求参数有误，请检查后重试",
         "data": {"field": "name"},
         "request_id": "request-error",
     }
