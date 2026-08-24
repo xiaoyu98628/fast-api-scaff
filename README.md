@@ -145,7 +145,34 @@ async def example() -> JsonResponse[dict[str, int]]:
     return JsonResponse.success(data={"value": 1})
 ```
 
-应用创建时使用 `APP_SERVICE_CODE` 初始化进程级响应码构造器。同一 Python 进程只能对应一个服务编码，Controller 不需要注入响应工厂。`JsonResponse.error()` 已可用于构造失败响应，统一异常到 HTTP 的映射尚未接入。SSE、`204 No Content`、文件下载和其他流式响应不使用 `JsonResponse`。
+应用创建时使用 `APP_SERVICE_CODE` 初始化进程级响应码构造器。同一 Python 进程只能对应一个服务编码，Controller 不需要注入响应工厂。SSE、`204 No Content`、文件下载和其他流式响应不使用 `JsonResponse`。
+
+### 异常处理
+
+应用在 HTTP 边界统一注册异常处理器，并将普通 JSON API 的异常转换为 `JsonResponse.error()`：
+
+- 请求参数校验失败使用 `VALIDATION_ERROR` 和 `422`；
+- 路由不存在使用 `ROUTE_NOT_FOUND` 和 `404`；
+- 请求方法不支持使用 `METHOD_NOT_ALLOWED` 和 `405`；
+- 其他 FastAPI、Starlette HTTP 异常保留实际 HTTP 状态码，并使用对应的通用错误码；
+- 未知异常统一返回 `INTERNAL_ERROR` 和 `500`，不会向客户端暴露原始异常消息和内部数据。
+
+参数校验错误的 `data` 只包含错误类型、字段位置和错误消息，不回显请求输入或 Pydantic 校验上下文。异常响应会继续经过 CORS 和请求 ID 中间件，`request_id` 与响应头 `X-Request-ID` 保持一致。客户端传入非法 `X-Request-ID` 时，请求会在上下文建立前被拒绝，因此该 `400` 响应不包含 `request_id`。
+
+Controller 或其他 HTTP 接口适配器需要主动返回明确错误码时，可以抛出 `HttpError`：
+
+```python
+from app.interfaces.http.exceptions.error import HttpError
+from app.interfaces.http.shared.response.codes.error_code import ErrorCode
+
+
+raise HttpError(
+    ErrorCode.RESOURCE_NOT_FOUND,
+    data={"resource": "user"},
+)
+```
+
+`HttpError` 属于 HTTP 接口层，不应由业务用例直接依赖。业务层应定义表达业务事实的异常，再由 Controller 转换为 `HttpError`，或者在对应的 HTTP 模块中为该业务异常注册专用处理器。`APP_DEBUG=true` 时，未知异常保留 Starlette 的调试响应，可能包含内部异常详情，仅用于本地开发。
 
 ## 数据库
 

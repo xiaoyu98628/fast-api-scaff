@@ -82,6 +82,13 @@ async def test_invalid_request_id_is_rejected() -> None:
         response = await client.get("/health", headers={REQUEST_ID_HEADER: "invalid request id"})
 
     assert response.status_code == 400
+    assert REQUEST_ID_HEADER not in response.headers
+    assert response.json() == {
+        "code": "4000010101",
+        "success": False,
+        "message": "请求内容有误，请检查后重试",
+        "data": None,
+    }
 
 
 @pytest.mark.asyncio
