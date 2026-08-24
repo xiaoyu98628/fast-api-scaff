@@ -107,6 +107,10 @@ request_id = context[HeaderKeys.request_id]
 
 公共上下文用于 `request_id`、`trace_id` 等技术元数据，不用于隐式传递当前用户、租户、权限或事务等业务依赖。上下文只能在请求处理周期内访问。
 
+## HTTP 路由组织
+
+业务 HTTP Controller 位于 `app.interfaces.http.controllers`。`controllers/router.py` 聚合 `/api` 下的版本化接口，`controllers/v1/router.py` 聚合 `/api/v1` 下的业务接口。`routes/register.py` 负责将业务 Router 注册到 FastAPI 应用，并直接注册不属于业务上下文的 `/health` 宿主探活接口。
+
 ## 统一响应
 
 普通 JSON API 使用统一响应结构。`code` 由三位 HTTP 状态码、三位服务编码和四位局部响应码组成，`APP_SERVICE_CODE` 用于配置当前服务的三位编码：
@@ -131,15 +135,17 @@ APP_SERVICE_CODE=001
 
 HTTP 状态码仍然表达请求的实际结果，不会因为使用统一响应而全部返回 `200`。`204 No Content`、文件下载、流式响应和 API 文档端点不使用统一 JSON 响应。`request_id` 与响应头 `X-Request-ID` 保持一致。
 
-HTTP 接口通过 `ApiResponseFactory` 构造响应，业务用例只返回业务结果，不依赖 HTTP 响应模型：
+HTTP Controller 通过 `JsonResponse` 的静态方法构造普通 JSON 响应，业务用例只返回业务结果，不依赖 HTTP 响应模型：
 
 ```python
-from app.interfaces.http.shared.response.json import ApiResponse, ApiResponseFactory
+from app.interfaces.http.shared.response.json import JsonResponse
 
 
-async def example(responses: ApiResponseFactory) -> ApiResponse[dict[str, int]]:
-    return responses.success(data={"value": 1})
+async def example() -> JsonResponse[dict[str, int]]:
+    return JsonResponse.success(data={"value": 1})
 ```
+
+应用创建时使用 `APP_SERVICE_CODE` 初始化进程级响应码构造器。同一 Python 进程只能对应一个服务编码，Controller 不需要注入响应工厂。`JsonResponse.error()` 已可用于构造失败响应，统一异常到 HTTP 的映射尚未接入。SSE、`204 No Content`、文件下载和其他流式响应不使用 `JsonResponse`。
 
 ## 数据库
 

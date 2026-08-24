@@ -1,18 +1,20 @@
 from fastapi import FastAPI
 
 from app.interfaces.http.controllers.router import api_router
-from app.interfaces.http.shared.response.json import ApiResponse, ApiResponseFactory
+from app.interfaces.http.shared.response.json import JsonResponse
 
 
-def register_routes(app: FastAPI, responses: ApiResponseFactory) -> None:
+async def health() -> JsonResponse[dict[str, str]]:
+    return JsonResponse.success(data={"message": "ok"})
 
-    app.include_router(api_router)
 
-    @app.get(
+def register_routes(app: FastAPI) -> None:
+    app.add_api_route(
         path="/health",
-        tags=["system"],
+        endpoint=health,
+        methods=["GET"],
+        tags=["health"],
         summary="健康检测",
-        response_model=ApiResponse[dict[str, str]],
+        response_model=JsonResponse[dict[str, str]],
     )
-    async def health() -> ApiResponse[dict[str, str]]:
-        return responses.success(data={"message": "ok"})
+    app.include_router(api_router)

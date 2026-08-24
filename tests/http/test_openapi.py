@@ -32,7 +32,7 @@ def test_openapi_metadata_and_swagger_settings() -> None:
         "description": "基于 FastAPI 构建的后端 API 服务。",
         "version": "1.2.3",
     }
-    assert schema["paths"]["/health"]["get"]["tags"] == ["system"]
+    assert schema["paths"]["/health"]["get"]["tags"] == ["health"]
     health_response = schema["paths"]["/health"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
     response_schema_name = health_response["$ref"].rsplit("/", maxsplit=1)[-1]
     response_schema = schema["components"]["schemas"][response_schema_name]

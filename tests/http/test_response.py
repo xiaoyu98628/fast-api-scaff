@@ -8,11 +8,14 @@ from app.config.cache import CacheSettings
 from app.config.cors import CorsSettings
 from app.config.database import DatabaseSettings
 from app.config.settings import Settings
-from app.interfaces.http.shared.response.codes.builder import ResponseCodeBuilder
+from app.interfaces.http.shared.response.codes.builder import (
+    ResponseCodeBuilder,
+    configure_response_code_builder,
+)
 from app.interfaces.http.shared.response.codes.contract import CodeDefinition
 from app.interfaces.http.shared.response.codes.error_code import ErrorCode
 from app.interfaces.http.shared.response.codes.success_code import SuccessCode
-from app.interfaces.http.shared.response.json import ApiResponseFactory
+from app.interfaces.http.shared.response.json import JsonResponse
 
 
 def build_settings(service_code: str = "001") -> Settings:
@@ -49,11 +52,20 @@ def test_response_code_definition_and_builder() -> None:
         ResponseCodeBuilder("01")
 
 
-def test_response_factory_builds_success_and_error() -> None:
-    responses = ApiResponseFactory.from_service_code("123")
+def test_json_response_requires_configuration() -> None:
+    with pytest.raises(RuntimeError, match="尚未完成初始化"):
+        JsonResponse.success(data={"value": 1})
 
-    success = responses.success(data={"value": 1}, request_id="request-success")
-    error = responses.error(ErrorCode.VALIDATION_ERROR, data={"field": "name"}, request_id="request-error")
+
+def test_json_response_builds_success_and_error() -> None:
+    configure_response_code_builder("123")
+
+    success = JsonResponse.success(data={"value": 1}, request_id="request-success")
+    error = JsonResponse.error(
+        ErrorCode.VALIDATION_ERROR,
+        data={"field": "name"},
+        request_id="request-error",
+    )
 
     assert success.model_dump() == {
         "code": "2001230000",
@@ -71,10 +83,17 @@ def test_response_factory_builds_success_and_error() -> None:
     }
 
     with pytest.raises(ValueError, match="2xx"):
-        responses.success(data=None, code=ErrorCode.BAD_REQUEST)
+        JsonResponse.success(data=None, code=ErrorCode.BAD_REQUEST)
 
     with pytest.raises(ValueError, match="4xx 或 5xx"):
-        responses.error(SuccessCode.OK)
+        JsonResponse.error(SuccessCode.OK)
+
+
+def test_response_code_builder_rejects_conflicting_service_code() -> None:
+    configure_response_code_builder("001")
+
+    with pytest.raises(RuntimeError, match="同一进程不能配置多个服务编码"):
+        configure_response_code_builder("002")
 
 
 @pytest.mark.asyncio
