@@ -1,8 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from app.config.cache import CacheSettings
-from app.infrastructure.cache.providers.memcached import MemcachedCacheSettings
+from app.config.cache import CacheSettings, MemcachedCacheSettings
 
 
 def test_nested_environment_is_loaded_as_raw_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -1,10 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from app.config.database import DatabaseSettings
-from app.infrastructure.database.providers.mysql import MySQLDatabaseSettings
-from app.infrastructure.database.providers.postgresql import PostgreSQLDatabaseSettings
-from app.infrastructure.database.providers.sqlite import SQLiteDatabaseSettings
+from app.config.database import DatabaseSettings, MySQLDatabaseSettings, PostgreSQLDatabaseSettings, SQLiteDatabaseSettings
 from app.runtime.paths import STORAGE_DIR
 
 

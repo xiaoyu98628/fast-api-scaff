@@ -216,6 +216,8 @@ DB_DEFAULT=默认连接名
 DB_CONNECTIONS__连接名__配置项=配置值
 ```
 
+数据库应用配置与所有内置驱动的字段模型集中定义在 `app.config.database`；Provider 只负责校验原始连接配置并将其转换为 EngineSpec。
+
 例如配置一个默认 PostgreSQL 连接：
 
 ```env
@@ -402,6 +404,8 @@ CACHE_DEFAULT_TTL=默认过期秒数
 CACHE_CONNECTIONS__连接名__配置项=配置值
 ```
 
+缓存应用配置与所有内置驱动的字段模型集中定义在 `app.config.cache`；Provider 只负责校验原始连接配置并创建对应后端。
+
 配置默认 Redis 连接：
 
 ```env
@@ -578,7 +582,7 @@ database/                       # 数据库迁移环境
 └── main/                       # main 数据库 Alembic 配置和版本脚本
 app/
 ├── bootstrap/              # 应用创建、容器装配和生命周期
-├── config/                 # 应用级原始配置模型
+├── config/                 # 应用配置与数据库、缓存驱动配置模型
 ├── infrastructure/
 │   ├── database/           # 数据库管理器、资源工厂和公共规则
 │   │   ├── contracts/      # Database Provider 协议与资源定义
