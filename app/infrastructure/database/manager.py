@@ -2,16 +2,14 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from functools import partial
 
-from pydantic import TypeAdapter, ValidationError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
-from app.config.database import DatabaseConnectionSettings, DatabaseSettings
+from app.config.database import DatabaseSettings
+from app.infrastructure.database.connection import validate_database_connection
 from app.infrastructure.database.errors import DatabaseConfigurationError
 from app.infrastructure.database.factory import close_database_resource, create_database_resource
 from app.infrastructure.database.resource import DatabaseResource
 from app.infrastructure.resources.lazy import AsyncLazy
-
-DATABASE_CONNECTION_ADAPTER = TypeAdapter(DatabaseConnectionSettings)
 
 
 class DatabaseManager:
@@ -75,11 +73,7 @@ class DatabaseManager:
         name: str,
         raw_config: dict[str, object],
     ) -> DatabaseResource:
-        try:
-            settings = DATABASE_CONNECTION_ADAPTER.validate_python(raw_config)
-        except ValidationError:
-            raise DatabaseConfigurationError(f"数据库连接 {name!r} 配置不合法") from None
-
+        settings = validate_database_connection(name, raw_config)
         return await create_database_resource(settings)
 
     def _resolve_name(self, name: str | None) -> str:

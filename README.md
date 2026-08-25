@@ -463,6 +463,7 @@ app/
 ├── config/                 # 原始配置和具体连接配置模型
 ├── infrastructure/
 │   ├── database/           # 数据库资源、工厂和管理器
+│   │   └── backends/       # MySQL、PostgreSQL、SQLite Engine 配置构建
 │   ├── cache/              # 缓存协议、工厂和管理器
 │   │   └── backends/       # Redis、Memcached 等具体实现
 │   └── resources/          # 通用延迟资源管理
