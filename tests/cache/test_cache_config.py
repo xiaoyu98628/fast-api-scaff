@@ -1,7 +1,8 @@
 import pytest
 from pydantic import ValidationError
 
-from app.config.cache import CacheSettings, MemcachedConnectionSettings
+from app.config.cache import CacheSettings
+from app.infrastructure.cache.providers.memcached import MemcachedCacheSettings
 
 
 def test_nested_environment_is_loaded_as_raw_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -34,7 +35,7 @@ def test_memcached_authentication_is_optional_but_must_be_complete(
     username: str | None,
     password: str | None,
 ) -> None:
-    settings = MemcachedConnectionSettings(
+    settings = MemcachedCacheSettings(
         driver="memcached",
         host="127.0.0.1",
         username=username,
@@ -50,7 +51,7 @@ def test_memcached_authentication_is_optional_but_must_be_complete(
 )
 def test_memcached_rejects_partial_authentication(username: str | None, password: str | None) -> None:
     with pytest.raises(ValidationError, match="同时配置"):
-        MemcachedConnectionSettings(
+        MemcachedCacheSettings(
             driver="memcached",
             host="127.0.0.1",
             username=username,
@@ -60,7 +61,7 @@ def test_memcached_rejects_partial_authentication(username: str | None, password
 
 def test_memcached_pool_minimum_cannot_exceed_maximum() -> None:
     with pytest.raises(ValidationError, match="min_connections"):
-        MemcachedConnectionSettings(
+        MemcachedCacheSettings(
             driver="memcached",
             host="127.0.0.1",
             min_connections=2,

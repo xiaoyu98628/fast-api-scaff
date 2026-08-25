@@ -1,32 +1,36 @@
 from functools import partial
 
-from pydantic import TypeAdapter, ValidationError
+from pydantic import ValidationError
 
-from app.config.cache import CacheConnectionSettings, CacheSettings
+from app.config.cache import CacheSettings
 from app.infrastructure.cache.clients.managed import ManagedCacheClient
 from app.infrastructure.cache.contracts.client import CacheClient
+from app.infrastructure.cache.contracts.provider import CacheBackendDefinition
 from app.infrastructure.cache.errors import CacheConfigurationError
-from app.infrastructure.cache.factory import create_cache_backend
 from app.infrastructure.cache.key import CacheKeyBuilder
+from app.infrastructure.cache.providers.registry import DEFAULT_CACHE_PROVIDERS, CacheProviderRegistry
 from app.infrastructure.resources.lazy import AsyncLazy
-
-CACHE_CONNECTION_ADAPTER = TypeAdapter(CacheConnectionSettings)
 
 
 class CacheManager:
     """按名称管理启动校验、延迟创建的缓存客户端。"""
 
-    def __init__(self, settings: CacheSettings) -> None:
+    def __init__(
+        self,
+        settings: CacheSettings,
+        providers: CacheProviderRegistry = DEFAULT_CACHE_PROVIDERS,
+    ) -> None:
         self._default = settings.default
         self._namespace = settings.namespace
         self._default_ttl = settings.default_ttl
-        connections = self._validate_settings(settings)
+        self._providers = providers
+        definitions = self._prepare_connections(settings)
         self._clients = {
             name: AsyncLazy(
-                factory=partial(self._create, connection),
+                factory=partial(self._create, definition),
                 closer=ManagedCacheClient.aclose,
             )
-            for name, connection in connections.items()
+            for name, definition in definitions.items()
         }
 
     @property
@@ -68,36 +72,35 @@ class CacheManager:
         if errors:
             raise ExceptionGroup("缓存客户端关闭失败", errors)
 
-    async def _create(self, settings: CacheConnectionSettings) -> ManagedCacheClient:
-        backend = await create_cache_backend(settings)
+    async def _create(self, definition: CacheBackendDefinition) -> ManagedCacheClient:
+        backend = await definition.factory()
         return ManagedCacheClient(
             backend=backend,
-            key_builder=CacheKeyBuilder(self._namespace, settings.key_prefix),
+            key_builder=CacheKeyBuilder(self._namespace, definition.key_prefix),
             default_ttl=self._default_ttl,
         )
 
-    @staticmethod
-    def _validate_settings(settings: CacheSettings) -> dict[str, CacheConnectionSettings]:
+    def _prepare_connections(self, settings: CacheSettings) -> dict[str, CacheBackendDefinition]:
         if settings.default is not None and settings.default not in settings.connections:
             raise CacheConfigurationError(f"默认缓存连接 {settings.default!r} 未配置")
 
         if settings.connections and not settings.namespace:
             raise CacheConfigurationError("配置缓存连接时 CACHE_NAMESPACE 不能为空")
 
-        connections: dict[str, CacheConnectionSettings] = {}
+        definitions: dict[str, CacheBackendDefinition] = {}
         for name, raw_config in settings.connections.items():
             if not name or name.isspace():
                 raise CacheConfigurationError("缓存连接名不能为空")
 
             try:
-                connection = CACHE_CONNECTION_ADAPTER.validate_python(raw_config)
-                CacheKeyBuilder(settings.namespace, connection.key_prefix)
+                definition = self._providers.prepare(raw_config)
+                CacheKeyBuilder(settings.namespace, definition.key_prefix)
             except (ValidationError, CacheConfigurationError) as error:
                 raise CacheConfigurationError(f"缓存连接 {name!r} 配置不合法") from error
 
-            connections[name] = connection
+            definitions[name] = definition
 
-        return connections
+        return definitions
 
     def _resolve_name(self, name: str | None) -> str:
         if name is not None:

@@ -446,6 +446,20 @@ CACHE_CONNECTIONS__LOCAL__KEY_PREFIX=local
 
 存在任意缓存连接时，`CACHE_NAMESPACE` 不能为空。默认连接必须出现在 `CACHE_CONNECTIONS` 中，所有连接配置都会在应用生命周期启动时校验；创建 Redis 或 Memcached 客户端不会立即连接网络。
 
+### 扩展缓存驱动
+
+每种驱动由独立 Provider 负责配置校验和后端创建，内置 Provider 通过 `DEFAULT_CACHE_PROVIDERS` 显式注册。自定义 Provider 实现 `CacheProvider` 协议并返回 `CacheBackendDefinition`，然后创建扩展 Registry：
+
+```python
+from app.infrastructure.cache.manager import CacheManager
+from app.infrastructure.cache.providers.registry import DEFAULT_CACHE_PROVIDERS
+
+providers = DEFAULT_CACHE_PROVIDERS.extended(CustomCacheProvider())
+manager = CacheManager(settings.cache, providers=providers)
+```
+
+扩展 Registry 不会修改全局默认 Registry。新增驱动不需要修改 `CacheManager`、内置 Provider 或配置联合类型；应用容器需要在装配 `CacheManager` 时传入扩展后的 Registry。项目不使用装饰器或模块导入副作用自动注册驱动。
+
 ### key 规则
 
 最终 key 按以下规则组合：
@@ -482,7 +496,7 @@ await cache.set("temporary", b"value", ttl=60)
 await cache.set("permanent", b"value", ttl=NO_EXPIRATION)
 ```
 
-删除 `CACHE_DEFAULT_TTL` 后，不传 `ttl` 的写入默认永不过期。
+未配置 `CACHE_DEFAULT_TTL` 时默认值也是 300 秒。不受默认 TTL 影响的永久写入必须显式使用 `NO_EXPIRATION`。
 
 公共 API 中的 TTL 始终表示相对秒数。Memcached 协议会将超过 30 天的 expiry 解释为 Unix 时间戳，后端会自动完成转换，避免它与 Redis 的行为不一致。
 
@@ -555,10 +569,11 @@ app/
 │   ├── database/           # 数据库资源、工厂和管理器
 │   │   ├── backends/       # MySQL、PostgreSQL、SQLite Engine 配置构建
 │   │   └── orm/            # ORM Metadata、命名约定和分库声明基类
-│   ├── cache/              # 缓存管理器、工厂和公共规则
-│   │   ├── contracts/      # 业务客户端与内部后端协议
+│   ├── cache/              # 缓存管理器、Provider Registry 和公共规则
+│   │   ├── contracts/      # 客户端、后端与 Provider 协议
 │   │   ├── clients/        # namespace、TTL 等客户端门面
 │   │   ├── codecs/         # bytes、文本和 JSON 编解码器
+│   │   ├── providers/      # 驱动配置校验、创建和显式注册
 │   │   └── backends/       # Redis、Memcached、Memory 实现
 │   └── resources/          # 通用延迟资源管理
 ├── interfaces/
