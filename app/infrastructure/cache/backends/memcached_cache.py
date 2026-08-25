@@ -1,36 +1,63 @@
+import time
+
 from memcachio import Client
 
-from app.infrastructure.cache.backends.base import BaseCache
+from app.infrastructure.cache.errors import CacheConnectionError, CacheOperationError
+
+MEMCACHED_RELATIVE_EXPIRY_LIMIT = 60 * 60 * 24 * 30
 
 
-class MemcachedCache(BaseCache):
-    def __init__(self, client: Client[bytes], key_prefix: str = "") -> None:
-        super().__init__(key_prefix)
+class MemcachedCacheBackend:
+    def __init__(self, client: Client[bytes]) -> None:
         self._client = client
 
     async def get(self, key: str) -> bytes | None:
-        cache_key = self._key(key)
-        items = await self._client.get(cache_key)
+        cache_key = key.encode()
+        try:
+            items = await self._client.get(cache_key)
+        except Exception as error:
+            raise CacheOperationError("Memcached 读取缓存失败") from error
+
         item = items.get(cache_key)
         return item.value if item is not None else None
 
-    async def set(self, key: str, value: bytes, ttl: int | None = None) -> bool:
-        self._validate_ttl(ttl)
-        result = await self._client.set(self._key(key), value, expiry=ttl or 0)
+    async def set(self, key: str, value: bytes, ttl: int | None) -> bool:
+        try:
+            result = await self._client.set(key.encode(), value, expiry=self._expiry(ttl))
+        except Exception as error:
+            raise CacheOperationError("Memcached 写入缓存失败") from error
+
         return result is True
 
     async def delete(self, key: str) -> bool:
-        result = await self._client.delete(self._key(key))
+        try:
+            result = await self._client.delete(key.encode())
+        except Exception as error:
+            raise CacheOperationError("Memcached 删除缓存失败") from error
+
         return result is True
 
     async def exists(self, key: str) -> bool:
         return await self.get(key) is not None
 
     async def ping(self) -> bool:
-        return bool(await self._client.version())
+        try:
+            return bool(await self._client.version())
+        except Exception as error:
+            raise CacheConnectionError("Memcached 健康检查失败") from error
 
     async def aclose(self) -> None:
-        self._client.connection_pool.close()
+        try:
+            self._client.connection_pool.close()
+        except Exception as error:
+            raise CacheConnectionError("Memcached 客户端关闭失败") from error
 
-    def _key(self, key: str) -> bytes:
-        return self._prefixed_key(key).encode()
+    @staticmethod
+    def _expiry(ttl: int | None) -> int:
+        if ttl is None:
+            return 0
+
+        if ttl <= MEMCACHED_RELATIVE_EXPIRY_LIMIT:
+            return ttl
+
+        return int(time.time()) + ttl

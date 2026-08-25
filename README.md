@@ -1,6 +1,6 @@
 # fast-api-scaff
 
-基于 FastAPI 的 Python 3.14+ 后端脚手架。项目通过应用容器统一管理数据库和缓存等应用级资源，并采用延迟校验、延迟创建和延迟连接的方式，使未被业务使用的基础设施不会阻塞服务启动。
+基于 FastAPI 的 Python 3.14+ 后端脚手架。项目通过应用容器统一管理数据库和缓存等应用级资源，在启动阶段检查确定性的配置错误，并将外部服务连接延迟到第一次实际操作。
 
 ## 环境要求
 
@@ -78,12 +78,12 @@ async def example(request: Request) -> dict[str, object]:
 
 | 阶段 | 数据库 | 缓存 |
 |------|--------|------|
-| 应用启动 | 读取原始配置，不校验具体连接 | 读取原始配置，不校验具体连接 |
-| 第一次获取资源 | 校验指定连接并创建 Engine | 校验指定连接并创建客户端 |
+| 应用启动 | 读取原始配置，不校验具体连接 | 校验默认连接、命名空间和所有连接配置 |
+| 第一次获取资源 | 校验指定连接并创建 Engine | 创建内存客户端或远程驱动客户端，不建立网络连接 |
 | 第一次执行命令 | 建立数据库连接 | 连接 Redis 或 Memcached |
 | 应用关闭 | 释放已创建的 Engine | 关闭已创建的客户端和连接池 |
 
-因此，没有被业务使用的数据库或缓存即使配置不完整，也不会阻塞应用启动。配置修改后需要重启服务，使应用重新读取配置快照。
+因此，缓存的 driver 拼写错误、参数缺失或默认连接不存在会阻止应用启动，而 Redis、Memcached 暂时不可达不会阻止启动。数据库仍在第一次获取对应资源时校验连接配置。配置修改后需要重启服务，使应用重新读取配置快照。
 
 ## 跨域访问
 
@@ -372,9 +372,10 @@ legacy_engine = await container.databases.get_engine("legacy")
 ### 支持的缓存
 
 - Redis：官方异步客户端 `redis.asyncio`
-- Memcached：异步客户端 `memcachio`，当前配置要求提供 SASL 用户名和密码
+- Memcached：异步客户端 `memcachio`，SASL 认证可选
+- Memory：用于单元测试和单进程本地开发
 
-项目没有提供 Memory 缓存。Redis 和 Memcached 对业务层暴露相同的 `CacheClient` 协议。
+三种后端对业务层暴露相同的字节级 `CacheClient` 协议。Memory 不跨进程共享，也不会在远程缓存故障时自动接管，因此不能作为生产环境的透明降级方案。
 
 ### 配置方式
 
@@ -382,7 +383,8 @@ legacy_engine = await container.databases.get_engine("legacy")
 
 ```text
 CACHE_DEFAULT=默认连接名
-CACHE_KEY_PREFIX=全局默认前缀
+CACHE_NAMESPACE=应用级命名空间
+CACHE_DEFAULT_TTL=默认过期秒数
 CACHE_CONNECTIONS__连接名__配置项=配置值
 ```
 
@@ -390,33 +392,40 @@ CACHE_CONNECTIONS__连接名__配置项=配置值
 
 ```env
 CACHE_DEFAULT=session
-CACHE_KEY_PREFIX=fast-api-scaff:
+CACHE_NAMESPACE=fast-api-scaff
+CACHE_DEFAULT_TTL=300
 
 CACHE_CONNECTIONS__SESSION__DRIVER=redis
 CACHE_CONNECTIONS__SESSION__HOST=127.0.0.1
 CACHE_CONNECTIONS__SESSION__PORT=6379
 CACHE_CONNECTIONS__SESSION__DATABASE=0
+CACHE_CONNECTIONS__SESSION__KEY_PREFIX=session
 CACHE_CONNECTIONS__SESSION__MAX_CONNECTIONS=10
 CACHE_CONNECTIONS__SESSION__SSL=false
 ```
 
 Redis 还支持可选的 `USERNAME`、`PASSWORD` 认证配置。
 
-配置带 SASL 认证的 Memcached 命名连接：
+配置 Memcached 命名连接：
 
 ```env
 CACHE_CONNECTIONS__PAGE__DRIVER=memcached
 CACHE_CONNECTIONS__PAGE__HOST=127.0.0.1
 CACHE_CONNECTIONS__PAGE__PORT=11211
-CACHE_CONNECTIONS__PAGE__USERNAME=memcached
-CACHE_CONNECTIONS__PAGE__PASSWORD=memcached
 CACHE_CONNECTIONS__PAGE__MIN_CONNECTIONS=1
 CACHE_CONNECTIONS__PAGE__MAX_CONNECTIONS=10
-CACHE_CONNECTIONS__PAGE__KEY_PREFIX=page:
+CACHE_CONNECTIONS__PAGE__KEY_PREFIX=page
 CACHE_CONNECTIONS__PAGE__SSL=false
 ```
 
-Redis 和 Memcached 共用以下连接池配置：
+Memcached 的 `USERNAME` 和 `PASSWORD` 必须同时配置或同时省略。需要 SASL 时增加：
+
+```env
+CACHE_CONNECTIONS__PAGE__USERNAME=memcached
+CACHE_CONNECTIONS__PAGE__PASSWORD=memcached
+```
+
+Redis 和 Memcached 都支持以下配置：
 
 - `MAX_CONNECTIONS`：最大连接数，默认 `10`
 - `CONNECT_TIMEOUT`：连接超时秒数，默认 `5.0`
@@ -428,30 +437,56 @@ Memcached 额外支持：
 - `MIN_CONNECTIONS`：最小连接数，默认 `1`
 - `BLOCKING_TIMEOUT`：等待可用连接的超时秒数，默认 `5.0`
 
-### key 前缀
+Memory 连接只需要 driver 和可选的用途前缀：
 
-`CACHE_KEY_PREFIX` 是所有缓存连接共享的默认前缀。连接没有配置自己的 `KEY_PREFIX` 时，会继承全局前缀：
+```env
+CACHE_CONNECTIONS__LOCAL__DRIVER=memory
+CACHE_CONNECTIONS__LOCAL__KEY_PREFIX=local
+```
+
+存在任意缓存连接时，`CACHE_NAMESPACE` 不能为空。默认连接必须出现在 `CACHE_CONNECTIONS` 中，所有连接配置都会在应用生命周期启动时校验；创建 Redis 或 Memcached 客户端不会立即连接网络。
+
+### key 规则
+
+最终 key 按以下规则组合：
 
 ```text
-CACHE_KEY_PREFIX=fast-api-scaff:
+{CACHE_NAMESPACE}:{连接 KEY_PREFIX}:{业务 key}
+```
+
+例如：
+
+```text
+namespace=fast-api-scaff
+key_prefix=session
 业务 key=user:1
-实际 key=fast-api-scaff:user:1
+最终 key=fast-api-scaff:session:user:1
 ```
 
-连接级 `KEY_PREFIX` 会完整覆盖全局配置，不会和全局前缀自动拼接：
+为了让同一个业务 key 能在 Redis 和 Memcached 间迁移，公共客户端统一执行较严格的可移植规则：key 不能为空，不能包含空白或控制字符，最终 UTF-8 长度不能超过 250 字节。namespace 和连接前缀不能以冒号开头或结尾。
 
-```env
-CACHE_KEY_PREFIX=fast-api-scaff:
-CACHE_CONNECTIONS__PAGE__KEY_PREFIX=page:
+### TTL 规则
+
+不传 `ttl` 时使用 `CACHE_DEFAULT_TTL`：
+
+```python
+await cache.set("user:1", b"xiaoyu")
 ```
 
-此时 `PAGE` 连接中的 `user:1` 最终是 `page:user:1`。如果需要组合形式，应显式配置：
+传入正整数可以覆盖默认值。需要明确写入永不过期的值时使用 `NO_EXPIRATION`，不使用含义模糊的 `None`：
 
-```env
-CACHE_CONNECTIONS__PAGE__KEY_PREFIX=fast-api-scaff:page:
+```python
+from app.infrastructure.cache.client import NO_EXPIRATION
+
+await cache.set("temporary", b"value", ttl=60)
+await cache.set("permanent", b"value", ttl=NO_EXPIRATION)
 ```
 
-### 使用默认缓存
+删除 `CACHE_DEFAULT_TTL` 后，不传 `ttl` 的写入默认永不过期。
+
+公共 API 中的 TTL 始终表示相对秒数。Memcached 协议会将超过 30 天的 expiry 解释为 Unix 时间戳，后端会自动完成转换，避免它与 Redis 的行为不一致。
+
+### 业务使用
 
 通过 `container.caches.get()` 获取默认缓存：
 
@@ -472,18 +507,16 @@ async def cache_example(request: Request) -> dict[str, object]:
     return {"value": value.decode() if value is not None else None}
 ```
 
-缓存值统一使用 `bytes`。字符串需要在写入前编码，读取后解码：
+缓存值统一使用 `bytes`。项目提供独立的 bytes、UTF-8 文本和 JSON codec，但不会在客户端中隐式序列化任意 Python 对象：
 
 ```python
-await cache.set("name", "xiaoyu".encode(), ttl=60)
+from app.infrastructure.cache.codec import JsonCacheCodec
 
-value = await cache.get("name")
-name = value.decode() if value is not None else None
+await cache.set("user:1", JsonCacheCodec.encode({"name": "xiaoyu"}), ttl=60)
+
+payload = await cache.get("user:1")
+user = JsonCacheCodec.decode(payload) if payload is not None else None
 ```
-
-`ttl` 的单位是秒，只能是正整数；传入 `None` 表示不过期。
-
-### 使用命名缓存
 
 将连接名传给 `container.caches.get()`：
 
@@ -497,16 +530,18 @@ await page_cache.set("home", b"content", ttl=300)
 ```python
 exists = await cache.exists("user:1")
 deleted = await cache.delete("user:1")
-healthy = await cache.ping()
+healthy = await container.caches.ping()
 ```
 
-业务代码只依赖：
+`ping()` 和关闭能力属于资源管理职责，不出现在业务 `CacheClient` 协议中。健康检查通过 `CacheManager.ping()` 执行，客户端由应用容器统一关闭。
+
+Controller 或 Service 只依赖：
 
 ```python
 from app.infrastructure.cache.client import CacheClient
 ```
 
-不要在 Controller 或 Service 中直接导入 `RedisCache`、`MemcachedCache`，也不要自行实例化具体客户端。具体实现由缓存工厂根据连接配置选择，客户端生命周期由应用容器统一管理。
+不要直接导入 Redis、Memcached 或 Memory 后端，也不要自行实例化驱动客户端。底层异常会转换为 `CacheConnectionError` 或 `CacheOperationError`，但不会被静默吞掉；是否在缓存失败后回源，应由业务用例显式决定。
 
 ## 项目结构
 

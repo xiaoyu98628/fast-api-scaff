@@ -4,19 +4,15 @@ from memcachio import Client
 from pydantic import SecretStr
 from redis.asyncio import Redis
 
-from app.config.cache import CacheConnectionSettings, MemcachedConnectionSettings, RedisConnectionSettings
-from app.infrastructure.cache.backends.memcached_cache import MemcachedCache
-from app.infrastructure.cache.backends.redis_cache import RedisCache
-from app.infrastructure.cache.client import CacheClient
+from app.config.cache import CacheConnectionSettings, MemcachedConnectionSettings, MemoryConnectionSettings, RedisConnectionSettings
+from app.infrastructure.cache.backends.base import CacheBackend
+from app.infrastructure.cache.backends.memcached_cache import MemcachedCacheBackend
+from app.infrastructure.cache.backends.memory_cache import MemoryCacheBackend
+from app.infrastructure.cache.backends.redis_cache import RedisCacheBackend
 
 
-async def create_cache_client(
-    settings: CacheConnectionSettings,
-    default_key_prefix: str = "",
-) -> CacheClient:
-    """创建缓存客户端，不主动连接缓存服务。"""
-    key_prefix = settings.resolve_key_prefix(default_key_prefix)
-
+async def create_cache_backend(settings: CacheConnectionSettings) -> CacheBackend:
+    """创建缓存后端，不主动连接远程缓存服务。"""
     match settings:
         case RedisConnectionSettings():
             client = Redis(
@@ -31,26 +27,36 @@ async def create_cache_client(
                 socket_timeout=settings.read_timeout,
                 decode_responses=False,
             )
-            return RedisCache(client=client, key_prefix=key_prefix)
+            return RedisCacheBackend(client)
         case MemcachedConnectionSettings():
             ssl_context = ssl.create_default_context() if settings.ssl else None
-            client: Client[bytes] = Client(
-                (settings.host, settings.port),
-                decode_responses=False,
-                username=settings.username,
-                password=settings.password.get_secret_value(),
-                ssl_context=ssl_context,
-                min_connections=settings.min_connections,
-                max_connections=settings.max_connections,
-                connect_timeout=settings.connect_timeout,
-                read_timeout=settings.read_timeout,
-                blocking_timeout=settings.blocking_timeout,
-            )
-            return MemcachedCache(client=client, key_prefix=key_prefix)
-
-
-async def close_cache_client(client: CacheClient) -> None:
-    await client.aclose()
+            if settings.username is None or settings.password is None:
+                client: Client[bytes] = Client(
+                    (settings.host, settings.port),
+                    decode_responses=False,
+                    ssl_context=ssl_context,
+                    min_connections=settings.min_connections,
+                    max_connections=settings.max_connections,
+                    connect_timeout=settings.connect_timeout,
+                    read_timeout=settings.read_timeout,
+                    blocking_timeout=settings.blocking_timeout,
+                )
+            else:
+                client = Client(
+                    (settings.host, settings.port),
+                    decode_responses=False,
+                    username=settings.username,
+                    password=settings.password.get_secret_value(),
+                    ssl_context=ssl_context,
+                    min_connections=settings.min_connections,
+                    max_connections=settings.max_connections,
+                    connect_timeout=settings.connect_timeout,
+                    read_timeout=settings.read_timeout,
+                    blocking_timeout=settings.blocking_timeout,
+                )
+            return MemcachedCacheBackend(client)
+        case MemoryConnectionSettings():
+            return MemoryCacheBackend()
 
 
 def _secret_value(secret: SecretStr | None) -> str | None:

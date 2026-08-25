@@ -1,13 +1,17 @@
-class BaseCache:
-    """缓存实现共享的 key 前缀和 TTL 规则。"""
+from typing import Protocol
 
-    def __init__(self, key_prefix: str = "") -> None:
-        self._key_prefix = key_prefix
 
-    def _prefixed_key(self, key: str) -> str:
-        return f"{self._key_prefix}{key}"
+class CacheBackend(Protocol):
+    """缓存驱动需要实现的内部字节协议。"""
 
-    @staticmethod
-    def _validate_ttl(ttl: int | None) -> None:
-        if ttl is not None and ttl <= 0:
-            raise ValueError("ttl 必须为正整数或 None")
+    async def get(self, key: str) -> bytes | None: ...
+
+    async def set(self, key: str, value: bytes, ttl: int | None) -> bool: ...
+
+    async def delete(self, key: str) -> bool: ...
+
+    async def exists(self, key: str) -> bool: ...
+
+    async def ping(self) -> bool: ...
+
+    async def aclose(self) -> None: ...
