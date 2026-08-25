@@ -1,11 +1,16 @@
 import asyncio
 from logging.config import fileConfig
 
+from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
-from sqlalchemy.ext.asyncio import async_engine_from_config
+from sqlalchemy.ext.asyncio import create_async_engine
 
-from alembic import context
+from app.config.database import DatabaseSettings
+from app.infrastructure.database.backends.spec import DatabaseEngineSpec
+from app.infrastructure.database.connection import resolve_database_connection
+from app.infrastructure.database.engine import build_database_engine_spec
+from app.infrastructure.database.orm.main import MainBase
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -20,12 +25,26 @@ if config.config_file_name is not None:
 # for 'autogenerate' support
 # from myapp import mymodel
 # target_metadata = mymodel.Base.metadata
-target_metadata = None
+target_metadata = MainBase.metadata
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
 # my_important_option = config.get_main_option("my_important_option")
 # ... etc.
+
+def load_engine_spec() -> DatabaseEngineSpec:
+    """读取当前迁移环境指定的数据库连接。"""
+    connection_name = config.get_main_option("connection_name")
+
+    if not connection_name:
+        raise RuntimeError("Alembic connection_name 未配置")
+
+    connection_settings = resolve_database_connection(
+        DatabaseSettings(),
+        connection_name,
+    )
+
+    return build_database_engine_spec(connection_settings)
 
 
 def run_migrations_offline() -> None:
@@ -40,12 +59,17 @@ def run_migrations_offline() -> None:
     script output.
 
     """
-    url = config.get_main_option("sqlalchemy.url")
+
+    """在不建立数据库连接的情况下生成迁移 SQL。"""
+    spec = load_engine_spec()
+
     context.configure(
-        url=url,
+        url=spec.url.render_as_string(hide_password=False),
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        compare_type=True,
+        render_as_batch=spec.url.get_backend_name() == "sqlite",
     )
 
     with context.begin_transaction():
@@ -53,7 +77,12 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        compare_type=True,
+        render_as_batch=connection.dialect.name == "sqlite",
+    )
 
     with context.begin_transaction():
         context.run_migrations()
@@ -65,16 +94,15 @@ async def run_async_migrations() -> None:
 
     """
 
-    connectable = async_engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
+    """通过 SQLAlchemy 异步 Engine 执行迁移。"""
+    spec = load_engine_spec()
+    engine = create_async_engine(spec.url, poolclass=pool.NullPool)
 
-    async with connectable.connect() as connection:
-        await connection.run_sync(do_run_migrations)
-
-    await connectable.dispose()
+    try:
+        async with engine.connect() as connection:
+            await connection.run_sync(do_run_migrations)
+    finally:
+        await engine.dispose()
 
 
 def run_migrations_online() -> None:

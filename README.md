@@ -205,7 +205,7 @@ raise HttpError(
 - MySQL：`mysql`
 - SQLite：`sqlite`
 
-PostgreSQL 和 MySQL 使用异步连接池，SQLite 使用异步驱动。当前项目尚未集成数据库迁移工具，也不会在启动时自动创建数据表。
+PostgreSQL 和 MySQL 使用异步连接池，SQLite 使用异步驱动。main 数据库使用 Alembic 管理结构迁移，应用启动时不会自动执行迁移或创建数据表。
 
 ### 配置方式
 
@@ -225,6 +225,7 @@ DB_CONNECTIONS__MAIN__DRIVER=postgresql
 DB_CONNECTIONS__MAIN__HOST=127.0.0.1
 DB_CONNECTIONS__MAIN__PORT=5432
 DB_CONNECTIONS__MAIN__DATABASE=fast-api
+DB_CONNECTIONS__MAIN__TABLE_PREFIX=
 DB_CONNECTIONS__MAIN__USERNAME=postgres
 DB_CONNECTIONS__MAIN__PASSWORD=postgres
 DB_CONNECTIONS__MAIN__ECHO=false
@@ -241,6 +242,7 @@ DB_CONNECTIONS__LEGACY__DRIVER=mysql
 DB_CONNECTIONS__LEGACY__HOST=127.0.0.1
 DB_CONNECTIONS__LEGACY__PORT=3306
 DB_CONNECTIONS__LEGACY__DATABASE=legacy
+DB_CONNECTIONS__LEGACY__TABLE_PREFIX=
 DB_CONNECTIONS__LEGACY__USERNAME=root
 DB_CONNECTIONS__LEGACY__PASSWORD=root
 DB_CONNECTIONS__LEGACY__CHARSET=utf8mb4
@@ -251,6 +253,7 @@ DB_CONNECTIONS__LEGACY__CHARSET=utf8mb4
 ```env
 DB_CONNECTIONS__LOCAL__DRIVER=sqlite
 DB_CONNECTIONS__LOCAL__DATABASE=data/database.sqlite
+DB_CONNECTIONS__LOCAL__TABLE_PREFIX=
 ```
 
 SQLite 相对路径基于项目的 `storage` 目录解析。上面的配置最终指向：
@@ -261,12 +264,62 @@ storage/data/database.sqlite
 
 也可以使用绝对路径或 `:memory:` 内存数据库。
 
-所有数据库连接都支持 `ECHO`，默认值为 `false`。PostgreSQL 和 MySQL 额外支持以下连接池配置：
+所有数据库连接都支持 `ECHO` 和 `TABLE_PREFIX`。`ECHO` 默认为 `false`；`TABLE_PREFIX` 默认为空字符串，表示不为 ORM 表名添加前缀。非空前缀只能包含小写字母、数字和下划线，必须以小写字母开头并以下划线结尾，例如 `fast_api_`。
+
+表前缀属于数据库结构标识。模型导入时会读取对应连接的前缀，修改配置后需要重启进程；已经投入使用的前缀不能直接修改，必须通过迁移显式重命名现有表。
+
+PostgreSQL 和 MySQL 额外支持以下连接池配置：
 
 - `POOL_SIZE`：连接池常驻连接数，默认 `10`；
 - `MAX_OVERFLOW`：连接池允许临时增加的连接数，默认 `20`；
 - `POOL_PRE_PING`：取出连接前是否检查连接有效性，默认 `true`；
 - `POOL_RECYCLE`：连接回收间隔秒数，默认 `3600`，设置为 `-1` 表示不按时间回收。
+
+### 数据库迁移
+
+main 数据库的 Alembic 配置和迁移脚本位于 `database/main`。迁移环境通过 `connection_name=main` 明确读取 `DB_CONNECTIONS__MAIN__*`，不依赖 `DB_DEFAULT`，也不会把数据库 URL 或密码保存在 Alembic 配置文件中。
+
+查看当前版本：
+
+```shell
+uv run alembic -c database/main/alembic.ini current
+```
+
+根据已经由迁移环境加载、并继承 `MainBase` 的 ORM 模型生成迁移候选：
+
+```shell
+uv run alembic -c database/main/alembic.ini revision --autogenerate -m "create todos table"
+```
+
+自动生成的迁移必须人工检查后再执行。升级到最新版本：
+
+```shell
+uv run alembic -c database/main/alembic.ini upgrade head
+```
+
+回退一个版本：
+
+```shell
+uv run alembic -c database/main/alembic.ini downgrade -1
+```
+
+main 数据库 ORM 模型继承实际定义模块中的 `MainBase`，并通过不含前缀的 `__table_name__` 声明核心表名：
+
+```python
+from typing import ClassVar
+
+from sqlalchemy.orm import Mapped, mapped_column
+
+from app.infrastructure.database.orm.main import MainBase
+
+
+class ExampleModel(MainBase):
+    __table_name__: ClassVar[str] = "examples"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+```
+
+如果 main 连接配置 `TABLE_PREFIX=fast_api_`，实际表名为 `fast_api_examples`。索引、联合索引、唯一约束和检查约束应在模型的 `__table_args__` 中显式定义；主键、外键等未显式命名的约束使用 ORM Metadata 的统一命名约定。新增模型模块时，还必须将该模块加入 main 迁移环境的模型加载入口，确保模型已经注册到 `MainBase.metadata`。
 
 ### 使用默认数据库
 
@@ -458,12 +511,15 @@ from app.infrastructure.cache.client import CacheClient
 ## 项目结构
 
 ```text
+database/                       # 数据库迁移环境
+└── main/                       # main 数据库 Alembic 配置和版本脚本
 app/
 ├── bootstrap/              # 应用创建、容器装配和生命周期
 ├── config/                 # 原始配置和具体连接配置模型
 ├── infrastructure/
 │   ├── database/           # 数据库资源、工厂和管理器
-│   │   └── backends/       # MySQL、PostgreSQL、SQLite Engine 配置构建
+│   │   ├── backends/       # MySQL、PostgreSQL、SQLite Engine 配置构建
+│   │   └── orm/            # ORM Metadata、命名约定和分库声明基类
 │   ├── cache/              # 缓存协议、工厂和管理器
 │   │   └── backends/       # Redis、Memcached 等具体实现
 │   └── resources/          # 通用延迟资源管理
@@ -489,14 +545,14 @@ uv run python -m pytest -q
 运行 Ruff：
 
 ```shell
-uv run ruff check app tests
-uv run ruff format --check app tests
+uv run ruff check app tests database
+uv run ruff format --check app tests database
 ```
 
 运行类型检查：
 
 ```shell
-uv run ty check app tests
+uv run ty check app tests database
 ```
 
 完整环境变量示例见 [`sample.env`](sample.env)。未在示例中显式列出的可选配置使用代码中的默认值。

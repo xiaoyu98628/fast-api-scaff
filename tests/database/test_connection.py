@@ -3,6 +3,7 @@ import pytest
 from app.config.database import DatabaseSettings, SQLiteConnectionSettings
 from app.infrastructure.database.connection import (
     resolve_database_connection,
+    resolve_database_table_prefix,
     validate_database_connection,
 )
 from app.infrastructure.database.errors import DatabaseConfigurationError
@@ -54,3 +55,28 @@ def test_resolve_database_connection_reports_missing_named_connection() -> None:
 
     with pytest.raises(DatabaseConfigurationError, match="reporting"):
         resolve_database_connection(settings, "reporting")
+
+
+def test_resolve_database_table_prefix_does_not_validate_other_connection_fields() -> None:
+    settings = DatabaseSettings(
+        connections={"main": {"driver": "mysql", "table_prefix": "main_"}},
+        _env_file=None,
+    )
+
+    assert resolve_database_table_prefix(settings, "main") == "main_"
+
+
+def test_resolve_database_table_prefix_defaults_to_empty_string() -> None:
+    settings = DatabaseSettings(_env_file=None)
+
+    assert resolve_database_table_prefix(settings, "main") == ""
+
+
+def test_resolve_database_table_prefix_reports_invalid_value() -> None:
+    settings = DatabaseSettings(
+        connections={"main": {"table_prefix": "invalid-prefix_"}},
+        _env_file=None,
+    )
+
+    with pytest.raises(DatabaseConfigurationError, match="main.*表前缀"):
+        resolve_database_table_prefix(settings, "main")

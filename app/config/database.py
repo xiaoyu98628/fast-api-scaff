@@ -7,6 +7,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from app.config.base import BASE_SETTINGS_CONFIG
 from app.runtime.paths import STORAGE_DIR
 
+type DatabaseTablePrefix = Annotated[
+    str,
+    Field(pattern=r"^(?:[a-z][a-z0-9_]*_)?$"),
+]
+
 
 class DatabaseSettings(BaseSettings):
     """应用启动时读取的数据库原始配置快照。"""
@@ -26,6 +31,7 @@ class BaseConnectionSettings(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     echo: bool = False
+    table_prefix: DatabaseTablePrefix = ""
 
 
 class PooledConnectionSettings(BaseConnectionSettings):

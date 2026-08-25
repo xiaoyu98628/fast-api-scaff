@@ -1,6 +1,7 @@
 import pytest
+from pydantic import ValidationError
 
-from app.config.database import DatabaseSettings, SQLiteConnectionSettings
+from app.config.database import DatabaseSettings, MySQLConnectionSettings, PostgreSQLConnectionSettings, SQLiteConnectionSettings
 from app.runtime.paths import STORAGE_DIR
 
 
@@ -19,6 +20,7 @@ def test_nested_environment_is_loaded_as_raw_snapshot(monkeypatch: pytest.Monkey
     monkeypatch.setenv("DB_DEFAULT", "main")
     monkeypatch.setenv("DB_CONNECTIONS__MAIN__DRIVER", "sqlite")
     monkeypatch.setenv("DB_CONNECTIONS__MAIN__DATABASE", ":memory:")
+    monkeypatch.setenv("DB_CONNECTIONS__MAIN__TABLE_PREFIX", "main_")
 
     settings = DatabaseSettings(_env_file=None)
 
@@ -27,8 +29,49 @@ def test_nested_environment_is_loaded_as_raw_snapshot(monkeypatch: pytest.Monkey
         "main": {
             "driver": "sqlite",
             "database": ":memory:",
+            "table_prefix": "main_",
         }
     }
+
+
+@pytest.mark.parametrize(
+    "settings_type",
+    [MySQLConnectionSettings, PostgreSQLConnectionSettings, SQLiteConnectionSettings],
+)
+def test_all_database_drivers_default_to_empty_table_prefix(settings_type: type[object]) -> None:
+    if settings_type is MySQLConnectionSettings:
+        settings = MySQLConnectionSettings(
+            driver="mysql",
+            host="127.0.0.1",
+            database="application",
+            username="user",
+            password="secret",
+        )
+    elif settings_type is PostgreSQLConnectionSettings:
+        settings = PostgreSQLConnectionSettings(
+            driver="postgresql",
+            host="127.0.0.1",
+            database="application",
+            username="user",
+            password="secret",
+        )
+    else:
+        settings = SQLiteConnectionSettings(driver="sqlite", database=":memory:")
+
+    assert settings.table_prefix == ""
+
+
+@pytest.mark.parametrize(
+    "table_prefix",
+    ["FastApi_", "fast-api_", "123_", "missing_separator"],
+)
+def test_table_prefix_rejects_unstable_identifier_fragments(table_prefix: str) -> None:
+    with pytest.raises(ValidationError):
+        SQLiteConnectionSettings(
+            driver="sqlite",
+            database=":memory:",
+            table_prefix=table_prefix,
+        )
 
 
 @pytest.mark.parametrize(
