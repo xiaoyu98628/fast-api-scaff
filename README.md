@@ -275,6 +275,20 @@ PostgreSQL 和 MySQL 额外支持以下连接池配置：
 - `POOL_PRE_PING`：取出连接前是否检查连接有效性，默认 `true`；
 - `POOL_RECYCLE`：连接回收间隔秒数，默认 `3600`，设置为 `-1` 表示不按时间回收。
 
+### 扩展数据库驱动
+
+每种数据库驱动由独立 Provider 负责配置校验和 `DatabaseEngineSpec` 构建，内置 Provider 通过 `DEFAULT_DATABASE_PROVIDERS` 显式注册。自定义 Provider 实现 `DatabaseProvider` 协议并返回 `DatabaseResourceDefinition`，然后创建扩展 Registry：
+
+```python
+from app.infrastructure.database.manager import DatabaseManager
+from app.infrastructure.database.providers.registry import DEFAULT_DATABASE_PROVIDERS
+
+providers = DEFAULT_DATABASE_PROVIDERS.extended(CustomDatabaseProvider())
+manager = DatabaseManager(settings.database, providers=providers)
+```
+
+扩展 Registry 不会修改全局默认 Registry。一个 Provider 可以注册多个 driver 别名；新增驱动不需要修改 `DatabaseManager`、通用资源工厂或中央配置联合类型。应用容器需要在装配 `DatabaseManager` 时传入扩展后的 Registry。
+
 ### 数据库迁移
 
 main 数据库的 Alembic 配置和迁移脚本位于 `database/main`。迁移环境通过 `connection_name=main` 明确读取 `DB_CONNECTIONS__MAIN__*`，不依赖 `DB_DEFAULT`，也不会把数据库 URL 或密码保存在 Alembic 配置文件中。
@@ -564,10 +578,11 @@ database/                       # 数据库迁移环境
 └── main/                       # main 数据库 Alembic 配置和版本脚本
 app/
 ├── bootstrap/              # 应用创建、容器装配和生命周期
-├── config/                 # 原始配置和具体连接配置模型
+├── config/                 # 应用级原始配置模型
 ├── infrastructure/
-│   ├── database/           # 数据库资源、工厂和管理器
-│   │   ├── backends/       # MySQL、PostgreSQL、SQLite Engine 配置构建
+│   ├── database/           # 数据库管理器、资源工厂和公共规则
+│   │   ├── contracts/      # Database Provider 协议与资源定义
+│   │   ├── providers/      # 驱动配置校验、EngineSpec 构建和显式注册
 │   │   └── orm/            # ORM Metadata、命名约定和分库声明基类
 │   ├── cache/              # 缓存管理器、Provider Registry 和公共规则
 │   │   ├── contracts/      # 客户端、后端与 Provider 协议

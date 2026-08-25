@@ -1,7 +1,10 @@
 import pytest
 from pydantic import ValidationError
 
-from app.config.database import DatabaseSettings, MySQLConnectionSettings, PostgreSQLConnectionSettings, SQLiteConnectionSettings
+from app.config.database import DatabaseSettings
+from app.infrastructure.database.providers.mysql import MySQLDatabaseSettings
+from app.infrastructure.database.providers.postgresql import PostgreSQLDatabaseSettings
+from app.infrastructure.database.providers.sqlite import SQLiteDatabaseSettings
 from app.runtime.paths import STORAGE_DIR
 
 
@@ -36,19 +39,19 @@ def test_nested_environment_is_loaded_as_raw_snapshot(monkeypatch: pytest.Monkey
 
 @pytest.mark.parametrize(
     "settings_type",
-    [MySQLConnectionSettings, PostgreSQLConnectionSettings, SQLiteConnectionSettings],
+    [MySQLDatabaseSettings, PostgreSQLDatabaseSettings, SQLiteDatabaseSettings],
 )
 def test_all_database_drivers_default_to_empty_table_prefix(settings_type: type[object]) -> None:
-    if settings_type is MySQLConnectionSettings:
-        settings = MySQLConnectionSettings(
+    if settings_type is MySQLDatabaseSettings:
+        settings = MySQLDatabaseSettings(
             driver="mysql",
             host="127.0.0.1",
             database="application",
             username="user",
             password="secret",
         )
-    elif settings_type is PostgreSQLConnectionSettings:
-        settings = PostgreSQLConnectionSettings(
+    elif settings_type is PostgreSQLDatabaseSettings:
+        settings = PostgreSQLDatabaseSettings(
             driver="postgresql",
             host="127.0.0.1",
             database="application",
@@ -56,7 +59,7 @@ def test_all_database_drivers_default_to_empty_table_prefix(settings_type: type[
             password="secret",
         )
     else:
-        settings = SQLiteConnectionSettings(driver="sqlite", database=":memory:")
+        settings = SQLiteDatabaseSettings(driver="sqlite", database=":memory:")
 
     assert settings.table_prefix == ""
 
@@ -67,7 +70,7 @@ def test_all_database_drivers_default_to_empty_table_prefix(settings_type: type[
 )
 def test_table_prefix_rejects_unstable_identifier_fragments(table_prefix: str) -> None:
     with pytest.raises(ValidationError):
-        SQLiteConnectionSettings(
+        SQLiteDatabaseSettings(
             driver="sqlite",
             database=":memory:",
             table_prefix=table_prefix,
@@ -86,6 +89,6 @@ def test_sqlite_database_path_is_resolved_from_storage_directory(
     database: str,
     expected: str,
 ) -> None:
-    settings = SQLiteConnectionSettings(driver="sqlite", database=database)
+    settings = SQLiteDatabaseSettings(driver="sqlite", database=database)
 
     assert settings.resolved_database == expected

@@ -1,30 +1,30 @@
 import pytest
 
-from app.config.database import DatabaseSettings, SQLiteConnectionSettings
+from app.config.database import DatabaseSettings
 from app.infrastructure.database.connection import (
-    resolve_database_connection,
+    resolve_database_definition,
     resolve_database_table_prefix,
-    validate_database_connection,
+    validate_database_definition,
 )
 from app.infrastructure.database.errors import DatabaseConfigurationError
 
 
-def test_validate_database_connection_parses_raw_config() -> None:
-    settings = validate_database_connection(
+def test_validate_database_definition_parses_raw_config() -> None:
+    definition = validate_database_definition(
         "main",
         {"driver": "sqlite", "database": ":memory:"},
     )
 
-    assert isinstance(settings, SQLiteConnectionSettings)
-    assert settings.database == ":memory:"
+    assert definition.engine_spec.url.drivername == "sqlite+aiosqlite"
+    assert definition.engine_spec.url.database == ":memory:"
 
 
-def test_validate_database_connection_reports_connection_name() -> None:
+def test_validate_database_definition_reports_connection_name() -> None:
     with pytest.raises(DatabaseConfigurationError, match="broken"):
-        validate_database_connection("broken", {"driver": "mysql"})
+        validate_database_definition("broken", {"driver": "mysql"})
 
 
-def test_resolve_database_connection_uses_default_or_named_connection() -> None:
+def test_resolve_database_definition_uses_default_or_named_connection() -> None:
     settings = DatabaseSettings(
         default="main",
         connections={
@@ -34,27 +34,26 @@ def test_resolve_database_connection_uses_default_or_named_connection() -> None:
         _env_file=None,
     )
 
-    default = resolve_database_connection(settings)
-    reporting = resolve_database_connection(settings, "reporting")
+    default = resolve_database_definition(settings)
+    reporting = resolve_database_definition(settings, "reporting")
 
-    assert isinstance(default, SQLiteConnectionSettings)
-    assert default.database == ":memory:"
-    assert isinstance(reporting, SQLiteConnectionSettings)
-    assert reporting.database == "reporting.sqlite"
+    assert default.engine_spec.url.database == ":memory:"
+    assert reporting.engine_spec.url.database is not None
+    assert reporting.engine_spec.url.database.endswith("reporting.sqlite")
 
 
-def test_resolve_database_connection_requires_default_connection() -> None:
+def test_resolve_database_definition_requires_default_connection() -> None:
     settings = DatabaseSettings(_env_file=None)
 
     with pytest.raises(DatabaseConfigurationError, match="默认数据库连接"):
-        resolve_database_connection(settings)
+        resolve_database_definition(settings)
 
 
-def test_resolve_database_connection_reports_missing_named_connection() -> None:
+def test_resolve_database_definition_reports_missing_named_connection() -> None:
     settings = DatabaseSettings(_env_file=None)
 
     with pytest.raises(DatabaseConfigurationError, match="reporting"):
-        resolve_database_connection(settings, "reporting")
+        resolve_database_definition(settings, "reporting")
 
 
 def test_resolve_database_table_prefix_does_not_validate_other_connection_fields() -> None:

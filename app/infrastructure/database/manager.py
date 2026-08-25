@@ -5,9 +5,10 @@ from functools import partial
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from app.config.database import DatabaseSettings
-from app.infrastructure.database.connection import validate_database_connection
+from app.infrastructure.database.connection import validate_database_definition
 from app.infrastructure.database.errors import DatabaseConfigurationError
 from app.infrastructure.database.factory import close_database_resource, create_database_resource
+from app.infrastructure.database.providers.registry import DEFAULT_DATABASE_PROVIDERS, DatabaseProviderRegistry
 from app.infrastructure.database.resource import DatabaseResource
 from app.infrastructure.resources.lazy import AsyncLazy
 
@@ -15,8 +16,13 @@ from app.infrastructure.resources.lazy import AsyncLazy
 class DatabaseManager:
     """按名称管理延迟校验、延迟创建的数据库资源。"""
 
-    def __init__(self, settings: DatabaseSettings) -> None:
+    def __init__(
+        self,
+        settings: DatabaseSettings,
+        providers: DatabaseProviderRegistry = DEFAULT_DATABASE_PROVIDERS,
+    ) -> None:
         self._default = settings.default
+        self._providers = providers
         self._resources = {
             name: AsyncLazy(
                 factory=partial(self._create, name, raw_config),
@@ -73,8 +79,8 @@ class DatabaseManager:
         name: str,
         raw_config: dict[str, object],
     ) -> DatabaseResource:
-        settings = validate_database_connection(name, raw_config)
-        return await create_database_resource(settings)
+        definition = validate_database_definition(name, raw_config, self._providers)
+        return await create_database_resource(definition)
 
     def _resolve_name(self, name: str | None) -> str:
         if name is not None:

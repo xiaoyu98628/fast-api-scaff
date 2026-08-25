@@ -7,9 +7,8 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.config.database import DatabaseSettings
-from app.infrastructure.database.backends.spec import DatabaseEngineSpec
-from app.infrastructure.database.connection import resolve_database_connection
-from app.infrastructure.database.engine import build_database_engine_spec
+from app.infrastructure.database.connection import resolve_database_definition
+from app.infrastructure.database.engine_spec import DatabaseEngineSpec
 from app.infrastructure.database.orm.main import MainBase
 
 # this is the Alembic Config object, which provides
@@ -32,6 +31,7 @@ target_metadata = MainBase.metadata
 # my_important_option = config.get_main_option("my_important_option")
 # ... etc.
 
+
 def load_engine_spec() -> DatabaseEngineSpec:
     """读取当前迁移环境指定的数据库连接。"""
     connection_name = config.get_main_option("connection_name")
@@ -39,12 +39,12 @@ def load_engine_spec() -> DatabaseEngineSpec:
     if not connection_name:
         raise RuntimeError("Alembic connection_name 未配置")
 
-    connection_settings = resolve_database_connection(
+    definition = resolve_database_definition(
         DatabaseSettings(),
         connection_name,
     )
 
-    return build_database_engine_spec(connection_settings)
+    return definition.engine_spec
 
 
 def run_migrations_offline() -> None:
