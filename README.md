@@ -476,7 +476,7 @@ await cache.set("user:1", b"xiaoyu")
 传入正整数可以覆盖默认值。需要明确写入永不过期的值时使用 `NO_EXPIRATION`，不使用含义模糊的 `None`：
 
 ```python
-from app.infrastructure.cache.client import NO_EXPIRATION
+from app.infrastructure.cache.contracts.client import NO_EXPIRATION
 
 await cache.set("temporary", b"value", ttl=60)
 await cache.set("permanent", b"value", ttl=NO_EXPIRATION)
@@ -494,7 +494,7 @@ await cache.set("permanent", b"value", ttl=NO_EXPIRATION)
 from fastapi import Request
 
 from app.bootstrap.container import ApplicationContainer
-from app.infrastructure.cache.client import CacheClient
+from app.infrastructure.cache.contracts.client import CacheClient
 
 
 async def cache_example(request: Request) -> dict[str, object]:
@@ -510,7 +510,7 @@ async def cache_example(request: Request) -> dict[str, object]:
 缓存值统一使用 `bytes`。项目提供独立的 bytes、UTF-8 文本和 JSON codec，但不会在客户端中隐式序列化任意 Python 对象：
 
 ```python
-from app.infrastructure.cache.codec import JsonCacheCodec
+from app.infrastructure.cache.codecs.json import JsonCacheCodec
 
 await cache.set("user:1", JsonCacheCodec.encode({"name": "xiaoyu"}), ttl=60)
 
@@ -538,7 +538,7 @@ healthy = await container.caches.ping()
 Controller 或 Service 只依赖：
 
 ```python
-from app.infrastructure.cache.client import CacheClient
+from app.infrastructure.cache.contracts.client import CacheClient
 ```
 
 不要直接导入 Redis、Memcached 或 Memory 后端，也不要自行实例化驱动客户端。底层异常会转换为 `CacheConnectionError` 或 `CacheOperationError`，但不会被静默吞掉；是否在缓存失败后回源，应由业务用例显式决定。
@@ -555,8 +555,11 @@ app/
 │   ├── database/           # 数据库资源、工厂和管理器
 │   │   ├── backends/       # MySQL、PostgreSQL、SQLite Engine 配置构建
 │   │   └── orm/            # ORM Metadata、命名约定和分库声明基类
-│   ├── cache/              # 缓存协议、工厂和管理器
-│   │   └── backends/       # Redis、Memcached 等具体实现
+│   ├── cache/              # 缓存管理器、工厂和公共规则
+│   │   ├── contracts/      # 业务客户端与内部后端协议
+│   │   ├── clients/        # namespace、TTL 等客户端门面
+│   │   ├── codecs/         # bytes、文本和 JSON 编解码器
+│   │   └── backends/       # Redis、Memcached、Memory 实现
 │   └── resources/          # 通用延迟资源管理
 ├── interfaces/
 │   └── http/               # HTTP 入站接口

@@ -1,32 +1,7 @@
-from enum import Enum, auto
-from typing import Protocol
-
-from app.infrastructure.cache.backends.base import CacheBackend
+from app.infrastructure.cache.contracts.backend import CacheBackend
+from app.infrastructure.cache.contracts.client import DEFAULT_EXPIRATION, NO_EXPIRATION, CacheTTL
 from app.infrastructure.cache.errors import CacheOperationError
 from app.infrastructure.cache.key import CacheKeyBuilder
-
-
-class CacheExpiration(Enum):
-    DEFAULT = auto()
-    NEVER = auto()
-
-
-DEFAULT_EXPIRATION = CacheExpiration.DEFAULT
-NO_EXPIRATION = CacheExpiration.NEVER
-
-type CacheTTL = int | CacheExpiration
-
-
-class CacheClient(Protocol):
-    """业务代码可依赖的最小异步缓存能力。"""
-
-    async def get(self, key: str) -> bytes | None: ...
-
-    async def set(self, key: str, value: bytes, *, ttl: CacheTTL = DEFAULT_EXPIRATION) -> None: ...
-
-    async def delete(self, key: str) -> bool: ...
-
-    async def exists(self, key: str) -> bool: ...
 
 
 class ManagedCacheClient:

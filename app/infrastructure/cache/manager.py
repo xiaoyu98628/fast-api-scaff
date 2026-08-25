@@ -3,7 +3,8 @@ from functools import partial
 from pydantic import TypeAdapter, ValidationError
 
 from app.config.cache import CacheConnectionSettings, CacheSettings
-from app.infrastructure.cache.client import CacheClient, ManagedCacheClient
+from app.infrastructure.cache.clients.managed import ManagedCacheClient
+from app.infrastructure.cache.contracts.client import CacheClient
 from app.infrastructure.cache.errors import CacheConfigurationError
 from app.infrastructure.cache.factory import create_cache_backend
 from app.infrastructure.cache.key import CacheKeyBuilder

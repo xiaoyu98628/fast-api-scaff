@@ -3,7 +3,7 @@ import asyncio
 import pytest
 
 from app.config.cache import CacheSettings
-from app.infrastructure.cache.client import ManagedCacheClient
+from app.infrastructure.cache.clients.managed import ManagedCacheClient
 from app.infrastructure.cache.errors import CacheConfigurationError
 from app.infrastructure.cache.manager import CacheManager
 

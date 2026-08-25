@@ -4,10 +4,11 @@ import pytest
 from memcachio import Client, MemcachedItem
 from redis.asyncio import Redis
 
-from app.infrastructure.cache.backends.memcached_cache import MemcachedCacheBackend
-from app.infrastructure.cache.backends.memory_cache import MemoryCacheBackend
-from app.infrastructure.cache.backends.redis_cache import RedisCacheBackend
-from app.infrastructure.cache.client import NO_EXPIRATION, ManagedCacheClient
+from app.infrastructure.cache.backends.memcached import MemcachedCacheBackend
+from app.infrastructure.cache.backends.memory import MemoryCacheBackend
+from app.infrastructure.cache.backends.redis import RedisCacheBackend
+from app.infrastructure.cache.clients.managed import ManagedCacheClient
+from app.infrastructure.cache.contracts.client import NO_EXPIRATION
 from app.infrastructure.cache.errors import CacheKeyError, CacheOperationError
 from app.infrastructure.cache.key import CacheKeyBuilder
 
@@ -108,6 +109,6 @@ async def test_memcached_backend_uses_encoded_raw_key(monkeypatch: pytest.Monkey
 
 
 def test_memcached_converts_long_relative_ttl_to_timestamp(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("app.infrastructure.cache.backends.memcached_cache.time.time", lambda: 1_000_000.0)
+    monkeypatch.setattr("app.infrastructure.cache.backends.memcached.time.time", lambda: 1_000_000.0)
 
     assert MemcachedCacheBackend._expiry(2_592_001) == 3_592_001

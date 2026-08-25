@@ -1,6 +1,8 @@
 import pytest
 
-from app.infrastructure.cache.codec import BytesCacheCodec, JsonCacheCodec, TextCacheCodec
+from app.infrastructure.cache.codecs.bytes import BytesCacheCodec
+from app.infrastructure.cache.codecs.json import JsonCacheCodec
+from app.infrastructure.cache.codecs.text import TextCacheCodec
 
 
 def test_bytes_codec_preserves_value() -> None:
