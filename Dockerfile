@@ -21,7 +21,7 @@ RUN sed -i "s|deb.debian.org|${CONTAINER_PACKAGE_URL}|g" /etc/apt/sources.list.d
 # 修改时区
 ENV TZ=Asia/Shanghai
 RUN apt-get update \
-    && DEBIAN_FRONTEND="noninteractive" apt-get install -y --no-install-recommends tzdata \
+    && DEBIAN_FRONTEND="noninteractive" apt-get install -y --no-install-recommends tzdata curl \
     && ln -snf /usr/share/zoneinfo/$TZ /etc/localtime \
     && echo $TZ > /etc/timezone \
     && apt-get clean \
@@ -39,5 +39,11 @@ WORKDIR /app
 COPY --from=builder /app /app
 
 EXPOSE 8000
+
+HEALTHCHECK --interval=30s \
+    --timeout=3s \
+    --start-period=10s \
+    --retries=3 \
+    CMD curl -fsS http://127.0.0.1:8000/health || exit 1
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
