@@ -1,0 +1,15 @@
+.idea
+.git
+.venv
+.env
+.pytest_cache
+.mypy_cache
+.ruff_cache
+*.log
+**/.DS_Store
+**/__pycache__
+**/.py[cod]
+storage/data/*
+!storage/data/.gitignore
+storage/logs/*
+!storage/logs/.gitignore
