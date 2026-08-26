@@ -1,6 +1,6 @@
 from collections.abc import Iterable
 
-from app.infrastructure.cache.contracts.provider import CacheBackendDefinition, CacheProvider
+from app.infrastructure.cache.contracts.provider import CacheProvider, CacheResourceDefinition
 from app.infrastructure.cache.errors import CacheConfigurationError
 from app.infrastructure.cache.providers.memcached import MemcachedCacheProvider
 from app.infrastructure.cache.providers.memory import MemoryCacheProvider
@@ -26,7 +26,7 @@ class CacheProviderRegistry:
     def drivers(self) -> tuple[str, ...]:
         return tuple(self._providers)
 
-    def prepare(self, raw_config: dict[str, object]) -> CacheBackendDefinition:
+    def prepare(self, raw_config: dict[str, object]) -> CacheResourceDefinition:
         driver = raw_config.get("driver")
         if not isinstance(driver, str) or not driver:
             raise CacheConfigurationError("缓存连接没有配置有效的 driver")

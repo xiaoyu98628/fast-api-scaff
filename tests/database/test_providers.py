@@ -1,7 +1,12 @@
 import pytest
 from sqlalchemy import URL
 
+from app.bootstrap.build import build_application_container
+from app.config.app import AppSettings
+from app.config.cache import CacheSettings
+from app.config.cors import CorsSettings
 from app.config.database import DatabaseSettings
+from app.config.settings import Settings
 from app.infrastructure.database.contracts.provider import DatabaseResourceDefinition
 from app.infrastructure.database.engine_spec import DatabaseEngineSpec
 from app.infrastructure.database.errors import DatabaseConfigurationError
@@ -142,3 +147,27 @@ async def test_manager_accepts_extended_provider_registry() -> None:
     assert engine.url.drivername == "sqlite+aiosqlite"
     assert "custom" not in DEFAULT_DATABASE_PROVIDERS.drivers
     await manager.aclose()
+
+
+@pytest.mark.asyncio
+async def test_application_container_accepts_extended_database_provider_registry() -> None:
+    providers = DEFAULT_DATABASE_PROVIDERS.extended(CustomDatabaseProvider())
+    settings = Settings(
+        app=AppSettings(_env_file=None),
+        database=DatabaseSettings(
+            default="main",
+            connections={"main": {"driver": "custom"}},
+            _env_file=None,
+        ),
+        cache=CacheSettings(_env_file=None),
+        cors=CorsSettings(_env_file=None),
+    )
+    container = build_application_container(
+        settings,
+        database_providers=providers,
+    )
+
+    engine = await container.databases.get_engine()
+
+    assert engine.url.drivername == "sqlite+aiosqlite"
+    await container.aclose()

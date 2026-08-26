@@ -1,8 +1,8 @@
 from typing import Protocol
 
 
-class CacheBackend(Protocol):
-    """缓存驱动需要实现的内部字节协议。"""
+class KeyValueStorage(Protocol):
+    """缓存驱动提供给公共客户端的内部字节级 KV 能力。"""
 
     async def get(self, key: str) -> bytes | None: ...
 
@@ -11,7 +11,3 @@ class CacheBackend(Protocol):
     async def delete(self, key: str) -> bool: ...
 
     async def exists(self, key: str) -> bool: ...
-
-    async def ping(self) -> bool: ...
-
-    async def aclose(self) -> None: ...

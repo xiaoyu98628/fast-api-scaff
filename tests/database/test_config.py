@@ -89,3 +89,14 @@ def test_sqlite_database_path_is_resolved_from_storage_directory(
     settings = SQLiteDatabaseSettings(driver="sqlite", database=database)
 
     assert settings.resolved_database == expected
+
+
+def test_database_driver_rejects_unknown_configuration_fields() -> None:
+    with pytest.raises(ValidationError, match="extra_forbidden"):
+        SQLiteDatabaseSettings.model_validate(
+            {
+                "driver": "sqlite",
+                "database": ":memory:",
+                "echp": True,
+            }
+        )

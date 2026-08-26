@@ -23,7 +23,7 @@ class CacheSettings(BaseSettings):
 
 
 class BaseCacheSettings(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     key_prefix: str = ""
 

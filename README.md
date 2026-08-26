@@ -277,19 +277,33 @@ PostgreSQL 和 MySQL 额外支持以下连接池配置：
 - `POOL_PRE_PING`：取出连接前是否检查连接有效性，默认 `true`；
 - `POOL_RECYCLE`：连接回收间隔秒数，默认 `3600`，设置为 `-1` 表示不按时间回收。
 
+每个连接只能配置当前驱动声明的字段，未知字段会被拒绝，避免配置项拼写错误后静默使用默认值。
+
 ### 扩展数据库驱动
 
 每种数据库驱动由独立 Provider 负责配置校验和 `DatabaseEngineSpec` 构建，内置 Provider 通过 `DEFAULT_DATABASE_PROVIDERS` 显式注册。自定义 Provider 实现 `DatabaseProvider` 协议并返回 `DatabaseResourceDefinition`，然后创建扩展 Registry：
 
 ```python
+from functools import partial
+
+from app.bootstrap.app import create_app
+from app.bootstrap.build import build_application_container
 from app.infrastructure.database.manager import DatabaseManager
 from app.infrastructure.database.providers.registry import DEFAULT_DATABASE_PROVIDERS
 
 providers = DEFAULT_DATABASE_PROVIDERS.extended(CustomDatabaseProvider())
 manager = DatabaseManager(settings.database, providers=providers)
+
+app = create_app(
+    settings,
+    container_builder=partial(
+        build_application_container,
+        database_providers=providers,
+    ),
+)
 ```
 
-扩展 Registry 不会修改全局默认 Registry。一个 Provider 可以注册多个 driver 别名；新增驱动不需要修改 `DatabaseManager`、通用资源工厂或中央配置联合类型。应用容器需要在装配 `DatabaseManager` 时传入扩展后的 Registry。
+扩展 Registry 不会修改全局默认 Registry。一个 Provider 可以注册多个 driver 别名；新增驱动不需要修改 `DatabaseManager`、通用资源工厂或中央配置联合类型。直接使用 Manager 时传入 `providers`，通过 FastAPI 应用使用时则通过自定义 `container_builder` 将 Registry 传入组合根。
 
 ### 数据库迁移
 
@@ -464,19 +478,59 @@ CACHE_CONNECTIONS__LOCAL__KEY_PREFIX=local
 
 存在任意缓存连接时，`CACHE_NAMESPACE` 不能为空。默认连接必须出现在 `CACHE_CONNECTIONS` 中，所有连接配置都会在应用生命周期启动时校验；创建 Redis 或 Memcached 客户端不会立即连接网络。
 
+每个缓存连接只能配置当前驱动声明的字段，未知字段会被拒绝，避免 `SSL`、连接池等配置项拼写错误后静默使用默认值。
+
 ### 扩展缓存驱动
 
-每种驱动由独立 Provider 负责配置校验和后端创建，内置 Provider 通过 `DEFAULT_CACHE_PROVIDERS` 显式注册。自定义 Provider 实现 `CacheProvider` 协议并返回 `CacheBackendDefinition`，然后创建扩展 Registry：
+每种驱动由独立 Provider 负责配置校验，并组装由 Connection 和 Storage 构成的 `CacheResource`。Connection 管理原生客户端的健康检查和关闭，Storage 只实现数据操作。内置 Provider 通过 `DEFAULT_CACHE_PROVIDERS` 显式注册。自定义 Provider 实现 `CacheProvider` 协议并返回 `CacheResourceDefinition`，然后创建扩展 Registry：
 
 ```python
+from functools import partial
+
+from app.bootstrap.app import create_app
+from app.bootstrap.build import build_application_container
 from app.infrastructure.cache.manager import CacheManager
 from app.infrastructure.cache.providers.registry import DEFAULT_CACHE_PROVIDERS
 
 providers = DEFAULT_CACHE_PROVIDERS.extended(CustomCacheProvider())
 manager = CacheManager(settings.cache, providers=providers)
+
+app = create_app(
+    settings,
+    container_builder=partial(
+        build_application_container,
+        cache_providers=providers,
+    ),
+)
 ```
 
-扩展 Registry 不会修改全局默认 Registry。新增驱动不需要修改 `CacheManager`、内置 Provider 或配置联合类型；应用容器需要在装配 `CacheManager` 时传入扩展后的 Registry。项目不使用装饰器或模块导入副作用自动注册驱动。
+扩展 Registry 不会修改全局默认 Registry。新增驱动不需要修改 `CacheManager`、内置 Provider 或配置联合类型；直接使用 Manager 时传入 `providers`，通过 FastAPI 应用使用时则通过自定义 `container_builder` 将 Registry 传入组合根。项目不使用装饰器或模块导入副作用自动注册驱动。
+
+### Redis 数据类型扩展边界
+
+本次缓存重构没有改变业务侧的普通 KV 使用方式。`container.caches.get()` 仍然返回公共 `CacheClient`，已有的 `get()`、`set()`、`delete()` 和 `exists()` 调用保持不变。重构新增的是 Connection、Storage 和 Resource 之间的职责边界，使 Redis 可以在不修改 Memcached、Memory 公共协议的情况下扩展自身数据类型。
+
+当前已经实现的 Redis 能力只有 String/KV：
+
+- `RedisCacheConnection` 创建并关闭原生 Redis 客户端，负责连接健康检查；
+- `RedisStringStorage` 实现 String 的 `get`、`set`、`delete` 和 `exists`；
+- `RedisStorage.strings` 聚合 String Storage；
+- `RedisStorage` 将 String 操作继续适配为公共 KV 能力，因此业务代码不需要因本次重构而修改。
+
+Hash、List、Set 和 Sorted Set **尚未实现，也没有出现在当前公共 API 中**。后续实际增加这些能力时，应分别放在 `storages/redis` 下：
+
+```text
+storages/redis/
+├── base.py                 # 已实现：Redis Storage 公共客户端能力
+├── string.py               # 已实现：String/KV
+├── storage.py              # 已实现：Redis Storage 聚合入口
+├── hash.py                 # 待实现：Hash
+├── list.py                 # 待实现：List
+├── set.py                  # 待实现：Set
+└── sorted_set.py           # 待实现：Sorted Set
+```
+
+这些 Redis Storage 应共享同一个 `RedisCacheConnection`，统一复用连接池和生命周期。新增类型不应向 `KeyValueStorage` 或公共 `CacheClient` 强行加入 Redis 专属方法；实现完成后应通过独立的 Redis 客户端门面或 Manager 专用入口向确实依赖 Redis 语义的业务代码提供。
 
 ### key 规则
 
@@ -573,7 +627,7 @@ Controller 或 Service 只依赖：
 from app.infrastructure.cache.contracts.client import CacheClient
 ```
 
-不要直接导入 Redis、Memcached 或 Memory 后端，也不要自行实例化驱动客户端。底层异常会转换为 `CacheConnectionError` 或 `CacheOperationError`，但不会被静默吞掉；是否在缓存失败后回源，应由业务用例显式决定。
+不要直接导入 Redis、Memcached 或 Memory Connection、Storage，也不要自行实例化驱动客户端。底层异常会转换为 `CacheConnectionError` 或 `CacheOperationError`，但不会被静默吞掉；是否在缓存失败后回源，应由业务用例显式决定。
 
 ## 项目结构
 
@@ -589,11 +643,13 @@ app/
 │   │   ├── providers/      # 驱动配置校验、EngineSpec 构建和显式注册
 │   │   └── orm/            # ORM Metadata、命名约定和分库声明基类
 │   ├── cache/              # 缓存管理器、Provider Registry 和公共规则
-│   │   ├── contracts/      # 客户端、后端与 Provider 协议
+│   │   ├── contracts/      # 客户端、Connection、Storage 与 Provider 协议
 │   │   ├── clients/        # namespace、TTL 等客户端门面
 │   │   ├── codecs/         # bytes、文本和 JSON 编解码器
-│   │   ├── providers/      # 驱动配置校验、创建和显式注册
-│   │   └── backends/       # Redis、Memcached、Memory 实现
+│   │   ├── connections/    # 原生客户端创建、健康检查和关闭
+│   │   ├── providers/      # 驱动配置校验、资源组装和显式注册
+│   │   └── storages/       # Redis、Memcached、Memory 数据操作
+│   │       └── redis/      # Redis String 实现和数据类型聚合入口
 │   └── resources/          # 通用延迟资源管理
 ├── interfaces/
 │   └── http/               # HTTP 入站接口

@@ -1,11 +1,13 @@
 import json
 import sqlite3
 from pathlib import Path
+from typing import cast
 
 import pytest
 from alembic import command
 from alembic.config import Config
 
+from app.config.database import DatabaseSettings
 from app.runtime.paths import PROJECT_ROOT
 
 
@@ -21,6 +23,8 @@ def test_main_migration_environment_creates_version_table(
             "table_prefix": "",
         }
     }
+    model_config = cast(dict[str, object], DatabaseSettings.model_config)
+    monkeypatch.setitem(model_config, "env_file", None)
     monkeypatch.setenv("DB_CONNECTIONS", json.dumps(connections))
 
     alembic_config = Config(str(PROJECT_ROOT / "database/main/alembic.ini"))

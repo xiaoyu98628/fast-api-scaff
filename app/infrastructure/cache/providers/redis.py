@@ -1,34 +1,25 @@
 from functools import partial
 
-from redis.asyncio import Redis
-
 from app.config.cache import RedisCacheSettings
-from app.infrastructure.cache.backends.redis import RedisCacheBackend
-from app.infrastructure.cache.contracts.backend import CacheBackend
-from app.infrastructure.cache.contracts.provider import CacheBackendDefinition
+from app.infrastructure.cache.connections.redis import RedisCacheConnection
+from app.infrastructure.cache.contracts.provider import CacheResourceDefinition
+from app.infrastructure.cache.resource import CacheResource
+from app.infrastructure.cache.storages.redis.storage import RedisStorage
 
 
 class RedisCacheProvider:
     driver = "redis"
 
-    def prepare(self, raw_config: dict[str, object]) -> CacheBackendDefinition:
+    def prepare(self, raw_config: dict[str, object]) -> CacheResourceDefinition:
         settings = RedisCacheSettings.model_validate(raw_config)
-        return CacheBackendDefinition(
+        return CacheResourceDefinition(
             key_prefix=settings.key_prefix,
             factory=partial(self._create, settings),
         )
 
-    async def _create(self, settings: RedisCacheSettings) -> CacheBackend:
-        client = Redis(
-            host=settings.host,
-            port=settings.port,
-            db=settings.database,
-            username=settings.username,
-            password=settings.password.get_secret_value() if settings.password is not None else None,
-            ssl=settings.ssl,
-            max_connections=settings.max_connections,
-            socket_connect_timeout=settings.connect_timeout,
-            socket_timeout=settings.read_timeout,
-            decode_responses=False,
+    async def _create(self, settings: RedisCacheSettings) -> CacheResource:
+        connection = RedisCacheConnection.from_settings(settings)
+        return CacheResource(
+            connection=connection,
+            storage=RedisStorage(connection.client),
         )
-        return RedisCacheBackend(client)

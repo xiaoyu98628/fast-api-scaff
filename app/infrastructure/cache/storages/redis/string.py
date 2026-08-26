@@ -1,11 +1,14 @@
 from redis.asyncio import Redis
 
-from app.infrastructure.cache.errors import CacheConnectionError, CacheOperationError
+from app.infrastructure.cache.errors import CacheOperationError
+from app.infrastructure.cache.storages.redis.base import BaseRedisStorage
 
 
-class RedisCacheBackend:
+class RedisStringStorage(BaseRedisStorage):
+    """实现 Redis String 对应的字节级 KV 操作。"""
+
     def __init__(self, client: Redis) -> None:
-        self._client = client
+        super().__init__(client)
 
     async def get(self, key: str) -> bytes | None:
         try:
@@ -37,15 +40,3 @@ class RedisCacheBackend:
             return await self._client.exists(key) > 0
         except Exception as error:
             raise CacheOperationError("Redis 检查缓存失败") from error
-
-    async def ping(self) -> bool:
-        try:
-            return bool(await self._client.ping())
-        except Exception as error:
-            raise CacheConnectionError("Redis 健康检查失败") from error
-
-    async def aclose(self) -> None:
-        try:
-            await self._client.aclose()
-        except Exception as error:
-            raise CacheConnectionError("Redis 客户端关闭失败") from error

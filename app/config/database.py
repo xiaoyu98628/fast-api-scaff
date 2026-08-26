@@ -28,7 +28,7 @@ class DatabaseSettings(BaseSettings):
 
 
 class BaseDatabaseSettings(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     echo: bool = False
     table_prefix: DatabaseTablePrefix = ""

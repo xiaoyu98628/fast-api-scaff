@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from app.config.cache import CacheSettings, MemcachedCacheSettings
+from app.config.cache import CacheSettings, MemcachedCacheSettings, RedisCacheSettings
 
 
 def test_nested_environment_is_loaded_as_raw_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -72,3 +72,14 @@ def test_memcached_pool_minimum_cannot_exceed_maximum() -> None:
 def test_default_ttl_must_be_positive(ttl: int) -> None:
     with pytest.raises(ValidationError, match="default_ttl"):
         CacheSettings(default_ttl=ttl, _env_file=None)
+
+
+def test_cache_driver_rejects_unknown_configuration_fields() -> None:
+    with pytest.raises(ValidationError, match="extra_forbidden"):
+        RedisCacheSettings.model_validate(
+            {
+                "driver": "redis",
+                "host": "127.0.0.1",
+                "sll": True,
+            }
+        )

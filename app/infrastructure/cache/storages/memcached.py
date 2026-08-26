@@ -2,12 +2,14 @@ import time
 
 from memcachio import Client
 
-from app.infrastructure.cache.errors import CacheConnectionError, CacheOperationError
+from app.infrastructure.cache.errors import CacheOperationError
 
 MEMCACHED_RELATIVE_EXPIRY_LIMIT = 60 * 60 * 24 * 30
 
 
-class MemcachedCacheBackend:
+class MemcachedCacheStorage:
+    """通过 Memcached 客户端实现字节级 KV 存储。"""
+
     def __init__(self, client: Client[bytes]) -> None:
         self._client = client
 
@@ -39,18 +41,6 @@ class MemcachedCacheBackend:
 
     async def exists(self, key: str) -> bool:
         return await self.get(key) is not None
-
-    async def ping(self) -> bool:
-        try:
-            return bool(await self._client.version())
-        except Exception as error:
-            raise CacheConnectionError("Memcached 健康检查失败") from error
-
-    async def aclose(self) -> None:
-        try:
-            self._client.connection_pool.close()
-        except Exception as error:
-            raise CacheConnectionError("Memcached 客户端关闭失败") from error
 
     @staticmethod
     def _expiry(ttl: int | None) -> int:
