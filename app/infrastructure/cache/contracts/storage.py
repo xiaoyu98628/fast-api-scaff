@@ -1,0 +1,13 @@
+from typing import Protocol
+
+
+class KeyValueStorage(Protocol):
+    """缓存驱动提供给公共客户端的内部字节级 KV 能力。"""
+
+    async def get(self, key: str) -> bytes | None: ...
+
+    async def set(self, key: str, value: bytes, ttl: int | None) -> bool: ...
+
+    async def delete(self, key: str) -> bool: ...
+
+    async def exists(self, key: str) -> bool: ...

@@ -111,3 +111,27 @@ async def test_health_uses_unified_response() -> None:
         "data": {"message": "ok"},
         "request_id": response.headers["X-Request-ID"],
     }
+
+
+@pytest.mark.parametrize("success_code", [SuccessCode.CREATED, SuccessCode.ACCEPTED])
+@pytest.mark.asyncio
+async def test_non_ok_success_keeps_http_status_and_response_code_consistent(success_code: SuccessCode) -> None:
+    app = create_app(build_settings(service_code="321"))
+
+    @app.post(
+        "/items",
+        status_code=success_code.status_code,
+        response_model=JsonResponse[dict[str, int]],
+    )
+    async def create_item() -> JsonResponse[dict[str, int]]:
+        return JsonResponse.success(data={"id": 1}, code=success_code)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+        response = await client.post("/items")
+
+    body = response.json()
+
+    assert response.status_code == success_code.status_code
+    assert body["code"] == f"{success_code.status_code:03d}321{success_code.code}"
+    assert body["success"] is True
+    assert body["request_id"] == response.headers["X-Request-ID"]

@@ -1,6 +1,6 @@
 # fast-api-scaff
 
-基于 FastAPI 的 Python 3.14+ 后端脚手架。项目通过应用容器统一管理数据库和缓存等应用级资源，并采用延迟校验、延迟创建和延迟连接的方式，使未被业务使用的基础设施不会阻塞服务启动。
+基于 FastAPI 的 Python 3.14+ 后端脚手架。项目通过应用容器统一管理数据库和缓存等应用级资源，在启动阶段检查确定性的配置错误，并将外部服务连接延迟到第一次实际操作。
 
 ## 环境要求
 
@@ -78,12 +78,12 @@ async def example(request: Request) -> dict[str, object]:
 
 | 阶段 | 数据库 | 缓存 |
 |------|--------|------|
-| 应用启动 | 读取原始配置，不校验具体连接 | 读取原始配置，不校验具体连接 |
-| 第一次获取资源 | 校验指定连接并创建 Engine | 校验指定连接并创建客户端 |
+| 应用启动 | 读取原始配置，不校验具体连接 | 校验默认连接、命名空间和所有连接配置 |
+| 第一次获取资源 | 校验指定连接并创建 Engine | 创建内存客户端或远程驱动客户端，不建立网络连接 |
 | 第一次执行命令 | 建立数据库连接 | 连接 Redis 或 Memcached |
 | 应用关闭 | 释放已创建的 Engine | 关闭已创建的客户端和连接池 |
 
-因此，没有被业务使用的数据库或缓存即使配置不完整，也不会阻塞应用启动。配置修改后需要重启服务，使应用重新读取配置快照。
+因此，缓存的 driver 拼写错误、参数缺失或默认连接不存在会阻止应用启动，而 Redis、Memcached 暂时不可达不会阻止启动。数据库仍在第一次获取对应资源时校验连接配置。配置修改后需要重启服务，使应用重新读取配置快照。
 
 ## 跨域访问
 
@@ -130,6 +130,69 @@ request_id = context[HeaderKeys.request_id]
 
 公共上下文用于 `request_id`、`trace_id` 等技术元数据，不用于隐式传递当前用户、租户、权限或事务等业务依赖。上下文只能在请求处理周期内访问。
 
+## 编码查询参数
+
+应用会处理查询字符串中名为 `f` 的编码参数。该参数采用 JSON、URL 编码和 Base64 组合格式，仅用于兼容查询参数封装协议，不提供加密、防篡改或敏感信息保护能力。
+
+解码结果是 JSON 对象时，它会替换原始查询字符串供后续中间件和 Controller 读取；原始对象还会保存在 `request.state.decoded_f_params`，以保留无法直接表示为普通查询参数的嵌套结构。解码失败或结果不是 JSON 对象时，请求保持不变。由于解码成功会替换整个查询字符串，调用方不应同时传递 `f` 和其他独立查询参数。
+
+需要生成兼容格式时，通过公共编码函数构造参数，并交给 HTTP 客户端处理查询字符串转义：
+
+```python
+from app.interfaces.http.middleware.query_param_decode import encode_query_param
+
+
+encoded = encode_query_param({"name": "张三", "page": 2})
+response = await client.get("/search", params={"f": encoded})
+```
+
+解码后的普通字段会进入查询参数，可以继续使用 FastAPI 的参数注入：
+
+```python
+from fastapi import APIRouter
+
+
+router = APIRouter()
+
+
+@router.get("/search")
+async def search(name: str, page: int = 1) -> dict[str, object]:
+    return {"name": name, "page": page}
+```
+
+需要动态读取参数或获取同名列表参数时，可以使用 `request.query_params`：
+
+```python
+from fastapi import Request
+
+
+@router.get("/search")
+async def search(request: Request) -> dict[str, object]:
+    return {
+        "name": request.query_params.get("name"),
+        "tags": request.query_params.getlist("tags"),
+    }
+```
+
+查询字符串不能完整表示嵌套对象，因此中间件还会把完整解码结果保存到 `request.state.decoded_f_params`。建议通过公共键名读取，并处理没有合法 `f` 参数的情况：
+
+```python
+from fastapi import Request
+
+from app.interfaces.http.middleware.query_param_decode import DECODED_F_STATE_KEY
+
+
+@router.get("/search")
+async def search(request: Request) -> dict[str, object] | None:
+    decoded = getattr(request.state, DECODED_F_STATE_KEY, None)
+    if decoded is None:
+        return None
+
+    return decoded
+```
+
+只有 `f` 成功解码为 JSON 对象时才会写入 `decoded_f_params`。解码失败时不会创建该状态，原始查询字符串和 `f` 参数保持不变。
+
 ## HTTP 路由组织
 
 业务 HTTP Controller 位于 `app.interfaces.http.controllers`。`controllers/router.py` 聚合 `/api` 下的版本化接口，`controllers/v1/router.py` 聚合 `/api/v1` 下的业务接口。`routes/register.py` 负责将业务 Router 注册到 FastAPI 应用，并直接注册不属于业务上下文的 `/health` 宿主探活接口。
@@ -168,6 +231,32 @@ async def example() -> JsonResponse[dict[str, int]]:
     return JsonResponse.success(data={"value": 1})
 ```
 
+`JsonResponse` 是响应体模型，不会自行修改 FastAPI 路由的 HTTP 状态码。返回 `201 Created`、`202 Accepted` 等非 `200` 成功响应时，路由和响应体必须复用同一个成功码定义：
+
+```python
+from fastapi import APIRouter
+
+from app.interfaces.http.shared.response.codes.success_code import SuccessCode
+from app.interfaces.http.shared.response.json import JsonResponse
+
+
+router = APIRouter()
+
+
+@router.post(
+    "/items",
+    status_code=SuccessCode.CREATED.status_code,
+    response_model=JsonResponse[dict[str, int]],
+)
+async def create_item() -> JsonResponse[dict[str, int]]:
+    return JsonResponse.success(
+        data={"id": 1},
+        code=SuccessCode.CREATED,
+    )
+```
+
+这样实际 HTTP 状态和响应体中的完整响应码都会使用 `201`。如果只向 `JsonResponse.success()` 传入 `SuccessCode.CREATED`，而没有设置路由的 `status_code`，FastAPI 仍会返回默认的 `200 OK`。
+
 应用创建时使用 `APP_SERVICE_CODE` 初始化进程级响应码构造器。同一 Python 进程只能对应一个服务编码，Controller 不需要注入响应工厂。SSE、`204 No Content`、文件下载和其他流式响应不使用 `JsonResponse`。
 
 ### 异常处理
@@ -205,7 +294,7 @@ raise HttpError(
 - MySQL：`mysql`
 - SQLite：`sqlite`
 
-PostgreSQL 和 MySQL 使用异步连接池，SQLite 使用异步驱动。当前项目尚未集成数据库迁移工具，也不会在启动时自动创建数据表。
+PostgreSQL 和 MySQL 使用异步连接池，SQLite 使用异步驱动。main 数据库使用 Alembic 管理结构迁移，应用启动时不会自动执行迁移或创建数据表。
 
 ### 配置方式
 
@@ -216,6 +305,8 @@ DB_DEFAULT=默认连接名
 DB_CONNECTIONS__连接名__配置项=配置值
 ```
 
+数据库应用配置与所有内置驱动的字段模型集中定义在 `app.config.database`。`connections/resolver.py` 负责解析默认或命名连接并调用 Provider；Provider 只负责校验原始连接配置并将其转换为 `DatabaseEngineSpec`。Engine 和 Session 工厂仍由公共资源工厂统一创建，业务侧继续通过 `DatabaseManager` 获取资源。
+
 例如配置一个默认 PostgreSQL 连接：
 
 ```env
@@ -225,6 +316,7 @@ DB_CONNECTIONS__MAIN__DRIVER=postgresql
 DB_CONNECTIONS__MAIN__HOST=127.0.0.1
 DB_CONNECTIONS__MAIN__PORT=5432
 DB_CONNECTIONS__MAIN__DATABASE=fast-api
+DB_CONNECTIONS__MAIN__TABLE_PREFIX=
 DB_CONNECTIONS__MAIN__USERNAME=postgres
 DB_CONNECTIONS__MAIN__PASSWORD=postgres
 DB_CONNECTIONS__MAIN__ECHO=false
@@ -241,6 +333,7 @@ DB_CONNECTIONS__LEGACY__DRIVER=mysql
 DB_CONNECTIONS__LEGACY__HOST=127.0.0.1
 DB_CONNECTIONS__LEGACY__PORT=3306
 DB_CONNECTIONS__LEGACY__DATABASE=legacy
+DB_CONNECTIONS__LEGACY__TABLE_PREFIX=
 DB_CONNECTIONS__LEGACY__USERNAME=root
 DB_CONNECTIONS__LEGACY__PASSWORD=root
 DB_CONNECTIONS__LEGACY__CHARSET=utf8mb4
@@ -251,6 +344,7 @@ DB_CONNECTIONS__LEGACY__CHARSET=utf8mb4
 ```env
 DB_CONNECTIONS__LOCAL__DRIVER=sqlite
 DB_CONNECTIONS__LOCAL__DATABASE=data/database.sqlite
+DB_CONNECTIONS__LOCAL__TABLE_PREFIX=
 ```
 
 SQLite 相对路径基于项目的 `storage` 目录解析。上面的配置最终指向：
@@ -261,12 +355,104 @@ storage/data/database.sqlite
 
 也可以使用绝对路径或 `:memory:` 内存数据库。
 
-所有数据库连接都支持 `ECHO`，默认值为 `false`。PostgreSQL 和 MySQL 额外支持以下连接池配置：
+所有数据库连接都支持 `ECHO` 和 `TABLE_PREFIX`。`ECHO` 默认为 `false`；`TABLE_PREFIX` 默认为空字符串，表示不为 ORM 表名添加前缀。非空前缀只能包含小写字母、数字和下划线，必须以小写字母开头并以下划线结尾，例如 `fast_api_`。
+
+表前缀属于 ORM 结构标识，由 `orm/prefix.py` 独立解析，不属于运行时数据库连接资源。模型导入时会读取对应连接的前缀，修改配置后需要重启进程；已经投入使用的前缀不能直接修改，必须通过迁移显式重命名现有表。
+
+PostgreSQL 和 MySQL 额外支持以下连接池配置：
 
 - `POOL_SIZE`：连接池常驻连接数，默认 `10`；
 - `MAX_OVERFLOW`：连接池允许临时增加的连接数，默认 `20`；
 - `POOL_PRE_PING`：取出连接前是否检查连接有效性，默认 `true`；
 - `POOL_RECYCLE`：连接回收间隔秒数，默认 `3600`，设置为 `-1` 表示不按时间回收。
+
+每个连接只能配置当前驱动声明的字段，未知字段会被拒绝，避免配置项拼写错误后静默使用默认值。
+
+### 扩展数据库驱动
+
+每种数据库驱动由独立 Provider 负责配置校验和 `DatabaseEngineSpec` 构建，内置 Provider 通过 `DEFAULT_DATABASE_PROVIDERS` 显式注册。自定义 Provider 实现 `DatabaseProvider` 协议并返回 `DatabaseResourceDefinition`，然后创建扩展 Registry：
+
+```python
+from functools import partial
+
+from app.bootstrap.app import create_app
+from app.bootstrap.build import build_application_container
+from app.infrastructure.database.manager import DatabaseManager
+from app.infrastructure.database.providers.registry import DEFAULT_DATABASE_PROVIDERS
+
+providers = DEFAULT_DATABASE_PROVIDERS.extended(CustomDatabaseProvider())
+manager = DatabaseManager(settings.database, providers=providers)
+
+app = create_app(
+    settings,
+    container_builder=partial(
+        build_application_container,
+        database_providers=providers,
+    ),
+)
+```
+
+扩展 Registry 不会修改全局默认 Registry。一个 Provider 可以注册多个 driver 别名；新增驱动不需要修改 `DatabaseManager`、通用资源工厂或中央配置联合类型。直接使用 Manager 时传入 `providers`，通过 FastAPI 应用使用时则通过自定义 `container_builder` 将 Registry 传入组合根。
+
+### 数据库迁移
+
+main 数据库的 Alembic 配置和迁移脚本位于 `database/main`。迁移环境通过 `connection_name=main` 明确读取 `DB_CONNECTIONS__MAIN__*`，不依赖 `DB_DEFAULT`，也不会把数据库 URL 或密码保存在 Alembic 配置文件中。
+
+查看当前版本：
+
+```shell
+uv run alembic -c database/main/alembic.ini current
+```
+
+根据已经由迁移环境加载、并继承 `MainBase` 的 ORM 模型生成迁移候选：
+
+```shell
+uv run alembic -c database/main/alembic.ini revision --autogenerate -m "create todos table"
+```
+
+迁移模板为每个新迁移提供 `table_name()`。迁移文件应使用不含前缀的逻辑表名，并在执行时根据 main 连接的 `TABLE_PREFIX` 构建物理表名：
+
+```python
+def upgrade() -> None:
+    examples = table_name("examples")
+    op.create_table(examples, ...)
+
+
+def downgrade() -> None:
+    op.drop_table(table_name("examples"))
+```
+
+Alembic 自动生成的候选代码仍会包含生成环境中的物理表名，必须人工将表名、外键目标以及包含表名的索引和约束名称改为基于 `table_name()` 的动态形式。同一数据库在整条迁移链中必须保持同一个表前缀；修改已有数据库的前缀需要单独编写重命名迁移。
+
+自动生成的迁移必须完成上述检查后再执行。升级到最新版本：
+
+```shell
+uv run alembic -c database/main/alembic.ini upgrade head
+```
+
+回退一个版本：
+
+```shell
+uv run alembic -c database/main/alembic.ini downgrade -1
+```
+
+main 数据库 ORM 模型继承实际定义模块中的 `MainBase`，并通过不含前缀的 `__table_name__` 声明核心表名：
+
+```python
+from typing import ClassVar
+
+from sqlalchemy.orm import Mapped, mapped_column
+
+from app.infrastructure.database.orm.main import MainBase
+
+
+class ExampleModel(MainBase):
+    __table_name__: ClassVar[str] = "examples"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+```
+
+如果 main 连接配置 `TABLE_PREFIX=fast_api_`，实际表名为 `fast_api_examples`。索引、联合索引、唯一约束和检查约束应在模型的 `__table_args__` 中显式定义；主键、外键等未显式命名的约束使用 ORM Metadata 的统一命名约定。新增模型模块时，还必须将该模块加入 main 迁移环境的模型加载入口，确保模型已经注册到 `MainBase.metadata`。
 
 ### 使用默认数据库
 
@@ -319,9 +505,10 @@ legacy_engine = await container.databases.get_engine("legacy")
 ### 支持的缓存
 
 - Redis：官方异步客户端 `redis.asyncio`
-- Memcached：异步客户端 `memcachio`，当前配置要求提供 SASL 用户名和密码
+- Memcached：异步客户端 `memcachio`，SASL 认证可选
+- Memory：用于单元测试和单进程本地开发
 
-项目没有提供 Memory 缓存。Redis 和 Memcached 对业务层暴露相同的 `CacheClient` 协议。
+三种后端对业务层暴露相同的字节级 `CacheClient` 协议。Memory 不跨进程共享，也不会在远程缓存故障时自动接管，因此不能作为生产环境的透明降级方案。
 
 ### 配置方式
 
@@ -329,41 +516,51 @@ legacy_engine = await container.databases.get_engine("legacy")
 
 ```text
 CACHE_DEFAULT=默认连接名
-CACHE_KEY_PREFIX=全局默认前缀
+CACHE_NAMESPACE=应用级命名空间
+CACHE_DEFAULT_TTL=默认过期秒数
 CACHE_CONNECTIONS__连接名__配置项=配置值
 ```
+
+缓存应用配置与所有内置驱动的字段模型集中定义在 `app.config.cache`；Provider 只负责校验原始连接配置并创建对应后端。
 
 配置默认 Redis 连接：
 
 ```env
 CACHE_DEFAULT=session
-CACHE_KEY_PREFIX=fast-api-scaff:
+CACHE_NAMESPACE=fast-api-scaff
+CACHE_DEFAULT_TTL=300
 
 CACHE_CONNECTIONS__SESSION__DRIVER=redis
 CACHE_CONNECTIONS__SESSION__HOST=127.0.0.1
 CACHE_CONNECTIONS__SESSION__PORT=6379
 CACHE_CONNECTIONS__SESSION__DATABASE=0
+CACHE_CONNECTIONS__SESSION__KEY_PREFIX=session
 CACHE_CONNECTIONS__SESSION__MAX_CONNECTIONS=10
 CACHE_CONNECTIONS__SESSION__SSL=false
 ```
 
 Redis 还支持可选的 `USERNAME`、`PASSWORD` 认证配置。
 
-配置带 SASL 认证的 Memcached 命名连接：
+配置 Memcached 命名连接：
 
 ```env
 CACHE_CONNECTIONS__PAGE__DRIVER=memcached
 CACHE_CONNECTIONS__PAGE__HOST=127.0.0.1
 CACHE_CONNECTIONS__PAGE__PORT=11211
-CACHE_CONNECTIONS__PAGE__USERNAME=memcached
-CACHE_CONNECTIONS__PAGE__PASSWORD=memcached
 CACHE_CONNECTIONS__PAGE__MIN_CONNECTIONS=1
 CACHE_CONNECTIONS__PAGE__MAX_CONNECTIONS=10
-CACHE_CONNECTIONS__PAGE__KEY_PREFIX=page:
+CACHE_CONNECTIONS__PAGE__KEY_PREFIX=page
 CACHE_CONNECTIONS__PAGE__SSL=false
 ```
 
-Redis 和 Memcached 共用以下连接池配置：
+Memcached 的 `USERNAME` 和 `PASSWORD` 必须同时配置或同时省略。需要 SASL 时增加：
+
+```env
+CACHE_CONNECTIONS__PAGE__USERNAME=memcached
+CACHE_CONNECTIONS__PAGE__PASSWORD=memcached
+```
+
+Redis 和 Memcached 都支持以下配置：
 
 - `MAX_CONNECTIONS`：最大连接数，默认 `10`
 - `CONNECT_TIMEOUT`：连接超时秒数，默认 `5.0`
@@ -375,30 +572,110 @@ Memcached 额外支持：
 - `MIN_CONNECTIONS`：最小连接数，默认 `1`
 - `BLOCKING_TIMEOUT`：等待可用连接的超时秒数，默认 `5.0`
 
-### key 前缀
+Memory 连接只需要 driver 和可选的用途前缀：
 
-`CACHE_KEY_PREFIX` 是所有缓存连接共享的默认前缀。连接没有配置自己的 `KEY_PREFIX` 时，会继承全局前缀：
+```env
+CACHE_CONNECTIONS__LOCAL__DRIVER=memory
+CACHE_CONNECTIONS__LOCAL__KEY_PREFIX=local
+```
+
+存在任意缓存连接时，`CACHE_NAMESPACE` 不能为空。默认连接必须出现在 `CACHE_CONNECTIONS` 中，所有连接配置都会在应用生命周期启动时校验；创建 Redis 或 Memcached 客户端不会立即连接网络。
+
+每个缓存连接只能配置当前驱动声明的字段，未知字段会被拒绝，避免 `SSL`、连接池等配置项拼写错误后静默使用默认值。
+
+### 扩展缓存驱动
+
+每种驱动由独立 Provider 负责配置校验，并组装由 Connection 和 Storage 构成的 `CacheResource`。Connection 管理原生客户端的健康检查和关闭，Storage 只实现数据操作。内置 Provider 通过 `DEFAULT_CACHE_PROVIDERS` 显式注册。自定义 Provider 实现 `CacheProvider` 协议并返回 `CacheResourceDefinition`，然后创建扩展 Registry：
+
+```python
+from functools import partial
+
+from app.bootstrap.app import create_app
+from app.bootstrap.build import build_application_container
+from app.infrastructure.cache.manager import CacheManager
+from app.infrastructure.cache.providers.registry import DEFAULT_CACHE_PROVIDERS
+
+providers = DEFAULT_CACHE_PROVIDERS.extended(CustomCacheProvider())
+manager = CacheManager(settings.cache, providers=providers)
+
+app = create_app(
+    settings,
+    container_builder=partial(
+        build_application_container,
+        cache_providers=providers,
+    ),
+)
+```
+
+扩展 Registry 不会修改全局默认 Registry。新增驱动不需要修改 `CacheManager`、内置 Provider 或配置联合类型；直接使用 Manager 时传入 `providers`，通过 FastAPI 应用使用时则通过自定义 `container_builder` 将 Registry 传入组合根。项目不使用装饰器或模块导入副作用自动注册驱动。
+
+### Redis 数据类型扩展边界
+
+本次缓存重构没有改变业务侧的普通 KV 使用方式。`container.caches.get()` 仍然返回公共 `CacheClient`，已有的 `get()`、`set()`、`delete()` 和 `exists()` 调用保持不变。重构新增的是 Connection、Storage 和 Resource 之间的职责边界，使 Redis 可以在不修改 Memcached、Memory 公共协议的情况下扩展自身数据类型。
+
+当前已经实现的 Redis 能力只有 String/KV：
+
+- `RedisCacheConnection` 创建并关闭原生 Redis 客户端，负责连接健康检查；
+- `RedisStringStorage` 实现 String 的 `get`、`set`、`delete` 和 `exists`；
+- `RedisStorage.strings` 聚合 String Storage；
+- `RedisStorage` 将 String 操作继续适配为公共 KV 能力，因此业务代码不需要因本次重构而修改。
+
+Hash、List、Set 和 Sorted Set **尚未实现，也没有出现在当前公共 API 中**。后续实际增加这些能力时，应分别放在 `storages/redis` 下：
 
 ```text
-CACHE_KEY_PREFIX=fast-api-scaff:
+storages/redis/
+├── base.py                 # 已实现：Redis Storage 公共客户端能力
+├── string.py               # 已实现：String/KV
+├── storage.py              # 已实现：Redis Storage 聚合入口
+├── hash.py                 # 待实现：Hash
+├── list.py                 # 待实现：List
+├── set.py                  # 待实现：Set
+└── sorted_set.py           # 待实现：Sorted Set
+```
+
+这些 Redis Storage 应共享同一个 `RedisCacheConnection`，统一复用连接池和生命周期。新增类型不应向 `KeyValueStorage` 或公共 `CacheClient` 强行加入 Redis 专属方法；实现完成后应通过独立的 Redis 客户端门面或 Manager 专用入口向确实依赖 Redis 语义的业务代码提供。
+
+### key 规则
+
+最终 key 按以下规则组合：
+
+```text
+{CACHE_NAMESPACE}:{连接 KEY_PREFIX}:{业务 key}
+```
+
+例如：
+
+```text
+namespace=fast-api-scaff
+key_prefix=session
 业务 key=user:1
-实际 key=fast-api-scaff:user:1
+最终 key=fast-api-scaff:session:user:1
 ```
 
-连接级 `KEY_PREFIX` 会完整覆盖全局配置，不会和全局前缀自动拼接：
+为了让同一个业务 key 能在 Redis 和 Memcached 间迁移，公共客户端统一执行较严格的可移植规则：key 不能为空，不能包含空白或控制字符，最终 UTF-8 长度不能超过 250 字节。namespace 和连接前缀不能以冒号开头或结尾。
 
-```env
-CACHE_KEY_PREFIX=fast-api-scaff:
-CACHE_CONNECTIONS__PAGE__KEY_PREFIX=page:
+### TTL 规则
+
+不传 `ttl` 时使用 `CACHE_DEFAULT_TTL`：
+
+```python
+await cache.set("user:1", b"xiaoyu")
 ```
 
-此时 `PAGE` 连接中的 `user:1` 最终是 `page:user:1`。如果需要组合形式，应显式配置：
+传入正整数可以覆盖默认值。需要明确写入永不过期的值时使用 `NO_EXPIRATION`，不使用含义模糊的 `None`：
 
-```env
-CACHE_CONNECTIONS__PAGE__KEY_PREFIX=fast-api-scaff:page:
+```python
+from app.infrastructure.cache.contracts.client import NO_EXPIRATION
+
+await cache.set("temporary", b"value", ttl=60)
+await cache.set("permanent", b"value", ttl=NO_EXPIRATION)
 ```
 
-### 使用默认缓存
+未配置 `CACHE_DEFAULT_TTL` 时默认值也是 300 秒。不受默认 TTL 影响的永久写入必须显式使用 `NO_EXPIRATION`。
+
+公共 API 中的 TTL 始终表示相对秒数。Memcached 协议会将超过 30 天的 expiry 解释为 Unix 时间戳，后端会自动完成转换，避免它与 Redis 的行为不一致。
+
+### 业务使用
 
 通过 `container.caches.get()` 获取默认缓存：
 
@@ -406,7 +683,7 @@ CACHE_CONNECTIONS__PAGE__KEY_PREFIX=fast-api-scaff:page:
 from fastapi import Request
 
 from app.bootstrap.container import ApplicationContainer
-from app.infrastructure.cache.client import CacheClient
+from app.infrastructure.cache.contracts.client import CacheClient
 
 
 async def cache_example(request: Request) -> dict[str, object]:
@@ -419,18 +696,16 @@ async def cache_example(request: Request) -> dict[str, object]:
     return {"value": value.decode() if value is not None else None}
 ```
 
-缓存值统一使用 `bytes`。字符串需要在写入前编码，读取后解码：
+缓存值统一使用 `bytes`。项目提供独立的 bytes、UTF-8 文本和 JSON codec，但不会在客户端中隐式序列化任意 Python 对象：
 
 ```python
-await cache.set("name", "xiaoyu".encode(), ttl=60)
+from app.infrastructure.cache.codecs.json import JsonCacheCodec
 
-value = await cache.get("name")
-name = value.decode() if value is not None else None
+await cache.set("user:1", JsonCacheCodec.encode({"name": "xiaoyu"}), ttl=60)
+
+payload = await cache.get("user:1")
+user = JsonCacheCodec.decode(payload) if payload is not None else None
 ```
-
-`ttl` 的单位是秒，只能是正整数；传入 `None` 表示不过期。
-
-### 使用命名缓存
 
 将连接名传给 `container.caches.get()`：
 
@@ -444,27 +719,41 @@ await page_cache.set("home", b"content", ttl=300)
 ```python
 exists = await cache.exists("user:1")
 deleted = await cache.delete("user:1")
-healthy = await cache.ping()
+healthy = await container.caches.ping()
 ```
 
-业务代码只依赖：
+`ping()` 和关闭能力属于资源管理职责，不出现在业务 `CacheClient` 协议中。健康检查通过 `CacheManager.ping()` 执行，客户端由应用容器统一关闭。
+
+Controller 或 Service 只依赖：
 
 ```python
-from app.infrastructure.cache.client import CacheClient
+from app.infrastructure.cache.contracts.client import CacheClient
 ```
 
-不要在 Controller 或 Service 中直接导入 `RedisCache`、`MemcachedCache`，也不要自行实例化具体客户端。具体实现由缓存工厂根据连接配置选择，客户端生命周期由应用容器统一管理。
+不要直接导入 Redis、Memcached 或 Memory Connection、Storage，也不要自行实例化驱动客户端。底层异常会转换为 `CacheConnectionError` 或 `CacheOperationError`，但不会被静默吞掉；是否在缓存失败后回源，应由业务用例显式决定。
 
 ## 项目结构
 
 ```text
+database/                       # 数据库迁移环境
+└── main/                       # main 数据库 Alembic 配置和版本脚本
 app/
 ├── bootstrap/              # 应用创建、容器装配和生命周期
-├── config/                 # 原始配置和具体连接配置模型
+├── config/                 # 应用配置与数据库、缓存驱动配置模型
 ├── infrastructure/
-│   ├── database/           # 数据库资源、工厂和管理器
-│   ├── cache/              # 缓存协议、工厂和管理器
-│   │   └── backends/       # Redis、Memcached 等具体实现
+│   ├── database/           # 数据库管理器、资源工厂和公共规则
+│   │   ├── connections/    # 命名连接解析与 EngineSpec 定义
+│   │   ├── contracts/      # Database Provider 协议与资源定义
+│   │   ├── providers/      # 驱动配置校验、EngineSpec 构建和显式注册
+│   │   └── orm/            # 表前缀、Metadata、命名约定和分库声明基类
+│   ├── cache/              # 缓存管理器、Provider Registry 和公共规则
+│   │   ├── contracts/      # 客户端、Connection、Storage 与 Provider 协议
+│   │   ├── clients/        # namespace、TTL 等客户端门面
+│   │   ├── codecs/         # bytes、文本和 JSON 编解码器
+│   │   ├── connections/    # 原生客户端创建、健康检查和关闭
+│   │   ├── providers/      # 驱动配置校验、资源组装和显式注册
+│   │   └── storages/       # Redis、Memcached、Memory 数据操作
+│   │       └── redis/      # Redis String 实现和数据类型聚合入口
 │   └── resources/          # 通用延迟资源管理
 ├── interfaces/
 │   └── http/               # HTTP 入站接口
@@ -488,14 +777,14 @@ uv run python -m pytest -q
 运行 Ruff：
 
 ```shell
-uv run ruff check app tests
-uv run ruff format --check app tests
+uv run ruff check app tests database
+uv run ruff format --check app tests database
 ```
 
 运行类型检查：
 
 ```shell
-uv run ty check app tests
+uv run ty check app tests database
 ```
 
 完整环境变量示例见 [`sample.env`](sample.env)。未在示例中显式列出的可选配置使用代码中的默认值。

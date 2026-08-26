@@ -1,23 +1,13 @@
 import pytest
 from pydantic import ValidationError
 
-from app.config.cache import CacheSettings, MemcachedConnectionSettings, RedisConnectionSettings
-
-
-def test_raw_settings_do_not_validate_connection_semantics() -> None:
-    settings = CacheSettings(
-        default="missing",
-        connections={"broken": {"driver": "memcached"}},
-        _env_file=None,
-    )
-
-    assert settings.default == "missing"
-    assert settings.connections == {"broken": {"driver": "memcached"}}
+from app.config.cache import CacheSettings, MemcachedCacheSettings, RedisCacheSettings
 
 
 def test_nested_environment_is_loaded_as_raw_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CACHE_DEFAULT", "session")
-    monkeypatch.setenv("CACHE_KEY_PREFIX", "shared:")
+    monkeypatch.setenv("CACHE_NAMESPACE", "fast-api-scaff")
+    monkeypatch.setenv("CACHE_DEFAULT_TTL", "300")
     monkeypatch.setenv("CACHE_CONNECTIONS__SESSION__DRIVER", "redis")
     monkeypatch.setenv("CACHE_CONNECTIONS__SESSION__HOST", "127.0.0.1")
     monkeypatch.setenv("CACHE_CONNECTIONS__SESSION__DATABASE", "2")
@@ -25,7 +15,8 @@ def test_nested_environment_is_loaded_as_raw_snapshot(monkeypatch: pytest.Monkey
     settings = CacheSettings(_env_file=None)
 
     assert settings.default == "session"
-    assert settings.key_prefix == "shared:"
+    assert settings.namespace == "fast-api-scaff"
+    assert settings.default_ttl == 300
     assert settings.connections == {
         "session": {
             "driver": "redis",
@@ -36,60 +27,59 @@ def test_nested_environment_is_loaded_as_raw_snapshot(monkeypatch: pytest.Monkey
 
 
 @pytest.mark.parametrize(
-    ("connection_prefix", "default_prefix", "expected"),
-    [
-        (None, "shared:", "shared:"),
-        ("session:", "shared:", "session:"),
-        ("", "shared:", ""),
-    ],
+    ("username", "password"),
+    [(None, None), ("user", "secret")],
 )
-def test_connection_key_prefix_overrides_global_default(
-    connection_prefix: str | None,
-    default_prefix: str,
-    expected: str,
+def test_memcached_authentication_is_optional_but_must_be_complete(
+    username: str | None,
+    password: str | None,
 ) -> None:
-    settings = RedisConnectionSettings(
-        driver="redis",
-        host="127.0.0.1",
-        key_prefix=connection_prefix,
-    )
-
-    assert settings.resolve_key_prefix(default_prefix) == expected
-
-
-def test_cache_drivers_share_pool_defaults_and_allow_connection_override() -> None:
-    redis = RedisConnectionSettings(
-        driver="redis",
-        host="127.0.0.1",
-        max_connections=20,
-    )
-    memcached = MemcachedConnectionSettings(
+    settings = MemcachedCacheSettings(
         driver="memcached",
         host="127.0.0.1",
-        username="user",
-        password="secret",
+        username=username,
+        password=password,
     )
 
-    assert redis.max_connections == 20
-    assert redis.connect_timeout == 5.0
-    assert redis.read_timeout == 5.0
-    assert memcached.max_connections == 10
-    assert memcached.connect_timeout == 5.0
-    assert memcached.read_timeout == 5.0
+    assert settings.username == username
 
 
-def test_memcached_requires_authentication() -> None:
-    with pytest.raises(ValidationError):
-        MemcachedConnectionSettings.model_validate({"driver": "memcached", "host": "127.0.0.1"})
+@pytest.mark.parametrize(
+    ("username", "password"),
+    [("user", None), (None, "secret")],
+)
+def test_memcached_rejects_partial_authentication(username: str | None, password: str | None) -> None:
+    with pytest.raises(ValidationError, match="同时配置"):
+        MemcachedCacheSettings(
+            driver="memcached",
+            host="127.0.0.1",
+            username=username,
+            password=password,
+        )
 
 
 def test_memcached_pool_minimum_cannot_exceed_maximum() -> None:
     with pytest.raises(ValidationError, match="min_connections"):
-        MemcachedConnectionSettings(
+        MemcachedCacheSettings(
             driver="memcached",
             host="127.0.0.1",
-            username="user",
-            password="secret",
             min_connections=2,
             max_connections=1,
+        )
+
+
+@pytest.mark.parametrize("ttl", [0, -1])
+def test_default_ttl_must_be_positive(ttl: int) -> None:
+    with pytest.raises(ValidationError, match="default_ttl"):
+        CacheSettings(default_ttl=ttl, _env_file=None)
+
+
+def test_cache_driver_rejects_unknown_configuration_fields() -> None:
+    with pytest.raises(ValidationError, match="extra_forbidden"):
+        RedisCacheSettings.model_validate(
+            {
+                "driver": "redis",
+                "host": "127.0.0.1",
+                "sll": True,
+            }
         )

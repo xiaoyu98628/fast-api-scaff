@@ -1,0 +1,18 @@
+# 忽略当前文件夹下所有文件上传 git
+*
+
+# 排除 versions 文件夹
+!versions
+!versions/**
+
+# 排除 .gitignore 文件
+!.gitignore
+
+# 排除 env.py 文件夹
+!env.py
+
+# 排除 README 文件
+!README
+
+# 排除 script.py.mako 文件
+!script.py.mako

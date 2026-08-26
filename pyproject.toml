@@ -20,6 +20,8 @@ dependencies = [
 
     "redis>=8.1.0",
     "memcachio>=0.5.1",
+
+    "alembic>=1.19.1",
 ]
 
 [project.optional-dependencies]
