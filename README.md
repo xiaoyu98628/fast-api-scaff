@@ -44,6 +44,60 @@ APP_PORT=8000
 uv run uvicorn app.main:app --reload
 ```
 
+## 日志
+
+应用使用 Python 标准库 `logging` 输出单行 JSON 结构化日志。默认只启用 stdout，不创建或写入日志文件，适合由 Docker、Kubernetes 或宿主日志系统统一采集：
+
+```env
+LOG_LEVEL=INFO
+LOG_ACCESS_ENABLED=true
+LOG_ACTIVE_HANDLERS=["stdout"]
+LOG_HANDLERS__STDOUT__DRIVER=stream
+LOG_HANDLERS__STDOUT__STREAM=stdout
+```
+
+`LOG_LEVEL` 支持 `DEBUG`、`INFO`、`WARNING`、`ERROR` 和 `CRITICAL`。`LOG_ACTIVE_HANDLERS` 使用 JSON 数组指定启用的 Handler；每个 Handler 在 `LOG_HANDLERS__名称` 下配置驱动。当前内置 `stream` 驱动，`stream` 可以是 `stdout` 或 `stderr`。日志驱动使用名称到构建函数的显式映射，后续可以在默认映射上扩展文件等输出驱动；配置未注册的驱动会在应用启动时失败。
+
+项目模块通过标准库获取 logger，不直接创建 Handler：
+
+```python
+import logging
+
+
+logger = logging.getLogger(__name__)
+
+logger.info("任务执行完成")
+```
+
+需要稳定检索和统计的日志使用对应模块定义的 `StrEnum` 事件，并将结构化字段放在 `details` 中。HTTP 与数据库分别维护自己的事件枚举，避免形成包含所有业务事件的全局枚举：
+
+```python
+from app.interfaces.http.logging import HttpLogEvent
+
+
+logger.info(
+    "HTTP request completed",
+    extra={
+        "event": HttpLogEvent.REQUEST_COMPLETED,
+        "details": {
+            "method": "GET",
+            "status_code": 200,
+        },
+    },
+)
+```
+
+HTTP 访问日志记录请求方法、路径、匹配到的路由模板、状态码、耗时和客户端地址，不记录请求头、Cookie、请求体和查询参数。日志在请求上下文内部产生，因此会自动包含与响应一致的 `request_id`。客户端携带非法 `X-Request-ID` 时，请求会在访问日志中间件之前被拒绝，不产生访问日志。
+
+数据库日志记录 Engine 资源创建和关闭、查询异常与慢查询。连接配置中的 `echo=true` 表示通过应用统一日志记录普通 SQL，不再启用 SQLAlchemy 原生 echo；`slow_query_ms` 配置慢查询阈值，单位为毫秒，设为 `0` 时禁用慢查询日志：
+
+```env
+DB_CONNECTIONS__MAIN__ECHO=false
+DB_CONNECTIONS__MAIN__SLOW_QUERY_MS=500
+```
+
+SQL 参数不会写入日志，SQLAlchemy Engine 也固定启用参数隐藏。SQL 语句本身仍会出现在普通 SQL、慢查询和查询异常日志中，因此业务代码应使用参数化查询，不应把密码、令牌或其他敏感值拼接进 SQL 字符串。
+
 通过 Compose 启动带热重载的开发服务：
 
 ```shell

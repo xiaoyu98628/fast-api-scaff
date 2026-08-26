@@ -1,15 +1,19 @@
 from app.bootstrap.app import create_app
 from app.config.settings import load_settings
+from app.infrastructure.logging.configure import configure_logging
 
-app = create_app()
+settings = load_settings()
+configure_logging(settings)
+
+app = create_app(settings)
 
 
 if __name__ == "__main__":
     import uvicorn
 
-    app_settings = load_settings().app
-
     uvicorn.run(
         app="app.main:app",
-        reload=app_settings.debug,
+        reload=settings.app.debug,
+        access_log=False,
+        log_config=None,
     )

@@ -35,6 +35,7 @@ class BaseDatabaseSettings(BaseModel):
     )
 
     echo: bool = False
+    slow_query_ms: int = Field(default=500, ge=0)
     table_prefix: DatabaseTablePrefix = ""
 
 
