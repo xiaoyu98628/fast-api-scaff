@@ -2,8 +2,8 @@ from sqlalchemy import MetaData
 from sqlalchemy.orm import DeclarativeBase, declared_attr
 
 from app.config.database import DatabaseSettings
-from app.infrastructure.database.connection import resolve_database_table_prefix
 from app.infrastructure.database.orm.naming import CONSTRAINT_NAMING_CONVENTION
+from app.infrastructure.database.orm.prefix import resolve_database_table_prefix
 
 MAIN_CONNECTION_NAME = "main"
 MAIN_TABLE_PREFIX = resolve_database_table_prefix(

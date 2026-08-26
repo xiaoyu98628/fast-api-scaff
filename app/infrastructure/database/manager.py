@@ -5,7 +5,7 @@ from functools import partial
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from app.config.database import DatabaseSettings
-from app.infrastructure.database.connection import validate_database_definition
+from app.infrastructure.database.connections.resolver import validate_database_definition
 from app.infrastructure.database.errors import DatabaseConfigurationError
 from app.infrastructure.database.factory import close_database_resource, create_database_resource
 from app.infrastructure.database.providers.registry import DEFAULT_DATABASE_PROVIDERS, DatabaseProviderRegistry

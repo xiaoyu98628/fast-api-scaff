@@ -7,8 +7,8 @@ from app.config.cache import CacheSettings
 from app.config.cors import CorsSettings
 from app.config.database import DatabaseSettings
 from app.config.settings import Settings
+from app.infrastructure.database.connections.spec import DatabaseEngineSpec
 from app.infrastructure.database.contracts.provider import DatabaseResourceDefinition
-from app.infrastructure.database.engine_spec import DatabaseEngineSpec
 from app.infrastructure.database.errors import DatabaseConfigurationError
 from app.infrastructure.database.manager import DatabaseManager
 from app.infrastructure.database.providers.mysql import MySQLDatabaseProvider
@@ -22,7 +22,6 @@ class CustomDatabaseProvider:
 
     def prepare(self, raw_config: dict[str, object]) -> DatabaseResourceDefinition:
         return DatabaseResourceDefinition(
-            table_prefix=str(raw_config.get("table_prefix", "")),
             engine_spec=DatabaseEngineSpec(
                 url=URL.create("sqlite+aiosqlite", database=":memory:"),
                 options={},
@@ -126,7 +125,6 @@ def test_sqlite_provider_builds_supported_engine_spec() -> None:
         }
     )
 
-    assert definition.table_prefix == "main_"
     assert definition.engine_spec.url.drivername == "sqlite+aiosqlite"
     assert definition.engine_spec.url.database == ":memory:"
     assert definition.engine_spec.options == {"echo": True}

@@ -216,7 +216,7 @@ DB_DEFAULT=默认连接名
 DB_CONNECTIONS__连接名__配置项=配置值
 ```
 
-数据库应用配置与所有内置驱动的字段模型集中定义在 `app.config.database`；Provider 只负责校验原始连接配置并将其转换为 EngineSpec。
+数据库应用配置与所有内置驱动的字段模型集中定义在 `app.config.database`。`connections/resolver.py` 负责解析默认或命名连接并调用 Provider；Provider 只负责校验原始连接配置并将其转换为 `DatabaseEngineSpec`。Engine 和 Session 工厂仍由公共资源工厂统一创建，业务侧继续通过 `DatabaseManager` 获取资源。
 
 例如配置一个默认 PostgreSQL 连接：
 
@@ -268,7 +268,7 @@ storage/data/database.sqlite
 
 所有数据库连接都支持 `ECHO` 和 `TABLE_PREFIX`。`ECHO` 默认为 `false`；`TABLE_PREFIX` 默认为空字符串，表示不为 ORM 表名添加前缀。非空前缀只能包含小写字母、数字和下划线，必须以小写字母开头并以下划线结尾，例如 `fast_api_`。
 
-表前缀属于数据库结构标识。模型导入时会读取对应连接的前缀，修改配置后需要重启进程；已经投入使用的前缀不能直接修改，必须通过迁移显式重命名现有表。
+表前缀属于 ORM 结构标识，由 `orm/prefix.py` 独立解析，不属于运行时数据库连接资源。模型导入时会读取对应连接的前缀，修改配置后需要重启进程；已经投入使用的前缀不能直接修改，必须通过迁移显式重命名现有表。
 
 PostgreSQL 和 MySQL 额外支持以下连接池配置：
 
@@ -639,9 +639,10 @@ app/
 ├── config/                 # 应用配置与数据库、缓存驱动配置模型
 ├── infrastructure/
 │   ├── database/           # 数据库管理器、资源工厂和公共规则
+│   │   ├── connections/    # 命名连接解析与 EngineSpec 定义
 │   │   ├── contracts/      # Database Provider 协议与资源定义
 │   │   ├── providers/      # 驱动配置校验、EngineSpec 构建和显式注册
-│   │   └── orm/            # ORM Metadata、命名约定和分库声明基类
+│   │   └── orm/            # 表前缀、Metadata、命名约定和分库声明基类
 │   ├── cache/              # 缓存管理器、Provider Registry 和公共规则
 │   │   ├── contracts/      # 客户端、Connection、Storage 与 Provider 协议
 │   │   ├── clients/        # namespace、TTL 等客户端门面

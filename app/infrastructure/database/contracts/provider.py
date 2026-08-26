@@ -1,14 +1,13 @@
 from dataclasses import dataclass
 from typing import Protocol
 
-from app.infrastructure.database.engine_spec import DatabaseEngineSpec
+from app.infrastructure.database.connections.spec import DatabaseEngineSpec
 
 
 @dataclass(frozen=True, slots=True)
 class DatabaseResourceDefinition:
     """已经完成配置校验、等待延迟创建的数据库资源定义。"""
 
-    table_prefix: str
     engine_spec: DatabaseEngineSpec
 
 

@@ -7,8 +7,8 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.config.database import DatabaseSettings
-from app.infrastructure.database.connection import resolve_database_definition
-from app.infrastructure.database.engine_spec import DatabaseEngineSpec
+from app.infrastructure.database.connections.resolver import resolve_database_definition
+from app.infrastructure.database.connections.spec import DatabaseEngineSpec
 from app.infrastructure.database.orm.main import MainBase
 
 # this is the Alembic Config object, which provides

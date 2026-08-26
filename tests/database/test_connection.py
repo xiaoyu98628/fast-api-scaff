@@ -1,12 +1,12 @@
 import pytest
 
 from app.config.database import DatabaseSettings
-from app.infrastructure.database.connection import (
+from app.infrastructure.database.connections.resolver import (
     resolve_database_definition,
-    resolve_database_table_prefix,
     validate_database_definition,
 )
 from app.infrastructure.database.errors import DatabaseConfigurationError
+from app.infrastructure.database.orm.prefix import resolve_database_table_prefix
 
 
 def test_validate_database_definition_parses_raw_config() -> None:

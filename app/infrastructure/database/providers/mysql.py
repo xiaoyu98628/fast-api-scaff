@@ -1,8 +1,8 @@
 from sqlalchemy import URL
 
 from app.config.database import MySQLDatabaseSettings
+from app.infrastructure.database.connections.spec import DatabaseEngineSpec
 from app.infrastructure.database.contracts.provider import DatabaseResourceDefinition
-from app.infrastructure.database.engine_spec import DatabaseEngineSpec
 
 
 class MySQLDatabaseProvider:
@@ -11,7 +11,6 @@ class MySQLDatabaseProvider:
     def prepare(self, raw_config: dict[str, object]) -> DatabaseResourceDefinition:
         settings = MySQLDatabaseSettings.model_validate(raw_config)
         return DatabaseResourceDefinition(
-            table_prefix=settings.table_prefix,
             engine_spec=DatabaseEngineSpec(
                 url=URL.create(
                     drivername="mysql+asyncmy",
