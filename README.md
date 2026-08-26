@@ -168,6 +168,32 @@ async def example() -> JsonResponse[dict[str, int]]:
     return JsonResponse.success(data={"value": 1})
 ```
 
+`JsonResponse` 是响应体模型，不会自行修改 FastAPI 路由的 HTTP 状态码。返回 `201 Created`、`202 Accepted` 等非 `200` 成功响应时，路由和响应体必须复用同一个成功码定义：
+
+```python
+from fastapi import APIRouter
+
+from app.interfaces.http.shared.response.codes.success_code import SuccessCode
+from app.interfaces.http.shared.response.json import JsonResponse
+
+
+router = APIRouter()
+
+
+@router.post(
+    "/items",
+    status_code=SuccessCode.CREATED.status_code,
+    response_model=JsonResponse[dict[str, int]],
+)
+async def create_item() -> JsonResponse[dict[str, int]]:
+    return JsonResponse.success(
+        data={"id": 1},
+        code=SuccessCode.CREATED,
+    )
+```
+
+这样实际 HTTP 状态和响应体中的完整响应码都会使用 `201`。如果只向 `JsonResponse.success()` 传入 `SuccessCode.CREATED`，而没有设置路由的 `status_code`，FastAPI 仍会返回默认的 `200 OK`。
+
 应用创建时使用 `APP_SERVICE_CODE` 初始化进程级响应码构造器。同一 Python 进程只能对应一个服务编码，Controller 不需要注入响应工厂。SSE、`204 No Content`、文件下载和其他流式响应不使用 `JsonResponse`。
 
 ### 异常处理
