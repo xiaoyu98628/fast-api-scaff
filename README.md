@@ -130,6 +130,69 @@ request_id = context[HeaderKeys.request_id]
 
 公共上下文用于 `request_id`、`trace_id` 等技术元数据，不用于隐式传递当前用户、租户、权限或事务等业务依赖。上下文只能在请求处理周期内访问。
 
+## 编码查询参数
+
+应用会处理查询字符串中名为 `f` 的编码参数。该参数采用 JSON、URL 编码和 Base64 组合格式，仅用于兼容查询参数封装协议，不提供加密、防篡改或敏感信息保护能力。
+
+解码结果是 JSON 对象时，它会替换原始查询字符串供后续中间件和 Controller 读取；原始对象还会保存在 `request.state.decoded_f_params`，以保留无法直接表示为普通查询参数的嵌套结构。解码失败或结果不是 JSON 对象时，请求保持不变。由于解码成功会替换整个查询字符串，调用方不应同时传递 `f` 和其他独立查询参数。
+
+需要生成兼容格式时，通过公共编码函数构造参数，并交给 HTTP 客户端处理查询字符串转义：
+
+```python
+from app.interfaces.http.middleware.query_param_decode import encode_query_param
+
+
+encoded = encode_query_param({"name": "张三", "page": 2})
+response = await client.get("/search", params={"f": encoded})
+```
+
+解码后的普通字段会进入查询参数，可以继续使用 FastAPI 的参数注入：
+
+```python
+from fastapi import APIRouter
+
+
+router = APIRouter()
+
+
+@router.get("/search")
+async def search(name: str, page: int = 1) -> dict[str, object]:
+    return {"name": name, "page": page}
+```
+
+需要动态读取参数或获取同名列表参数时，可以使用 `request.query_params`：
+
+```python
+from fastapi import Request
+
+
+@router.get("/search")
+async def search(request: Request) -> dict[str, object]:
+    return {
+        "name": request.query_params.get("name"),
+        "tags": request.query_params.getlist("tags"),
+    }
+```
+
+查询字符串不能完整表示嵌套对象，因此中间件还会把完整解码结果保存到 `request.state.decoded_f_params`。建议通过公共键名读取，并处理没有合法 `f` 参数的情况：
+
+```python
+from fastapi import Request
+
+from app.interfaces.http.middleware.query_param_decode import DECODED_F_STATE_KEY
+
+
+@router.get("/search")
+async def search(request: Request) -> dict[str, object] | None:
+    decoded = getattr(request.state, DECODED_F_STATE_KEY, None)
+    if decoded is None:
+        return None
+
+    return decoded
+```
+
+只有 `f` 成功解码为 JSON 对象时才会写入 `decoded_f_params`。解码失败时不会创建该状态，原始查询字符串和 `f` 参数保持不变。
+
 ## HTTP 路由组织
 
 业务 HTTP Controller 位于 `app.interfaces.http.controllers`。`controllers/router.py` 聚合 `/api` 下的版本化接口，`controllers/v1/router.py` 聚合 `/api/v1` 下的业务接口。`routes/register.py` 负责将业务 Router 注册到 FastAPI 应用，并直接注册不属于业务上下文的 `/health` 宿主探活接口。
