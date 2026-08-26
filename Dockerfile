@@ -38,6 +38,8 @@ WORKDIR /app
 
 COPY --from=builder /app /app
 
+USER app
+
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s \
