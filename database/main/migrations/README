@@ -11,6 +11,17 @@ uv run alembic -c database/main/alembic.ini upgrade head
 uv run alembic -c database/main/alembic.ini downgrade -1
 ```
 
-自动生成的迁移是候选结果，提交前必须人工检查 `upgrade()` 和 `downgrade()`。
+自动生成的迁移是候选结果，提交前必须人工检查 `upgrade()` 和 `downgrade()`。迁移模板提供 `table_name()`，迁移文件应只保留不含前缀的逻辑表名，并在执行时根据 `DB_CONNECTIONS__MAIN__TABLE_PREFIX` 构建物理表名：
+
+```python
+def upgrade() -> None:
+    op.create_table(table_name("examples"), ...)
+
+
+def downgrade() -> None:
+    op.drop_table(table_name("examples"))
+```
+
+Alembic 自动生成的候选代码仍会包含生成环境中的物理表名，必须人工将表名、外键目标以及包含表名的索引和约束名称改为基于 `table_name()` 的动态形式。同一数据库在整条迁移链中必须保持同一个表前缀；修改已有数据库的前缀需要单独编写重命名迁移。
 
 新增 main 数据库 ORM 模型时，必须同时将模型模块加入迁移环境的模型加载入口，使表结构注册到 `MainBase.metadata` 后再运行自动生成。

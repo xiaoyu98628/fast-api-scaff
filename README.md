@@ -347,7 +347,21 @@ uv run alembic -c database/main/alembic.ini current
 uv run alembic -c database/main/alembic.ini revision --autogenerate -m "create todos table"
 ```
 
-自动生成的迁移必须人工检查后再执行。升级到最新版本：
+迁移模板为每个新迁移提供 `table_name()`。迁移文件应使用不含前缀的逻辑表名，并在执行时根据 main 连接的 `TABLE_PREFIX` 构建物理表名：
+
+```python
+def upgrade() -> None:
+    examples = table_name("examples")
+    op.create_table(examples, ...)
+
+
+def downgrade() -> None:
+    op.drop_table(table_name("examples"))
+```
+
+Alembic 自动生成的候选代码仍会包含生成环境中的物理表名，必须人工将表名、外键目标以及包含表名的索引和约束名称改为基于 `table_name()` 的动态形式。同一数据库在整条迁移链中必须保持同一个表前缀；修改已有数据库的前缀需要单独编写重命名迁移。
+
+自动生成的迁移必须完成上述检查后再执行。升级到最新版本：
 
 ```shell
 uv run alembic -c database/main/alembic.ini upgrade head
