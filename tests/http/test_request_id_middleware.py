@@ -1,3 +1,4 @@
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from uuid import UUID, uuid4
@@ -7,7 +8,6 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from starlette_context import context
 from starlette_context.header_keys import HeaderKeys
-from starlette_context.middleware import RawContextMiddleware
 
 from app.bootstrap.app import create_app
 from app.config.app import AppSettings
@@ -15,6 +15,8 @@ from app.config.cache import CacheSettings
 from app.config.cors import CorsSettings
 from app.config.database import DatabaseSettings
 from app.config.settings import Settings
+from app.interfaces.http.logging import HttpLogEvent
+from app.interfaces.http.middleware.request_id import RequestIdMiddleware
 
 REQUEST_ID_HEADER = HeaderKeys.request_id.value
 
@@ -38,7 +40,7 @@ async def create_test_client(app: FastAPI) -> AsyncIterator[AsyncClient]:
 def test_request_id_is_registered_as_outermost_middleware() -> None:
     app = create_app(build_settings())
 
-    assert app.user_middleware[0].cls is RawContextMiddleware
+    assert app.user_middleware[0].cls is RequestIdMiddleware
 
 
 @pytest.mark.asyncio
@@ -75,8 +77,11 @@ async def test_valid_request_id_is_preserved() -> None:
 
 
 @pytest.mark.asyncio
-async def test_invalid_request_id_is_rejected() -> None:
+async def test_invalid_request_id_is_rejected_and_logged_safely(caplog: pytest.LogCaptureFixture) -> None:
     app = create_app(build_settings())
+    logger_name = "app.interfaces.http.request_id"
+    logging.getLogger(logger_name).disabled = False
+    caplog.set_level(logging.WARNING, logger=logger_name)
 
     async with create_test_client(app) as client:
         response = await client.get("/health", headers={REQUEST_ID_HEADER: "invalid request id"})
@@ -89,6 +94,19 @@ async def test_invalid_request_id_is_rejected() -> None:
         "message": "请求内容有误，请检查后重试",
         "data": None,
     }
+
+    records = [record for record in caplog.records if record.name == logger_name]
+    assert len(records) == 1
+
+    record = records[0]
+    assert record.levelno == logging.WARNING
+    assert getattr(record, "event", None) is HttpLogEvent.INVALID_REQUEST_ID
+    assert getattr(record, "request_id", None) is None
+    assert getattr(record, "details", None) == {
+        "method": "GET",
+        "status_code": 400,
+    }
+    assert "invalid request id" not in record.getMessage()
 
 
 @pytest.mark.asyncio

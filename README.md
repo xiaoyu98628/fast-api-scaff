@@ -89,7 +89,7 @@ logger.info(
 
 `log_extra()` 只负责将模块事件和结构化字段包装成标准库 `logging` 的 `extra`，不会选择日志级别、调用 Logger 或改变 Handler。
 
-HTTP 访问日志记录请求方法、匹配到的路由模板、状态码、耗时和客户端地址，不记录包含动态参数的原始路径、请求头、Cookie、请求体和查询参数。成功的 `/health` 请求默认不记录，失败的健康检查仍然记录；可以通过 `LOG_ACCESS_EXCLUDE_ROUTES` 调整排除的路由模板。请求日志在进入 Handler 时固化当前 `request_id`，后续即使改用异步 Handler 也不会依赖已经退出的请求上下文。客户端携带非法 `X-Request-ID` 时，请求会在访问日志中间件之前被拒绝，不产生访问日志。
+HTTP 访问日志记录请求方法、匹配到的路由模板、状态码、耗时和客户端地址，不记录包含动态参数的原始路径、请求头、Cookie、请求体和查询参数。成功的 `/health` 请求默认不记录，失败的健康检查仍然记录；可以通过 `LOG_ACCESS_EXCLUDE_ROUTES` 调整排除的路由模板。请求日志在进入 Handler 时固化当前 `request_id`，后续即使改用异步 Handler 也不会依赖已经退出的请求上下文。客户端携带非法 `X-Request-ID` 时，请求会在访问日志中间件之前被拒绝，并产生一条 `http.request.invalid_request_id` WARNING 日志。该日志不包含原始 Header、请求路径或 `request_id`。
 
 应用生命周期记录 `application.starting`、`application.started`、`application.start_failed`、`application.stopping`、`application.stopped` 和 `application.stop_failed` 事件。服务名称、环境和版本由统一 Formatter 写入每条日志。
 

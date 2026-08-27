@@ -3,7 +3,6 @@ from asyncio import CancelledError
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from starlette_context.middleware import RawContextMiddleware
 
 from app.bootstrap.app import create_app
 from app.config.app import AppSettings
@@ -14,6 +13,7 @@ from app.config.logging import LoggingSettings
 from app.config.settings import Settings
 from app.interfaces.http.logging import HttpLogEvent
 from app.interfaces.http.middleware.access_log import AccessLogMiddleware
+from app.interfaces.http.middleware.request_id import RequestIdMiddleware
 
 
 def build_settings(
@@ -37,7 +37,7 @@ def build_settings(
 def test_access_log_runs_inside_request_context() -> None:
     app = create_app(build_settings())
 
-    assert app.user_middleware[0].cls is RawContextMiddleware
+    assert app.user_middleware[0].cls is RequestIdMiddleware
     assert app.user_middleware[1].cls is AccessLogMiddleware
 
 
