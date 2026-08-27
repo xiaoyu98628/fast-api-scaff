@@ -8,7 +8,7 @@ from app.infrastructure.logging.context import RequestContextFilter
 from app.infrastructure.logging.contracts.driver import LoggingDriverBuilder
 from app.infrastructure.logging.drivers.registry import DEFAULT_LOGGING_DRIVERS
 from app.infrastructure.logging.errors import LoggingConfigurationError
-from app.infrastructure.logging.formatter import JsonLogFormatter
+from app.infrastructure.logging.formatter import JsonLogFormatter, TextLogFormatter
 
 _CORE_HANDLER_KEYS = frozenset({"filters", "formatter"})
 
@@ -34,6 +34,12 @@ def configure_logging(
             "formatters": {
                 "json": {
                     "()": JsonLogFormatter,
+                    "service": settings.app.name,
+                    "environment": settings.app.env,
+                    "service_version": settings.app.version,
+                },
+                "text": {
+                    "()": TextLogFormatter,
                     "service": settings.app.name,
                     "environment": settings.app.env,
                     "service_version": settings.app.version,
@@ -107,7 +113,7 @@ def _build_handlers(
 
         handlers[name] = {
             **handler,
-            "formatter": "json",
+            "formatter": settings.logging.format,
             "filters": ["request_context"],
         }
 

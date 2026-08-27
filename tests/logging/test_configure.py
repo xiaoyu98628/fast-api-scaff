@@ -43,6 +43,26 @@ def test_configure_logging_resolves_active_handler(monkeypatch: pytest.MonkeyPat
     }
 
 
+def test_configure_logging_selects_text_formatter(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    def capture_config(config: dict[str, object]) -> None:
+        captured.update(config)
+
+    monkeypatch.setattr(logging.config, "dictConfig", capture_config)
+
+    configure_logging(build_settings(LoggingSettings(format="text", _env_file=None)))
+
+    assert captured["handlers"] == {
+        "stdout": {
+            "class": "logging.StreamHandler",
+            "filters": ["request_context"],
+            "formatter": "text",
+            "stream": "ext://sys.stdout",
+        }
+    }
+
+
 def test_configure_logging_rejects_missing_active_handler() -> None:
     settings = build_settings(
         LoggingSettings(
