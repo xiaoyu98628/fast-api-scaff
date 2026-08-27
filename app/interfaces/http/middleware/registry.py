@@ -15,7 +15,11 @@ def build_http_middlewares(settings: Settings) -> list[Middleware]:
     ]
 
     if settings.logging.access_enabled:
-        middlewares.append(build_access_log_middleware())
+        middlewares.append(
+            build_access_log_middleware(
+                exclude_routes=settings.logging.access_exclude_routes,
+            )
+        )
 
     middlewares.extend(
         [

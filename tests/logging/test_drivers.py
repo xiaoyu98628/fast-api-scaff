@@ -1,4 +1,5 @@
-from app.infrastructure.logging.drivers import DEFAULT_LOGGING_DRIVERS, build_stream_handler
+from app.infrastructure.logging.drivers.registry import DEFAULT_LOGGING_DRIVERS
+from app.infrastructure.logging.drivers.stream import build_stream_handler
 
 
 def test_stream_driver_builds_stdout_handler_definition() -> None:

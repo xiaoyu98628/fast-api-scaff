@@ -51,12 +51,13 @@ uv run uvicorn app.main:app --reload
 ```env
 LOG_LEVEL=INFO
 LOG_ACCESS_ENABLED=true
+LOG_ACCESS_EXCLUDE_ROUTES=["/health"]
 LOG_ACTIVE_HANDLERS=["stdout"]
 LOG_HANDLERS__STDOUT__DRIVER=stream
 LOG_HANDLERS__STDOUT__STREAM=stdout
 ```
 
-`LOG_LEVEL` 支持 `DEBUG`、`INFO`、`WARNING`、`ERROR` 和 `CRITICAL`。`LOG_ACTIVE_HANDLERS` 使用 JSON 数组指定启用的 Handler；每个 Handler 在 `LOG_HANDLERS__名称` 下配置驱动。当前内置 `stream` 驱动，`stream` 可以是 `stdout` 或 `stderr`。日志驱动使用名称到构建函数的显式映射，后续可以在默认映射上扩展文件等输出驱动；配置未注册的驱动会在应用启动时失败。
+`LOG_LEVEL` 支持 `DEBUG`、`INFO`、`WARNING`、`ERROR` 和 `CRITICAL`。`LOG_ACTIVE_HANDLERS` 使用 JSON 数组指定启用的 Handler；每个 Handler 在 `LOG_HANDLERS__名称` 下配置驱动。当前内置 `stream` 驱动，`stream` 可以是 `stdout` 或 `stderr`。日志驱动只决定日志输出目标，Formatter 和请求上下文 Filter 由日志 Core 统一配置，Driver 不能覆盖。后续可以在默认映射上扩展文件等输出驱动；配置未注册的驱动会在应用启动时失败。
 
 项目模块通过标准库获取 logger，不直接创建 Handler：
 
@@ -72,22 +73,25 @@ logger.info("任务执行完成")
 需要稳定检索和统计的日志使用对应模块定义的 `StrEnum` 事件，并将结构化字段放在 `details` 中。HTTP 与数据库分别维护自己的事件枚举，避免形成包含所有业务事件的全局枚举：
 
 ```python
+from app.infrastructure.logging.record import log_extra
 from app.interfaces.http.logging import HttpLogEvent
 
 
 logger.info(
     "HTTP request completed",
-    extra={
-        "event": HttpLogEvent.REQUEST_COMPLETED,
-        "details": {
-            "method": "GET",
-            "status_code": 200,
-        },
-    },
+    extra=log_extra(
+        HttpLogEvent.REQUEST_COMPLETED,
+        method="GET",
+        status_code=200,
+    ),
 )
 ```
 
-HTTP 访问日志记录请求方法、路径、匹配到的路由模板、状态码、耗时和客户端地址，不记录请求头、Cookie、请求体和查询参数。日志在请求上下文内部产生，因此会自动包含与响应一致的 `request_id`。客户端携带非法 `X-Request-ID` 时，请求会在访问日志中间件之前被拒绝，不产生访问日志。
+`log_extra()` 只负责将模块事件和结构化字段包装成标准库 `logging` 的 `extra`，不会选择日志级别、调用 Logger 或改变 Handler。
+
+HTTP 访问日志记录请求方法、匹配到的路由模板、状态码、耗时和客户端地址，不记录包含动态参数的原始路径、请求头、Cookie、请求体和查询参数。成功的 `/health` 请求默认不记录，失败的健康检查仍然记录；可以通过 `LOG_ACCESS_EXCLUDE_ROUTES` 调整排除的路由模板。请求日志在进入 Handler 时固化当前 `request_id`，后续即使改用异步 Handler 也不会依赖已经退出的请求上下文。客户端携带非法 `X-Request-ID` 时，请求会在访问日志中间件之前被拒绝，不产生访问日志。
+
+应用生命周期记录 `application.starting`、`application.started`、`application.start_failed`、`application.stopping`、`application.stopped` 和 `application.stop_failed` 事件。服务名称、环境和版本由统一 Formatter 写入每条日志。
 
 数据库日志记录 Engine 资源创建和关闭、查询异常与慢查询。连接配置中的 `echo=true` 表示通过应用统一日志记录普通 SQL，不再启用 SQLAlchemy 原生 echo；`slow_query_ms` 配置慢查询阈值，单位为毫秒，设为 `0` 时禁用慢查询日志：
 
@@ -96,7 +100,7 @@ DB_CONNECTIONS__MAIN__ECHO=false
 DB_CONNECTIONS__MAIN__SLOW_QUERY_MS=500
 ```
 
-SQL 参数不会写入日志，SQLAlchemy Engine 也固定启用参数隐藏。SQL 语句本身仍会出现在普通 SQL、慢查询和查询异常日志中，因此业务代码应使用参数化查询，不应把密码、令牌或其他敏感值拼接进 SQL 字符串。
+应用日志不会主动记录 SQL 参数或数据库原始错误消息，SQLAlchemy Engine 也固定启用参数隐藏。`echo=false` 时，慢查询和失败查询只记录 SQL 操作类型、语句指纹、错误类型和安全错误码，不记录 SQL 原文；`echo=true` 时才记录参数化 SQL 语句。数据库驱动自身的错误消息不受应用完全控制，因此日志不能作为绝对脱敏边界，业务代码仍应使用参数化查询，也不应把密码、令牌或其他敏感值拼接进 SQL 字符串。
 
 通过 Compose 启动带热重载的开发服务：
 
@@ -338,7 +342,7 @@ raise HttpError(
 )
 ```
 
-`HttpError` 属于 HTTP 接口层，不应由业务用例直接依赖。业务层应定义表达业务事实的异常，再由 Controller 转换为 `HttpError`，或者在对应的 HTTP 模块中为该业务异常注册专用处理器。`APP_DEBUG=true` 时，未知异常保留 Starlette 的调试响应，可能包含内部异常详情，仅用于本地开发。
+`HttpError` 属于 HTTP 接口层，不应由业务用例直接依赖。业务层应定义表达业务事实的异常，再由 Controller 转换为 `HttpError`，或者在对应的 HTTP 模块中为该业务异常注册专用处理器。生产模式下，未知异常会在请求上下文内记录一份带 `request_id` 的堆栈，并在统一 `500` 响应成功发送后停止继续向 Uvicorn 抛出；响应已经开始的流式异常仍会继续抛出。`APP_DEBUG=true` 时，未知异常保留 Starlette 的调试响应，可能包含内部异常详情，仅用于本地开发。
 
 ## 数据库
 
@@ -792,9 +796,18 @@ from app.infrastructure.cache.contracts.client import CacheClient
 database/                       # 数据库迁移环境
 └── main/                       # main 数据库 Alembic 配置和版本脚本
 app/
-├── bootstrap/              # 应用创建、容器装配和生命周期
-├── config/                 # 应用配置与数据库、缓存驱动配置模型
+├── bootstrap/              # 应用创建、容器装配、生命周期和应用事件
+├── config/                 # 应用、日志、数据库与缓存配置模型
 ├── infrastructure/
+│   ├── logging/            # 与业务框架无关的 Logging Core
+│   │   ├── configure.py    # 组装 Formatter、Filter 和 Handler
+│   │   ├── context.py      # 固化 request_id 的上下文 Filter
+│   │   ├── formatter.py    # 统一 JSON 日志结构
+│   │   ├── record.py       # 结构化 extra 构建辅助函数
+│   │   ├── contracts/      # Handler Driver 构建契约
+│   │   └── drivers/        # 输出目标实现与注册表
+│   │       ├── registry.py # 默认 Driver 映射
+│   │       └── stream.py   # stdout/stderr 输出
 │   ├── database/           # 数据库管理器、资源工厂和公共规则
 │   │   ├── connections/    # 命名连接解析与 EngineSpec 定义
 │   │   ├── contracts/      # Database Provider 协议与资源定义

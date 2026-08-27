@@ -1,3 +1,4 @@
+import logging
 from typing import Annotated
 
 import pytest
@@ -10,7 +11,9 @@ from app.config.cache import CacheSettings
 from app.config.cors import CorsSettings
 from app.config.database import DatabaseSettings
 from app.config.settings import Settings
+from app.infrastructure.logging.context import RequestContextFilter
 from app.interfaces.http.exceptions.error import HttpError
+from app.interfaces.http.logging import HttpLogEvent
 from app.interfaces.http.shared.response.codes.error_code import ErrorCode
 from app.interfaces.http.shared.response.codes.success_code import SuccessCode
 
@@ -168,21 +171,26 @@ async def test_server_http_error_hides_internal_detail() -> None:
 
 
 @pytest.mark.asyncio
-async def test_unexpected_exception_uses_request_context_and_cors() -> None:
+async def test_unexpected_exception_uses_request_context_and_cors(caplog: pytest.LogCaptureFixture) -> None:
     app = create_app(build_settings())
+    logger_name = "app.interfaces.http.exception"
+    logging.getLogger(logger_name).disabled = False
+    caplog.set_level(logging.ERROR, logger=logger_name)
+    request_context_filter = RequestContextFilter()
+    caplog.handler.addFilter(request_context_filter)
 
     @app.get("/unexpected-failure")
     async def unexpected_failure() -> None:
         raise RuntimeError("sensitive internal detail")
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app, raise_app_exceptions=False),
-        base_url="http://testserver",
-    ) as client:
-        response = await client.get(
-            "/unexpected-failure",
-            headers={"Origin": "https://app.example.com"},
-        )
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.get(
+                "/unexpected-failure",
+                headers={"Origin": "https://app.example.com"},
+            )
+    finally:
+        caplog.handler.removeFilter(request_context_filter)
 
     body = response.json()
 
@@ -192,6 +200,10 @@ async def test_unexpected_exception_uses_request_context_and_cors() -> None:
     assert body["request_id"] == response.headers["X-Request-ID"]
     assert response.headers["access-control-allow-origin"] == "*"
     assert "sensitive internal detail" not in response.text
+
+    exception_record = next(record for record in caplog.records if getattr(record, "event", None) is HttpLogEvent.UNHANDLED_EXCEPTION)
+    assert exception_record.exc_info is not None
+    assert getattr(exception_record, "request_id", None) == body["request_id"]
 
 
 @pytest.mark.asyncio

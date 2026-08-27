@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.config.base import BASE_SETTINGS_CONFIG
@@ -29,5 +29,14 @@ class LoggingSettings(BaseSettings):
 
     level: LogLevel = "INFO"
     access_enabled: bool = True
+    access_exclude_routes: frozenset[str] = Field(default_factory=lambda: frozenset({"/health"}))
     active_handlers: tuple[str, ...] = ("stdout",)
     handlers: dict[str, dict[str, object]] = Field(default_factory=_default_handlers)
+
+    @field_validator("access_exclude_routes")
+    @classmethod
+    def validate_access_exclude_routes(cls, routes: frozenset[str]) -> frozenset[str]:
+        if any(not route.startswith("/") for route in routes):
+            raise ValueError("排除的 HTTP 路由必须以 '/' 开头")
+
+        return routes

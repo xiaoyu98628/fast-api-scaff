@@ -72,8 +72,11 @@ async def test_failed_query_is_logged(caplog: pytest.LogCaptureFixture) -> None:
     details = getattr(record, "details", None)
     assert isinstance(details, dict)
     assert details["connection"] == "main"
-    assert "missing_table" in details["statement"]
-    assert record.exc_info is not None
+    assert details["operation"] == "SELECT"
+    assert isinstance(details["statement_id"], str)
+    assert "statement" not in details
+    assert "missing_table" not in str(details)
+    assert record.exc_info is None
     await manager.aclose()
 
 
@@ -96,4 +99,6 @@ async def test_slow_query_is_logged_when_echo_is_disabled(
     assert isinstance(details, dict)
     assert details["connection"] == "main"
     assert details["duration_ms"] == 600.0
+    assert details["operation"] == "SELECT"
+    assert "statement" not in details
     await manager.aclose()

@@ -1,10 +1,8 @@
-from collections.abc import Callable
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
-type LoggingHandlerConfig = dict[str, object]
-type LoggingDriverBuilder = Callable[[dict[str, object]], LoggingHandlerConfig]
+from app.infrastructure.logging.contracts.driver import LoggingHandlerConfig
 
 
 class StreamLoggingSettings(BaseModel):
@@ -26,8 +24,3 @@ def build_stream_handler(raw_config: dict[str, object]) -> LoggingHandlerConfig:
         "class": "logging.StreamHandler",
         "stream": f"ext://sys.{settings.stream}",
     }
-
-
-DEFAULT_LOGGING_DRIVERS: dict[str, LoggingDriverBuilder] = {
-    "stream": build_stream_handler,
-}

@@ -4,9 +4,13 @@ from collections.abc import Mapping
 from pydantic import ValidationError
 
 from app.config.settings import Settings
-from app.infrastructure.logging.drivers import DEFAULT_LOGGING_DRIVERS, LoggingDriverBuilder
+from app.infrastructure.logging.context import RequestContextFilter
+from app.infrastructure.logging.contracts.driver import LoggingDriverBuilder
+from app.infrastructure.logging.drivers.registry import DEFAULT_LOGGING_DRIVERS
 from app.infrastructure.logging.errors import LoggingConfigurationError
 from app.infrastructure.logging.formatter import JsonLogFormatter
+
+_CORE_HANDLER_KEYS = frozenset({"filters", "formatter"})
 
 
 def configure_logging(
@@ -22,11 +26,17 @@ def configure_logging(
         {
             "version": 1,
             "disable_existing_loggers": False,
+            "filters": {
+                "request_context": {
+                    "()": RequestContextFilter,
+                }
+            },
             "formatters": {
                 "json": {
                     "()": JsonLogFormatter,
                     "service": settings.app.name,
                     "environment": settings.app.env,
+                    "service_version": settings.app.version,
                 }
             },
             "handlers": handlers,
@@ -90,9 +100,15 @@ def _build_handlers(
         except ValidationError as error:
             raise LoggingConfigurationError(f"日志 Handler {name!r} 配置不合法") from error
 
+        reserved_keys = _CORE_HANDLER_KEYS.intersection(handler)
+        if reserved_keys:
+            rendered_keys = ", ".join(sorted(reserved_keys))
+            raise LoggingConfigurationError(f"日志 Driver 不能配置 Core 保留字段：{rendered_keys}")
+
         handlers[name] = {
-            "formatter": "json",
             **handler,
+            "formatter": "json",
+            "filters": ["request_context"],
         }
 
     return handlers
