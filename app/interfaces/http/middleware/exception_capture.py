@@ -1,8 +1,14 @@
+import logging
+
 from fastapi import Request
 from starlette.responses import Response
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from app.infrastructure.logging.record import log_extra
 from app.interfaces.http.exceptions.handlers import render_exception
+from app.interfaces.http.logging import HttpLogEvent
+
+_EXCEPTION_LOGGER = logging.getLogger("app.interfaces.http.exception")
 
 
 class ExceptionCaptureMiddleware:
@@ -30,10 +36,20 @@ class ExceptionCaptureMiddleware:
         try:
             await self.app(scope, receive, send_wrapper)
         except Exception as exception:
-            if response_started or self.debug:
+            if self.debug:
+                raise
+
+            _EXCEPTION_LOGGER.exception(
+                "Unhandled HTTP request exception",
+                extra=log_extra(
+                    HttpLogEvent.UNHANDLED_EXCEPTION,
+                    method=scope["method"],
+                    response_started=response_started,
+                ),
+            )
+
+            if response_started:
                 raise
 
             response: Response = await render_exception(Request(scope), exception)
             await response(scope, receive, send_wrapper)
-
-            raise

@@ -72,12 +72,13 @@ def test_mysql_provider_builds_asyncmy_engine_spec() -> None:
     assert dict(spec.url.query) == {"charset": "utf8mb4"}
     assert "secret" not in str(spec.url)
     assert spec.options == {
-        "echo": True,
         "pool_size": 7,
         "max_overflow": 9,
         "pool_pre_ping": False,
         "pool_recycle": 1200,
     }
+    assert spec.log_queries is True
+    assert spec.slow_query_ms == 500
 
 
 @pytest.mark.parametrize("driver", ["postgresql", "pgsql"])
@@ -107,12 +108,13 @@ def test_postgresql_provider_supports_both_driver_names(driver: str) -> None:
     assert spec.url.database == "application"
     assert "secret" not in str(spec.url)
     assert spec.options == {
-        "echo": True,
         "pool_size": 7,
         "max_overflow": 9,
         "pool_pre_ping": False,
         "pool_recycle": 1200,
     }
+    assert spec.log_queries is True
+    assert spec.slow_query_ms == 500
 
 
 def test_sqlite_provider_builds_supported_engine_spec() -> None:
@@ -127,7 +129,9 @@ def test_sqlite_provider_builds_supported_engine_spec() -> None:
 
     assert definition.engine_spec.url.drivername == "sqlite+aiosqlite"
     assert definition.engine_spec.url.database == ":memory:"
-    assert definition.engine_spec.options == {"echo": True}
+    assert definition.engine_spec.options == {}
+    assert definition.engine_spec.log_queries is True
+    assert definition.engine_spec.slow_query_ms == 500
 
 
 @pytest.mark.asyncio

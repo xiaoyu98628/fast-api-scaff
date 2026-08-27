@@ -80,7 +80,7 @@ class DatabaseManager:
         raw_config: dict[str, object],
     ) -> DatabaseResource:
         definition = validate_database_definition(name, raw_config, self._providers)
-        return await create_database_resource(definition)
+        return await create_database_resource(name, definition)
 
     def _resolve_name(self, name: str | None) -> str:
         if name is not None:

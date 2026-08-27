@@ -16,6 +16,8 @@ class SQLiteDatabaseProvider:
                     drivername="sqlite+aiosqlite",
                     database=settings.resolved_database,
                 ),
-                options={"echo": settings.echo},
+                options={},
+                log_queries=settings.echo,
+                slow_query_ms=settings.slow_query_ms,
             ),
         )

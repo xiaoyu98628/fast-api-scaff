@@ -21,11 +21,12 @@ class PostgreSQLDatabaseProvider:
                     database=settings.database,
                 ),
                 options={
-                    "echo": settings.echo,
                     "pool_size": settings.pool_size,
                     "max_overflow": settings.max_overflow,
                     "pool_pre_ping": settings.pool_pre_ping,
                     "pool_recycle": settings.pool_recycle,
                 },
+                log_queries=settings.echo,
+                slow_query_ms=settings.slow_query_ms,
             ),
         )
