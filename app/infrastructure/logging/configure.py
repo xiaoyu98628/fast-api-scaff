@@ -37,12 +37,14 @@ def configure_logging(
                     "service": settings.app.name,
                     "environment": settings.app.env,
                     "service_version": settings.app.version,
+                    "timezone": settings.app.timezone,
                 },
                 "text": {
                     "()": TextLogFormatter,
                     "service": settings.app.name,
                     "environment": settings.app.env,
                     "service_version": settings.app.version,
+                    "timezone": settings.app.timezone,
                 }
             },
             "handlers": handlers,

@@ -13,9 +13,9 @@ from app.infrastructure.logging.drivers.registry import DEFAULT_LOGGING_DRIVERS
 from app.infrastructure.logging.errors import LoggingConfigurationError
 
 
-def build_settings(logging_settings: LoggingSettings) -> Settings:
+def build_settings(logging_settings: LoggingSettings, *, timezone: str = "UTC") -> Settings:
     return Settings(
-        app=AppSettings(_env_file=None),
+        app=AppSettings(timezone=timezone, _env_file=None),
         database=DatabaseSettings(_env_file=None),
         cache=CacheSettings(_env_file=None),
         cors=CorsSettings(_env_file=None),
@@ -61,6 +61,22 @@ def test_configure_logging_selects_text_formatter(monkeypatch: pytest.MonkeyPatc
             "stream": "ext://sys.stdout",
         }
     }
+
+
+def test_configure_logging_passes_global_timezone_to_formatters(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    def capture_config(config: dict[str, object]) -> None:
+        captured.update(config)
+
+    monkeypatch.setattr(logging.config, "dictConfig", capture_config)
+
+    configure_logging(build_settings(LoggingSettings(_env_file=None), timezone="Asia/Shanghai"))
+
+    formatters = captured["formatters"]
+    assert isinstance(formatters, dict)
+    assert formatters["json"]["timezone"] == "Asia/Shanghai"
+    assert formatters["text"]["timezone"] == "Asia/Shanghai"
 
 
 def test_configure_logging_rejects_missing_active_handler() -> None:

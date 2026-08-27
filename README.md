@@ -22,15 +22,18 @@ uv sync --extra dev
 cp sample.env .env
 ```
 
-应用名称、版本、运行环境、调试模式与服务编码通过以下环境变量配置：
+应用名称、版本、运行环境、调试模式、全局时区与服务编码通过以下环境变量配置：
 
 ```env
 APP_NAME=fast-api-scaff
 APP_VERSION=3.0.0
 APP_ENV=local
 APP_DEBUG=false
+APP_TIMEZONE=Asia/Shanghai
 APP_SERVICE_CODE=001
 ```
+
+`APP_TIMEZONE` 使用 IANA 时区名称，例如 `UTC`、`Asia/Shanghai`、`America/New_York`。未配置时默认使用 `UTC`；非法时区会在应用启动时被拒绝。应用日志使用该全局时区输出 ISO 8601 时间，`UTC` 使用 `Z`，其他时区保留明确的 UTC 偏移量。
 
 Docker 容器内的 Uvicorn 固定监听 `0.0.0.0:8000`。Compose 使用 `APP_PORT` 配置宿主机发布端口，默认将宿主机的 `8000` 端口映射到容器的 `8000` 端口：
 
@@ -63,7 +66,7 @@ LOG_HANDLERS__STDOUT__STREAM=stdout
 `LOG_FORMAT=text` 的输出示例：
 
 ```text
-timestamp="2026-08-27T15:30:12.123Z" level="INFO" logger="app.interfaces.http.access" service="fast-api-scaff" environment="local" service_version="3.0.0" message="HTTP request completed" request_id="550e8400-e29b-41d4-a716-446655440000" event="http.request.completed" details={"method":"GET","route":"/items/{item_id}","status_code":200,"duration_ms":1.25}
+timestamp="2026-08-27T23:30:12.123+08:00" level="INFO" logger="app.interfaces.http.access" service="fast-api-scaff" environment="local" service_version="3.0.0" message="HTTP request completed" request_id="550e8400-e29b-41d4-a716-446655440000" event="http.request.completed" details={"method":"GET","route":"/items/{item_id}","status_code":200,"duration_ms":1.25}
 ```
 
 项目模块通过标准库获取 logger，不直接创建 Handler：
