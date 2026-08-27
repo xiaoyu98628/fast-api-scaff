@@ -5,8 +5,8 @@ from datetime import UTC, datetime
 from enum import StrEnum
 
 
-class JsonLogFormatter(logging.Formatter):
-    """将日志记录转换成单行 JSON。"""
+class _StructuredLogFormatter(logging.Formatter):
+    """构建各输出格式共用的结构化日志字段。"""
 
     def __init__(self, *, service: str, environment: str, service_version: str) -> None:
         super().__init__()
@@ -14,7 +14,7 @@ class JsonLogFormatter(logging.Formatter):
         self._environment = environment
         self._service_version = service_version
 
-    def format(self, record: logging.LogRecord) -> str:
+    def build_payload(self, record: logging.LogRecord) -> dict[str, object]:
         payload: dict[str, object] = {
             "timestamp": _utc_timestamp(record.created),
             "level": record.levelname,
@@ -47,7 +47,26 @@ class JsonLogFormatter(logging.Formatter):
                 "stacktrace": self.formatException(record.exc_info),
             }
 
-        return json.dumps(payload, ensure_ascii=False, separators=(",", ":"), default=str)
+        return payload
+
+
+class JsonLogFormatter(_StructuredLogFormatter):
+    """将日志记录转换成单行 JSON。"""
+
+    def format(self, record: logging.LogRecord) -> str:
+        return _json_dumps(self.build_payload(record))
+
+
+class TextLogFormatter(_StructuredLogFormatter):
+    """将结构化日志字段转换成单行 key=value 文本。"""
+
+    def format(self, record: logging.LogRecord) -> str:
+        payload = self.build_payload(record)
+        return " ".join(f"{key}={_json_dumps(value)}" for key, value in payload.items())
+
+
+def _json_dumps(value: object) -> str:
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), default=str)
 
 
 def _utc_timestamp(created: float) -> str:

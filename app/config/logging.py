@@ -6,6 +6,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from app.config.base import BASE_SETTINGS_CONFIG
 
 type LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+type LogFormat = Literal["json", "text"]
 
 
 def _default_handlers() -> dict[str, dict[str, object]]:
@@ -28,6 +29,7 @@ class LoggingSettings(BaseSettings):
     )
 
     level: LogLevel = "INFO"
+    format: LogFormat = "json"
     access_enabled: bool = True
     access_exclude_routes: frozenset[str] = Field(default_factory=lambda: frozenset({"/health"}))
     active_handlers: tuple[str, ...] = ("stdout",)

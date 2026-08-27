@@ -46,10 +46,11 @@ uv run uvicorn app.main:app --reload
 
 ## 日志
 
-应用使用 Python 标准库 `logging` 输出单行 JSON 结构化日志。默认只启用 stdout，不创建或写入日志文件，适合由 Docker、Kubernetes 或宿主日志系统统一采集：
+应用使用 Python 标准库 `logging` 输出单行结构化日志，支持 `json` 和 `text` 两种格式。默认使用 JSON 并只启用 stdout，不创建或写入日志文件，适合由 Docker、Kubernetes 或宿主日志系统统一采集：
 
 ```env
 LOG_LEVEL=INFO
+LOG_FORMAT=json
 LOG_ACCESS_ENABLED=true
 LOG_ACCESS_EXCLUDE_ROUTES=["/health"]
 LOG_ACTIVE_HANDLERS=["stdout"]
@@ -57,7 +58,13 @@ LOG_HANDLERS__STDOUT__DRIVER=stream
 LOG_HANDLERS__STDOUT__STREAM=stdout
 ```
 
-`LOG_LEVEL` 支持 `DEBUG`、`INFO`、`WARNING`、`ERROR` 和 `CRITICAL`。`LOG_ACTIVE_HANDLERS` 使用 JSON 数组指定启用的 Handler；每个 Handler 在 `LOG_HANDLERS__名称` 下配置驱动。当前内置 `stream` 驱动，`stream` 可以是 `stdout` 或 `stderr`。日志驱动只决定日志输出目标，Formatter 和请求上下文 Filter 由日志 Core 统一配置，Driver 不能覆盖。后续可以在默认映射上扩展文件等输出驱动；配置未注册的驱动会在应用启动时失败。
+`LOG_LEVEL` 支持 `DEBUG`、`INFO`、`WARNING`、`ERROR` 和 `CRITICAL`。`LOG_FORMAT` 支持 `json` 和 `text`，并统一应用于当前启用的 Handler；`text` 使用单行 `key=value` 格式，字符串和嵌套字段使用 JSON 编码，异常堆栈中的换行也会被转义。`LOG_ACTIVE_HANDLERS` 使用 JSON 数组指定启用的 Handler；每个 Handler 在 `LOG_HANDLERS__名称` 下配置驱动。当前内置 `stream` 驱动，`stream` 可以是 `stdout` 或 `stderr`。日志驱动只决定日志输出目标，Formatter 和请求上下文 Filter 由日志 Core 统一配置，Driver 不能覆盖。后续可以在默认映射上扩展文件等输出驱动；配置未注册的驱动会在应用启动时失败。
+
+`LOG_FORMAT=text` 的输出示例：
+
+```text
+timestamp="2026-08-27T15:30:12.123Z" level="INFO" logger="app.interfaces.http.access" service="fast-api-scaff" environment="local" service_version="3.0.0" message="HTTP request completed" request_id="550e8400-e29b-41d4-a716-446655440000" event="http.request.completed" details={"method":"GET","route":"/items/{item_id}","status_code":200,"duration_ms":1.25}
+```
 
 项目模块通过标准库获取 logger，不直接创建 Handler：
 
