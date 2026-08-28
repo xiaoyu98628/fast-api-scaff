@@ -7,3 +7,6 @@
 # 排除 main 文件夹
 !main
 !main/**
+
+# 排除 __init__.py 文件
+!__init__.py
