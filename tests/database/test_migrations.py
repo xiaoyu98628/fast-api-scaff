@@ -9,6 +9,7 @@ from alembic import command
 from alembic.config import Config
 
 from app.config.database import DatabaseSettings
+from app.infrastructure.database.orm.main import main_table_name
 from app.runtime.paths import PROJECT_ROOT
 
 
@@ -62,3 +63,35 @@ def test_main_migration_environment_creates_version_table(
         }
 
     assert "alembic_version" in table_names
+
+
+def test_main_migration_upgrade_creates_users_table(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_path = tmp_path / "users-migration.sqlite"
+    connections = {
+        "main": {
+            "driver": "sqlite",
+            "database": str(database_path),
+            "table_prefix": "",
+        }
+    }
+    model_config = cast(dict[str, object], DatabaseSettings.model_config)
+    monkeypatch.setitem(model_config, "env_file", None)
+    monkeypatch.setenv("DB_CONNECTIONS", json.dumps(connections))
+
+    alembic_config = Config(str(PROJECT_ROOT / "database/main/alembic.ini"))
+    command.upgrade(alembic_config, "head")
+    users_table_name = main_table_name("users")
+
+    with sqlite3.connect(database_path) as connection:
+        users_schema = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?",
+            (users_table_name,),
+        ).fetchone()
+        revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()
+
+    assert users_schema is not None
+    assert f"CONSTRAINT ck_{users_table_name}_status" in users_schema[0]
+    assert revision == ("20260828_01",)

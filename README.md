@@ -120,7 +120,7 @@ docker compose up --build
 
 ## 应用容器
 
-数据库和缓存管理器都保存在 `ApplicationContainer` 中。FastAPI 生命周期启动时会创建容器，并将其保存到 `app.state.container`；应用关闭时，容器会统一释放已经创建的数据库和缓存资源。
+数据库、缓存管理器和用户应用服务都保存在 `ApplicationContainer` 中。FastAPI 生命周期启动时会创建容器，并将其保存到 `app.state.container`；应用关闭时，容器会统一释放已经创建的数据库和缓存资源。
 
 Controller 可以通过 `Request` 获取容器：
 
@@ -264,6 +264,32 @@ async def search(request: Request) -> dict[str, object] | None:
 ## HTTP 路由组织
 
 业务 HTTP Controller 位于 `app.interfaces.http.controllers`。`controllers/router.py` 聚合 `/api` 下的版本化接口，`controllers/v1/router.py` 聚合 `/api/v1` 下的业务接口。`routes/register.py` 负责将业务 Router 注册到 FastAPI 应用，并直接注册不属于业务上下文的 `/health` 宿主探活接口。
+
+## 用户管理
+
+`app.contexts.user_management` 是用户管理限界上下文，负责用户资料的创建、查询、更新、禁用和删除。当前上下文不包含密码、登录、Token、角色或权限；认证与授权能力不应直接堆叠到用户资料聚合中。
+
+用户管理上下文采用分层 DDD 结构：
+
+- `domain` 定义用户聚合、值对象、领域规则和 Repository 契约，不依赖 FastAPI 或 SQLAlchemy；
+- `application` 通过应用服务和 Unit of Work 契约编排用例；
+- `infrastructure.persistence` 使用 SQLAlchemy 实现 Repository、Data Mapper 和 Unit of Work；
+- `app.interfaces.http.controllers.v1.users` 负责请求模型、统一响应和业务异常到 HTTP 的转换；
+- `app.bootstrap` 是组合根，负责将具体 Unit of Work 注入用户应用服务。
+
+用户管理提供以下接口：
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `POST` | `/api/v1/users` | 创建用户 |
+| `GET` | `/api/v1/users/{user_id}` | 查询用户 |
+| `GET` | `/api/v1/users?offset=0&limit=20` | 分页查询用户 |
+| `PUT` | `/api/v1/users/{user_id}` | 完整更新用户资料和状态 |
+| `DELETE` | `/api/v1/users/{user_id}` | 删除用户，成功时返回 `204 No Content` |
+
+用户名会去除首尾空白并转换为小写，只能包含 3 到 32 位小写字母、数字或下划线；邮箱会去除首尾空白并转换为小写。用户名和邮箱都具有唯一约束。用户状态当前支持 `active` 和 `disabled`。
+
+用户写操作使用 Unit of Work 管理事务，应用服务不会自行创建或关闭数据库 Engine。删除当前采用物理删除；如果业务需要审计、恢复或数据保留策略，应先明确新的领域规则，再引入软删除。
 
 ## 统一响应
 
@@ -808,6 +834,11 @@ database/                       # 数据库迁移环境
 app/
 ├── bootstrap/              # 应用创建、容器装配、生命周期和应用事件
 ├── config/                 # 应用、日志、数据库与缓存配置模型
+├── contexts/               # 按限界上下文组织的业务代码
+│   └── user_management/    # 用户资料管理限界上下文
+│       ├── domain/         # 聚合、值对象、领域异常和 Repository 契约
+│       ├── application/    # 用例 DTO、应用服务和 Unit of Work 契约
+│       └── infrastructure/ # SQLAlchemy 持久化适配器
 ├── infrastructure/
 │   ├── logging/            # 与业务框架无关的 Logging Core
 │   │   ├── configure.py    # 组装 Formatter、Filter 和 Handler

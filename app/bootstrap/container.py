@@ -1,6 +1,7 @@
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
+from app.contexts.user_management.application.service import UserApplicationService
 from app.infrastructure.cache.manager import CacheManager
 from app.infrastructure.database.manager import DatabaseManager
 
@@ -14,6 +15,7 @@ class ApplicationContainer:
 
     databases: DatabaseManager
     caches: CacheManager
+    users: UserApplicationService
     startup_callbacks: tuple[AsyncCallback, ...] = ()
     async_shutdown_callbacks: tuple[AsyncCallback, ...] = ()
     shutdown_callbacks: tuple[Callback, ...] = ()

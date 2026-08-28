@@ -7,6 +7,7 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.config.database import DatabaseSettings
+from app.contexts.user_management.infrastructure.persistence.model import UserRecord  # noqa: F401
 from app.infrastructure.database.connections.resolver import resolve_database_definition
 from app.infrastructure.database.connections.spec import DatabaseEngineSpec
 from app.infrastructure.database.orm.main import MainBase
