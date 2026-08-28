@@ -3,12 +3,12 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
-from app.contexts.user_management.application.dto import CreateUserCommand, UpdateUserCommand, UserDTO, UserPageDTO
-from app.contexts.user_management.application.errors import UserConflictError, UserNotFoundError
-from app.contexts.user_management.application.unit_of_work import UserUnitOfWorkFactory
-from app.contexts.user_management.domain.repository import UserRepository
-from app.contexts.user_management.domain.user import User
-from app.contexts.user_management.domain.values import UserId
+from app.contexts.user.application.dto import CreateUserCommand, UpdateUserCommand, UserDTO, UserPageDTO
+from app.contexts.user.application.errors import UserConflictError, UserNotFoundError
+from app.contexts.user.application.unit_of_work import UserUnitOfWorkFactory
+from app.contexts.user.domain.repository import UserRepository
+from app.contexts.user.domain.user import User
+from app.contexts.user.domain.values import UserId
 
 
 def utc_now() -> datetime:

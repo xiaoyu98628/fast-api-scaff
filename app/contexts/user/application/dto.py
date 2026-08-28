@@ -2,8 +2,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
-from app.contexts.user_management.domain.user import User
-from app.contexts.user_management.domain.values import UserStatus
+from app.contexts.user.domain.user import User
+from app.contexts.user.domain.values import UserStatus
 
 
 @dataclass(frozen=True, slots=True)

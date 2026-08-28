@@ -267,9 +267,9 @@ async def search(request: Request) -> dict[str, object] | None:
 
 ## 用户管理
 
-`app.contexts.user_management` 是用户管理限界上下文，负责用户资料的创建、查询、更新、禁用和删除。当前上下文不包含密码、登录、Token、角色或权限；认证与授权能力不应直接堆叠到用户资料聚合中。
+`app.contexts.user` 是用户限界上下文，负责用户资料的创建、查询、更新、禁用和删除。当前上下文不包含密码、登录、Token、角色或权限；认证与授权能力不应直接堆叠到用户资料聚合中。
 
-用户管理上下文采用分层 DDD 结构：
+用户上下文采用分层 DDD 结构：
 
 - `domain` 定义用户聚合、值对象、领域规则和 Repository 契约，不依赖 FastAPI 或 SQLAlchemy；
 - `application` 通过应用服务和 Unit of Work 契约编排用例；
@@ -837,7 +837,7 @@ app/
 ├── bootstrap/              # 应用创建、容器装配、生命周期和应用事件
 ├── config/                 # 应用、日志、数据库与缓存配置模型
 ├── contexts/               # 按限界上下文组织的业务代码
-│   └── user_management/    # 用户资料管理限界上下文
+│   └── user/               # 用户限界上下文
 │       ├── domain/         # 聚合、值对象、领域异常和 Repository 契约
 │       ├── application/    # 用例 DTO、应用服务和 Unit of Work 契约
 │       └── infrastructure/ # SQLAlchemy 持久化适配器

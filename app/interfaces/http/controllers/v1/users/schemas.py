@@ -3,8 +3,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.contexts.user_management.application.dto import UserDTO, UserPageDTO
-from app.contexts.user_management.domain.values import UserStatus
+from app.contexts.user.application.dto import UserDTO, UserPageDTO
+from app.contexts.user.domain.values import UserStatus
 
 
 class CreateUserRequest(BaseModel):

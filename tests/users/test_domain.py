@@ -2,9 +2,9 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from app.contexts.user_management.domain.errors import InvalidUserDataError
-from app.contexts.user_management.domain.user import User
-from app.contexts.user_management.domain.values import UserStatus
+from app.contexts.user.domain.errors import InvalidUserDataError
+from app.contexts.user.domain.user import User
+from app.contexts.user.domain.values import UserStatus
 
 
 def test_user_creation_normalizes_identity_fields() -> None:

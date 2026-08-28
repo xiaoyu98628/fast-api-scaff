@@ -1,8 +1,8 @@
 from datetime import UTC, datetime
 
-from app.contexts.user_management.domain.user import User
-from app.contexts.user_management.domain.values import EmailAddress, UserId, Username, UserStatus
-from app.contexts.user_management.infrastructure.persistence.model import UserRecord
+from app.contexts.user.domain.user import User
+from app.contexts.user.domain.values import EmailAddress, UserId, Username, UserStatus
+from app.contexts.user.infrastructure.persistence.model import UserRecord
 
 
 def user_to_record(user: User) -> UserRecord:

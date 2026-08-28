@@ -3,10 +3,10 @@ from datetime import UTC, datetime
 import pytest
 
 from app.config.database import DatabaseSettings
-from app.contexts.user_management.domain.user import User
-from app.contexts.user_management.domain.values import EmailAddress, UserId, Username, UserStatus
-from app.contexts.user_management.infrastructure.persistence.model import UserRecord
-from app.contexts.user_management.infrastructure.persistence.repository import SqlAlchemyUserRepository
+from app.contexts.user.domain.user import User
+from app.contexts.user.domain.values import EmailAddress, UserId, Username, UserStatus
+from app.contexts.user.infrastructure.persistence.model import UserRecord
+from app.contexts.user.infrastructure.persistence.repository import SqlAlchemyUserRepository
 from app.infrastructure.database.manager import DatabaseManager
 
 

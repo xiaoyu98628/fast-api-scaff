@@ -2,7 +2,7 @@ from collections.abc import Callable
 from types import TracebackType
 from typing import Protocol, Self
 
-from app.contexts.user_management.domain.repository import UserRepository
+from app.contexts.user.domain.repository import UserRepository
 
 
 class UserUnitOfWork(Protocol):

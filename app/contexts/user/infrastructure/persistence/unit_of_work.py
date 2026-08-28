@@ -4,9 +4,9 @@ from types import TracebackType
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.contexts.user_management.application.errors import UserConflictError
-from app.contexts.user_management.domain.repository import UserRepository
-from app.contexts.user_management.infrastructure.persistence.repository import SqlAlchemyUserRepository
+from app.contexts.user.application.errors import UserConflictError
+from app.contexts.user.domain.repository import UserRepository
+from app.contexts.user.infrastructure.persistence.repository import SqlAlchemyUserRepository
 from app.infrastructure.database.manager import DatabaseManager
 
 

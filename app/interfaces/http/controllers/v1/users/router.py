@@ -3,10 +3,10 @@ from uuid import UUID
 from fastapi import APIRouter, Query, Request, Response, status
 
 from app.bootstrap.container import ApplicationContainer
-from app.contexts.user_management.application.dto import CreateUserCommand, UpdateUserCommand
-from app.contexts.user_management.application.errors import UserApplicationError
-from app.contexts.user_management.application.service import UserApplicationService
-from app.contexts.user_management.domain.errors import UserDomainError
+from app.contexts.user.application.dto import CreateUserCommand, UpdateUserCommand
+from app.contexts.user.application.errors import UserApplicationError
+from app.contexts.user.application.service import UserApplicationService
+from app.contexts.user.domain.errors import UserDomainError
 from app.interfaces.http.controllers.v1.users.errors import user_error_to_http
 from app.interfaces.http.controllers.v1.users.schemas import CreateUserRequest, UpdateUserRequest, UserListResponse, UserResponse
 from app.interfaces.http.shared.response.codes.success_code import SuccessCode

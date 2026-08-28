@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy import Table
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.contexts.user_management.infrastructure.persistence.model import UserRecord
+from app.contexts.user.infrastructure.persistence.model import UserRecord
 from app.infrastructure.database.orm.main import MAIN_TABLE_PREFIX, MainBase, main_table_name
 from database.main.model_registry import load_main_database_metadata
 

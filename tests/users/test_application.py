@@ -4,12 +4,12 @@ from uuid import UUID
 
 import pytest
 
-from app.contexts.user_management.application.dto import CreateUserCommand, UpdateUserCommand
-from app.contexts.user_management.application.errors import UserConflictError, UserNotFoundError
-from app.contexts.user_management.application.service import UserApplicationService
-from app.contexts.user_management.domain.repository import UserRepository
-from app.contexts.user_management.domain.user import User
-from app.contexts.user_management.domain.values import EmailAddress, UserId, Username, UserStatus
+from app.contexts.user.application.dto import CreateUserCommand, UpdateUserCommand
+from app.contexts.user.application.errors import UserConflictError, UserNotFoundError
+from app.contexts.user.application.service import UserApplicationService
+from app.contexts.user.domain.repository import UserRepository
+from app.contexts.user.domain.user import User
+from app.contexts.user.domain.values import EmailAddress, UserId, Username, UserStatus
 
 
 class FakeUserRepository:

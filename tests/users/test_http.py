@@ -10,7 +10,7 @@ from app.config.cache import CacheSettings
 from app.config.cors import CorsSettings
 from app.config.database import DatabaseSettings
 from app.config.settings import Settings
-from app.contexts.user_management.infrastructure.persistence.model import UserRecord
+from app.contexts.user.infrastructure.persistence.model import UserRecord
 
 
 @pytest.fixture(autouse=True)

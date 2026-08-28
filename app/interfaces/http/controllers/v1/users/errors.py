@@ -1,5 +1,5 @@
-from app.contexts.user_management.application.errors import UserApplicationError, UserConflictError, UserNotFoundError
-from app.contexts.user_management.domain.errors import InvalidUserDataError, UserDomainError
+from app.contexts.user.application.errors import UserApplicationError, UserConflictError, UserNotFoundError
+from app.contexts.user.domain.errors import InvalidUserDataError, UserDomainError
 from app.interfaces.http.controllers.v1.users.codes import UserErrorCode
 from app.interfaces.http.exceptions.error import HttpError
 

@@ -1,6 +1,6 @@
 from sqlalchemy import MetaData
 
-from app.contexts.user_management.infrastructure.persistence.model import UserRecord
+from app.contexts.user.infrastructure.persistence.model import UserRecord
 from app.infrastructure.database.orm.main import MainBase
 
 _MAIN_DATABASE_MODELS: tuple[type[MainBase], ...] = (UserRecord,)

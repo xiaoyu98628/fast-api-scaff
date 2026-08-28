@@ -2,13 +2,13 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID, uuid7
 
-from app.contexts.user_management.domain.errors import InvalidUserDataError
-from app.contexts.user_management.domain.values import EmailAddress, UserId, Username, UserStatus
+from app.contexts.user.domain.errors import InvalidUserDataError
+from app.contexts.user.domain.values import EmailAddress, UserId, Username, UserStatus
 
 
 @dataclass(slots=True)
 class User:
-    """用户管理限界上下文中的用户聚合根。"""
+    """用户限界上下文中的用户聚合根。"""
 
     id: UserId
     username: Username

@@ -11,8 +11,8 @@ from app.config.cache import CacheSettings
 from app.config.cors import CorsSettings
 from app.config.database import DatabaseSettings
 from app.config.settings import Settings
-from app.contexts.user_management.application.service import UserApplicationService
-from app.contexts.user_management.infrastructure.persistence.unit_of_work import SqlAlchemyUserUnitOfWork
+from app.contexts.user.application.service import UserApplicationService
+from app.contexts.user.infrastructure.persistence.unit_of_work import SqlAlchemyUserUnitOfWork
 from app.infrastructure.cache.manager import CacheManager
 from app.infrastructure.database.manager import DatabaseManager
 

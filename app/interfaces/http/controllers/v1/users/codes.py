@@ -2,7 +2,7 @@ from app.interfaces.http.shared.response.codes.contract import CodeDefinition, C
 
 
 class UserErrorCode(CodedEnum):
-    """用户管理限界上下文的 HTTP 错误响应码。"""
+    """用户限界上下文的 HTTP 错误响应码。"""
 
     USER_NOT_FOUND = CodeDefinition(code="1001", message="用户不存在或已被删除", status_code=404)
     USERNAME_CONFLICT = CodeDefinition(code="1002", message="用户名已存在", status_code=409)

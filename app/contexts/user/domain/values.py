@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from uuid import UUID
 
-from app.contexts.user_management.domain.errors import InvalidUserDataError
+from app.contexts.user.domain.errors import InvalidUserDataError
 
 _EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _USERNAME_PATTERN = re.compile(r"^[a-z0-9_]{3,32}$")

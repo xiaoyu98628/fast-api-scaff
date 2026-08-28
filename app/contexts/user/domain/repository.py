@@ -1,7 +1,7 @@
 from typing import Protocol
 
-from app.contexts.user_management.domain.user import User
-from app.contexts.user_management.domain.values import EmailAddress, UserId, Username
+from app.contexts.user.domain.user import User
+from app.contexts.user.domain.values import EmailAddress, UserId, Username
 
 
 class UserRepository(Protocol):

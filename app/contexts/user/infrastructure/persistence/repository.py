@@ -1,10 +1,10 @@
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.contexts.user_management.domain.user import User
-from app.contexts.user_management.domain.values import EmailAddress, UserId, Username
-from app.contexts.user_management.infrastructure.persistence.mapper import update_user_record, user_to_domain, user_to_record
-from app.contexts.user_management.infrastructure.persistence.model import UserRecord
+from app.contexts.user.domain.user import User
+from app.contexts.user.domain.values import EmailAddress, UserId, Username
+from app.contexts.user.infrastructure.persistence.mapper import update_user_record, user_to_domain, user_to_record
+from app.contexts.user.infrastructure.persistence.model import UserRecord
 
 
 class SqlAlchemyUserRepository:
