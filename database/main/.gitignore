@@ -1,0 +1,18 @@
+# 忽略当前文件夹下所有文件上传 git
+*
+
+# 排除 .gitignore 文件
+!.gitignore
+
+# 排除 migrations 文件夹
+!migrations
+!migrations/**
+
+# 排除 __init__.py 文件
+!__init__.py
+
+# 排除 alembic.ini 文件
+!alembic.ini
+
+# 排除 model_registry.py 文件
+!model_registry.py
