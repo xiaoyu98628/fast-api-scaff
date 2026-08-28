@@ -4,7 +4,16 @@ import pytest
 from sqlalchemy import Table
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.contexts.user_management.infrastructure.persistence.model import UserRecord
 from app.infrastructure.database.orm.main import MAIN_TABLE_PREFIX, MainBase, main_table_name
+from database.main.model_registry import load_main_database_metadata
+
+
+def test_main_database_model_registry_loads_user_model() -> None:
+    metadata = load_main_database_metadata()
+
+    assert metadata is MainBase.metadata
+    assert UserRecord.__table__ is metadata.tables[main_table_name("users")]
 
 
 def test_main_model_uses_configured_table_prefix_and_constraint_names() -> None:

@@ -24,4 +24,4 @@ def downgrade() -> None:
 
 Alembic 自动生成的候选代码仍会包含生成环境中的物理表名，必须人工将表名、外键目标以及包含表名的索引和约束名称改为基于 `table_name()` 的动态形式。同一数据库在整条迁移链中必须保持同一个表前缀；修改已有数据库的前缀需要单独编写重命名迁移。
 
-新增 main 数据库 ORM 模型时，必须同时将模型模块加入迁移环境的模型加载入口，使表结构注册到 `MainBase.metadata` 后再运行自动生成。
+新增 main 数据库 ORM 模型时，必须同时将模型类加入 `database.main.model_registry` 的 `_MAIN_DATABASE_MODELS`，使表结构注册到 `MainBase.metadata` 后再运行自动生成。`env.py` 只通过该统一入口获取 Metadata，不再直接导入各业务上下文的 Model。

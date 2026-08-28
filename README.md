@@ -546,7 +546,7 @@ class ExampleModel(MainBase):
     id: Mapped[int] = mapped_column(primary_key=True)
 ```
 
-如果 main 连接配置 `TABLE_PREFIX=fast_api_`，实际表名为 `fast_api_examples`。索引、联合索引、唯一约束和检查约束应在模型的 `__table_args__` 中显式定义；主键、外键等未显式命名的约束使用 ORM Metadata 的统一命名约定。新增模型模块时，还必须将该模块加入 main 迁移环境的模型加载入口，确保模型已经注册到 `MainBase.metadata`。
+如果 main 连接配置 `TABLE_PREFIX=fast_api_`，实际表名为 `fast_api_examples`。索引、联合索引、唯一约束和检查约束应在模型的 `__table_args__` 中显式定义；主键、外键等未显式命名的约束使用 ORM Metadata 的统一命名约定。新增 main 数据库 ORM 模型时，还必须将模型类加入 `database.main.model_registry` 的 `_MAIN_DATABASE_MODELS`，确保模型已经注册到 `MainBase.metadata`；Alembic 的 `env.py` 不直接导入业务 Model。
 
 ### 使用默认数据库
 
@@ -830,7 +830,9 @@ from app.infrastructure.cache.contracts.client import CacheClient
 
 ```text
 database/                       # 数据库迁移环境
-└── main/                       # main 数据库 Alembic 配置和版本脚本
+└── main/                       # main 数据库配置、模型注册和版本脚本
+    ├── model_registry.py       # main 数据库 ORM Model 显式注册入口
+    └── migrations/             # Alembic 环境和版本脚本
 app/
 ├── bootstrap/              # 应用创建、容器装配、生命周期和应用事件
 ├── config/                 # 应用、日志、数据库与缓存配置模型
