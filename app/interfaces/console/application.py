@@ -8,10 +8,11 @@ from app.bootstrap.container import ApplicationContainer
 from app.bootstrap.runtime import ApplicationRuntime
 from app.config.settings import Settings, load_settings
 from app.infrastructure.logging.configure import configure_logging
+from app.interfaces.console.context import ConsoleContext
 
 type SettingsLoader = Callable[[], Settings]
 type ContainerBuilder = Callable[[Settings], ApplicationContainer]
-type ConsoleOperation[T] = Callable[[ApplicationContainer, Settings], Awaitable[T]]
+type ConsoleOperation[T] = Callable[[ConsoleContext], Awaitable[T]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,4 +31,4 @@ class ConsoleApplication:
         runtime = ApplicationRuntime(partial(self.container_builder, settings))
 
         async with runtime as container:
-            return await operation(container, settings)
+            return await operation(ConsoleContext(settings=settings, container=container))
