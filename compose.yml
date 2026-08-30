@@ -5,6 +5,8 @@ services:
       dockerfile: Dockerfile
     env_file:
       - ./.env
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
     container_name: ${APP_NAME}
     ports:
       - "${APP_PORT:-8000}:8000"

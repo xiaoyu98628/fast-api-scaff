@@ -1,17 +1,23 @@
-from app.contexts.user.infrastructure.persistence.model import UserRecord
+from sqlalchemy import DateTime
+
+from app.contexts.user.infrastructure.persistence.models.user import UserModel
 from app.infrastructure.database.orm.main import MainBase
 from database.main.model_registry import load_main_database_metadata
 
 
 def test_main_database_model_registry_loads_user_model() -> None:
     metadata = load_main_database_metadata()
-    users_table = UserRecord.__table__
+    users_table = UserModel.__table__
 
     assert metadata is MainBase.metadata
-    assert UserRecord.__tablename__ == "users"
+    assert UserModel.__tablename__ == "users"
     assert users_table is metadata.tables["users"]
     assert users_table.primary_key.name == "pk_users"
     assert users_table.comment == "用户信息"
+    assert isinstance(users_table.c.created_at.type, DateTime)
+    assert isinstance(users_table.c.updated_at.type, DateTime)
+    assert users_table.c.created_at.type.timezone is False
+    assert users_table.c.updated_at.type.timezone is False
     assert {column.name: column.comment for column in users_table.columns} == {
         "id": "用户 ID",
         "username": "用户名",

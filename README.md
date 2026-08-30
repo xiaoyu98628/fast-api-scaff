@@ -22,18 +22,34 @@ uv sync --extra dev
 cp sample.env .env
 ```
 
-应用名称、版本、运行环境、调试模式、全局时区与服务编码通过以下环境变量配置：
+应用名称、版本、运行环境、调试模式与服务编码通过以下环境变量配置：
 
 ```env
 APP_NAME=fast-api-scaff
 APP_VERSION=3.0.0
 APP_ENV=local
 APP_DEBUG=false
-APP_TIMEZONE=Asia/Shanghai
 APP_SERVICE_CODE=001
 ```
 
-`APP_TIMEZONE` 使用 IANA 时区名称，例如 `UTC`、`Asia/Shanghai`、`America/New_York`。未配置时默认使用 `UTC`；非法时区会在应用启动时被拒绝。应用日志使用该全局时区输出 ISO 8601 时间，`UTC` 使用 `Z`，其他时区保留明确的 UTC 偏移量。
+应用不维护独立的时区配置，业务时间、数据库 `DATETIME`、HTTP、Console 和日志统一继承 Python 进程所在操作系统或容器的本地时区。直接在宿主机启动时应先正确配置操作系统时区；需要临时指定时区时，必须在 Python 进程启动前导出标准 `TZ` 环境变量。Compose 会读取 `.env` 中的 `TZ`，Docker 镜像默认使用 `Asia/Shanghai`：
+
+```env
+TZ=Asia/Shanghai
+```
+
+业务时间使用本地墙上时间并以不带偏移的 `DATETIME` 持久化。HTTP 和 Console 保持该本地时间表示，日志额外携带运行环境的 UTC 偏移，方便定位事件发生时刻。
+
+例如，运行环境为 `Asia/Shanghai` 时创建的数据保持一致：
+
+```text
+数据库：2026-08-30 18:42:20
+HTTP：  2026-08-30T18:42:20
+Console：2026-08-30T18:42:20
+日志：  2026-08-30T18:42:20+08:00
+```
+
+本地时间是持久化协议的一部分。数据库产生业务数据后，不应直接修改服务器或容器时区；确需修改时，必须同步迁移已有时间字段，避免新旧数据使用不同的墙上时间语义。开发机、CI、服务器和容器应配置为相同的时区。
 
 Docker 容器内的 Uvicorn 固定监听 `0.0.0.0:8000`。Compose 使用 `APP_PORT` 配置宿主机发布端口，默认将宿主机的 `8000` 端口映射到容器的 `8000` 端口：
 
@@ -46,6 +62,31 @@ APP_PORT=8000
 ```shell
 uv run uvicorn app.main:app --reload
 ```
+
+## Console
+
+项目提供模块化 Console 入口，用于从 HTTP 之外执行一次性应用操作。Console 与 FastAPI 共享配置加载、日志配置、`ApplicationContainer` 和资源生命周期；每次命令都会创建并启动容器，并在命令成功或失败后关闭已经创建的数据库和缓存资源。模块入口不绑定项目名称，也不要求项目安装为 Python 包。
+
+查看应用及已配置的资源连接：
+
+```shell
+uv run python -m app.interfaces.console app info
+```
+
+通过现有用户应用服务创建和查询用户：
+
+```shell
+uv run python -m app.interfaces.console users create \
+  --username admin \
+  --email admin@example.com \
+  --display-name Administrator
+
+uv run python -m app.interfaces.console users list --offset 0 --limit 20
+```
+
+用户命令直接调用 `ApplicationContainer.users.service`，不依赖 FastAPI、HTTP Controller 或 HTTP 响应结构。命令结果使用 JSON 输出，业务时间沿用运行环境的本地墙上时间；业务或领域校验失败时使用退出码 `2`。数据库迁移继续使用 Alembic 原生命令，不由 Console 重复包装。
+
+公共 `ApplicationRuntime` 只管理容器的启动和关闭，不包含 HTTP、Console、Worker 或 Scheduler 的宿主逻辑。未来的队列 Worker 和定时任务入口可以复用该生命周期，但应继续作为独立进程和独立入站接口实现。
 
 ## 日志
 
@@ -815,7 +856,7 @@ database/                       # 数据库迁移环境
     ├── model_registry.py       # main 数据库 ORM Model 显式注册入口
     └── migrations/             # Alembic 环境和版本脚本
 app/
-├── bootstrap/              # 应用创建、容器装配、生命周期和应用事件
+├── bootstrap/              # 应用创建、容器装配、公共 Runtime、生命周期和应用事件
 ├── config/                 # 应用、日志、数据库与缓存配置模型
 ├── contexts/               # 按限界上下文组织的业务代码
 │   └── user/               # 用户限界上下文
@@ -847,6 +888,9 @@ app/
 │   │       └── redis/      # Redis String 实现和数据类型聚合入口
 │   └── resources/          # 通用延迟资源管理
 ├── interfaces/
+│   ├── console/            # 一次性命令行入站接口
+│   │   ├── application.py  # Console 配置、日志和 Runtime 执行边界
+│   │   └── commands/       # 命令分组和参数/输出适配
 │   └── http/               # HTTP 入站接口
 │       ├── controllers/    # 业务 Controller 和版本化 Router
 │       ├── exceptions/     # HTTP 异常及异常处理器

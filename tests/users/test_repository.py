@@ -1,11 +1,12 @@
-from datetime import UTC, datetime
+from datetime import datetime
 
 import pytest
+from sqlalchemy import select
 
 from app.config.database import DatabaseSettings
 from app.contexts.user.domain.user import User
 from app.contexts.user.domain.values import EmailAddress, UserId, Username, UserStatus
-from app.contexts.user.infrastructure.persistence.model import UserRecord
+from app.contexts.user.infrastructure.persistence.models.user import UserModel
 from app.contexts.user.infrastructure.persistence.repository import SqlAlchemyUserRepository
 from app.infrastructure.database.manager import DatabaseManager
 
@@ -21,9 +22,9 @@ async def test_sqlalchemy_user_repository_persists_and_queries_users() -> None:
     )
     engine = await manager.get_engine()
     async with engine.begin() as connection:
-        await connection.run_sync(UserRecord.metadata.create_all)
+        await connection.run_sync(UserModel.metadata.create_all)
 
-    now = datetime(2026, 8, 28, tzinfo=UTC)
+    now = datetime(2026, 8, 28, 18, 30)
     user = User.create(username="alice", email="alice@example.com", display_name="Alice", now=now)
 
     async with manager.session() as session:
@@ -31,10 +32,14 @@ async def test_sqlalchemy_user_repository_persists_and_queries_users() -> None:
         await repository.add(user)
         await session.commit()
 
+        stored_created_at = await session.scalar(select(UserModel.created_at).where(UserModel.id == user.id.value))
+
         found = await repository.find(user.id)
         users, total = await repository.find_page(offset=0, limit=20)
 
         assert found is not None
+        assert stored_created_at == datetime(2026, 8, 28, 18, 30)
+        assert found.created_at == now
         assert found.username == Username("alice")
         assert users == [found]
         assert total == 1

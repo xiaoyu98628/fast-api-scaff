@@ -3,22 +3,20 @@ import logging
 from collections.abc import Mapping
 from datetime import datetime
 from enum import StrEnum
-from zoneinfo import ZoneInfo
 
 
 class _StructuredLogFormatter(logging.Formatter):
     """构建各输出格式共用的结构化日志字段。"""
 
-    def __init__(self, *, service: str, environment: str, service_version: str, timezone: str) -> None:
+    def __init__(self, *, service: str, environment: str, service_version: str) -> None:
         super().__init__()
         self._service = service
         self._environment = environment
         self._service_version = service_version
-        self._timezone = timezone
 
     def build_payload(self, record: logging.LogRecord) -> dict[str, object]:
         payload: dict[str, object] = {
-            "timestamp": _timestamp(record.created, self._timezone),
+            "timestamp": _timestamp(record.created),
             "level": record.levelname,
             "logger": record.name,
             "service": self._service,
@@ -71,7 +69,5 @@ def _json_dumps(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"), default=str)
 
 
-def _timestamp(created: float, timezone: str) -> str:
-    timestamp = datetime.fromtimestamp(created, tz=ZoneInfo(timezone))
-    rendered = timestamp.isoformat(timespec="milliseconds")
-    return f"{rendered.removesuffix('+00:00')}Z" if rendered.endswith("+00:00") else rendered
+def _timestamp(created: float) -> str:
+    return datetime.fromtimestamp(created).astimezone().isoformat(timespec="milliseconds")

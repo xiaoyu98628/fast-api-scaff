@@ -1,12 +1,10 @@
-from datetime import UTC, datetime
-
 from app.contexts.user.domain.user import User
 from app.contexts.user.domain.values import EmailAddress, UserId, Username, UserStatus
-from app.contexts.user.infrastructure.persistence.model import UserRecord
+from app.contexts.user.infrastructure.persistence.models.user import UserModel
 
 
-def user_to_record(user: User) -> UserRecord:
-    return UserRecord(
+def user_to_model(user: User) -> UserModel:
+    return UserModel(
         id=user.id.value,
         username=user.username.value,
         email=user.email.value,
@@ -17,28 +15,21 @@ def user_to_record(user: User) -> UserRecord:
     )
 
 
-def user_to_domain(record: UserRecord) -> User:
+def user_to_domain(model: UserModel) -> User:
     return User(
-        id=UserId(record.id),
-        username=Username(record.username),
-        email=EmailAddress(record.email),
-        display_name=record.display_name,
-        status=UserStatus(record.status),
-        created_at=_as_utc(record.created_at),
-        updated_at=_as_utc(record.updated_at),
+        id=UserId(model.id),
+        username=Username(model.username),
+        email=EmailAddress(model.email),
+        display_name=model.display_name,
+        status=UserStatus(model.status),
+        created_at=model.created_at,
+        updated_at=model.updated_at,
     )
 
 
-def update_user_record(record: UserRecord, user: User) -> None:
-    record.username = user.username.value
-    record.email = user.email.value
-    record.display_name = user.display_name
-    record.status = user.status.value
-    record.updated_at = user.updated_at
-
-
-def _as_utc(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value.replace(tzinfo=UTC)
-
-    return value.astimezone(UTC)
+def update_user_model(model: UserModel, user: User) -> None:
+    model.username = user.username.value
+    model.email = user.email.value
+    model.display_name = user.display_name
+    model.status = user.status.value
+    model.updated_at = user.updated_at
