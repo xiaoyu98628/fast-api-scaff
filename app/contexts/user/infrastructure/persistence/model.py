@@ -10,7 +10,7 @@ from app.infrastructure.database.orm.main import MainBase
 class UserRecord(MainBase):
     """用户聚合的数据库持久化模型。"""
 
-    __table_name__ = "users"
+    __tablename__ = "users"
     __table_args__ = (
         UniqueConstraint("username"),
         UniqueConstraint("email"),

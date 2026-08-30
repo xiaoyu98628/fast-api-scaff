@@ -410,7 +410,6 @@ DB_CONNECTIONS__MAIN__DRIVER=postgresql
 DB_CONNECTIONS__MAIN__HOST=127.0.0.1
 DB_CONNECTIONS__MAIN__PORT=5432
 DB_CONNECTIONS__MAIN__DATABASE=fast-api
-DB_CONNECTIONS__MAIN__TABLE_PREFIX=
 DB_CONNECTIONS__MAIN__USERNAME=postgres
 DB_CONNECTIONS__MAIN__PASSWORD=postgres
 DB_CONNECTIONS__MAIN__ECHO=false
@@ -427,7 +426,6 @@ DB_CONNECTIONS__LEGACY__DRIVER=mysql
 DB_CONNECTIONS__LEGACY__HOST=127.0.0.1
 DB_CONNECTIONS__LEGACY__PORT=3306
 DB_CONNECTIONS__LEGACY__DATABASE=legacy
-DB_CONNECTIONS__LEGACY__TABLE_PREFIX=
 DB_CONNECTIONS__LEGACY__USERNAME=root
 DB_CONNECTIONS__LEGACY__PASSWORD=root
 DB_CONNECTIONS__LEGACY__CHARSET=utf8mb4
@@ -438,7 +436,6 @@ DB_CONNECTIONS__LEGACY__CHARSET=utf8mb4
 ```env
 DB_CONNECTIONS__LOCAL__DRIVER=sqlite
 DB_CONNECTIONS__LOCAL__DATABASE=data/database.sqlite
-DB_CONNECTIONS__LOCAL__TABLE_PREFIX=
 ```
 
 SQLite 相对路径基于项目的 `storage` 目录解析。上面的配置最终指向：
@@ -449,9 +446,7 @@ storage/data/database.sqlite
 
 也可以使用绝对路径或 `:memory:` 内存数据库。
 
-所有数据库连接都支持 `ECHO` 和 `TABLE_PREFIX`。`ECHO` 默认为 `false`；`TABLE_PREFIX` 默认为空字符串，表示不为 ORM 表名添加前缀。非空前缀只能包含小写字母、数字和下划线，必须以小写字母开头并以下划线结尾，例如 `fast_api_`。
-
-表前缀属于 ORM 结构标识，由 `orm/prefix.py` 独立解析，不属于运行时数据库连接资源。模型导入时会读取对应连接的前缀，修改配置后需要重启进程；已经投入使用的前缀不能直接修改，必须通过迁移显式重命名现有表。
+所有数据库连接都支持 `ECHO`，默认为 `false`。数据库表使用模型声明的固定名称；需要隔离不同服务的数据结构时，应使用独立数据库或数据库 Schema。
 
 PostgreSQL 和 MySQL 额外支持以下连接池配置：
 
@@ -504,21 +499,7 @@ uv run alembic -c database/main/alembic.ini current
 uv run alembic -c database/main/alembic.ini revision --autogenerate -m "create todos table"
 ```
 
-迁移模板为每个新迁移提供 `table_name()`。迁移文件应使用不含前缀的逻辑表名，并在执行时根据 main 连接的 `TABLE_PREFIX` 构建物理表名：
-
-```python
-def upgrade() -> None:
-    examples = table_name("examples")
-    op.create_table(examples, ...)
-
-
-def downgrade() -> None:
-    op.drop_table(table_name("examples"))
-```
-
-Alembic 自动生成的候选代码仍会包含生成环境中的物理表名，必须人工将表名、外键目标以及包含表名的索引和约束名称改为基于 `table_name()` 的动态形式。同一数据库在整条迁移链中必须保持同一个表前缀；修改已有数据库的前缀需要单独编写重命名迁移。
-
-自动生成的迁移必须完成上述检查后再执行。升级到最新版本：
+自动生成的迁移使用模型声明的固定表名。提交迁移前仍应检查 `upgrade()` 和 `downgrade()` 是否准确表达预期结构变化，尤其是表或字段重命名、数据迁移等 Alembic 无法可靠推断的操作。升级到最新版本：
 
 ```shell
 uv run alembic -c database/main/alembic.ini upgrade head
@@ -530,23 +511,21 @@ uv run alembic -c database/main/alembic.ini upgrade head
 uv run alembic -c database/main/alembic.ini downgrade -1
 ```
 
-main 数据库 ORM 模型继承实际定义模块中的 `MainBase`，并通过不含前缀的 `__table_name__` 声明核心表名：
+main 数据库 ORM 模型继承实际定义模块中的 `MainBase`，并通过 SQLAlchemy 标准的 `__tablename__` 声明表名：
 
 ```python
-from typing import ClassVar
-
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infrastructure.database.orm.main import MainBase
 
 
 class ExampleModel(MainBase):
-    __table_name__: ClassVar[str] = "examples"
+    __tablename__ = "examples"
 
     id: Mapped[int] = mapped_column(primary_key=True)
 ```
 
-如果 main 连接配置 `TABLE_PREFIX=fast_api_`，实际表名为 `fast_api_examples`。索引、联合索引、唯一约束和检查约束应在模型的 `__table_args__` 中显式定义；主键、外键等未显式命名的约束使用 ORM Metadata 的统一命名约定。新增 main 数据库 ORM 模型时，还必须将模型类加入 `database.main.model_registry` 的 `_MAIN_DATABASE_MODELS`，确保模型已经注册到 `MainBase.metadata`；Alembic 的 `env.py` 不直接导入业务 Model。
+实际表名与 `__tablename__` 一致。索引、联合索引、唯一约束和检查约束应在模型的 `__table_args__` 中显式定义；主键、外键等未显式命名的约束使用 ORM Metadata 的统一命名约定。新增 main 数据库 ORM 模型时，还必须将模型类加入 `database.main.model_registry` 的 `_MAIN_DATABASE_MODELS`，确保模型已经注册到 `MainBase.metadata`；Alembic 的 `env.py` 不直接导入业务 Model。
 
 ### 使用默认数据库
 
