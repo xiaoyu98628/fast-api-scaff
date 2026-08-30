@@ -1,5 +1,4 @@
 import logging
-from functools import partial
 
 import pytest
 
@@ -11,8 +10,7 @@ from app.config.cache import CacheSettings
 from app.config.cors import CorsSettings
 from app.config.database import DatabaseSettings
 from app.config.settings import Settings
-from app.contexts.user.application.service import UserApplicationService
-from app.contexts.user.infrastructure.persistence.unit_of_work import SqlAlchemyUserUnitOfWork
+from app.contexts.user.composition import build_user_context
 from app.infrastructure.cache.manager import CacheManager
 from app.infrastructure.database.manager import DatabaseManager
 
@@ -54,7 +52,7 @@ async def test_application_startup_failure_is_logged(caplog: pytest.LogCaptureFi
     container = ApplicationContainer(
         databases=databases,
         caches=CacheManager(settings.cache),
-        users=UserApplicationService(unit_of_work_factory=partial(SqlAlchemyUserUnitOfWork, databases)),
+        users=build_user_context(databases),
         startup_callbacks=(fail_startup,),
     )
     app = create_app(settings, container_builder=lambda _settings: container)

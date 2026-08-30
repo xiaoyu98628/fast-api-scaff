@@ -6,6 +6,8 @@ from app.config.cache import CacheSettings
 from app.config.cors import CorsSettings
 from app.config.database import DatabaseSettings
 from app.config.settings import Settings
+from app.contexts.user.application.service import UserApplicationService
+from app.contexts.user.composition import UserContext
 from app.infrastructure.cache.manager import CacheManager
 from app.infrastructure.database.manager import DatabaseManager
 
@@ -27,3 +29,5 @@ async def test_empty_database_config_does_not_block_application_startup() -> Non
         assert container.databases.connection_names == ()
         assert isinstance(container.caches, CacheManager)
         assert container.caches.connection_names == ()
+        assert isinstance(container.users, UserContext)
+        assert isinstance(container.users.service, UserApplicationService)

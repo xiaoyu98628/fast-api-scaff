@@ -120,7 +120,7 @@ docker compose up --build
 
 ## 应用容器
 
-数据库、缓存管理器和用户应用服务都保存在 `ApplicationContainer` 中。FastAPI 生命周期启动时会创建容器，并将其保存到 `app.state.container`；应用关闭时，容器会统一释放已经创建的数据库和缓存资源。
+数据库、缓存管理器和各业务上下文都保存在 `ApplicationContainer` 中。每个业务上下文负责组装并公开自己的应用服务，避免将所有业务服务的构建细节集中到顶层组合根。FastAPI 生命周期启动时会创建容器，并将其保存到 `app.state.container`；应用关闭时，容器会统一释放已经创建的数据库和缓存资源。
 
 Controller 可以通过 `Request` 获取容器：
 
@@ -132,13 +132,15 @@ from app.bootstrap.container import ApplicationContainer
 
 async def example(request: Request) -> dict[str, object]:
     container: ApplicationContainer = request.app.state.container
+    user_service = container.users.service
     return {
         "databases": container.databases.connection_names,
         "caches": container.caches.connection_names,
+        "user_service": type(user_service).__name__,
     }
 ```
 
-业务代码应通过容器中的管理器获取资源，不要自行创建数据库 Engine、Redis 客户端或 Memcached 客户端。
+同一业务上下文增加应用服务时，只需调整该上下文的组合模块和容器，不需要修改顶层组合根。新增完整业务上下文时，仍需在 `ApplicationContainer` 中显式连接一次。业务代码应通过容器中的管理器获取资源，不要自行创建数据库 Engine、Redis 客户端或 Memcached 客户端。
 
 ## 延迟加载行为
 

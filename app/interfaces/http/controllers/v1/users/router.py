@@ -17,7 +17,7 @@ router = APIRouter(prefix="/users", tags=["users"])
 
 def get_user_service(request: Request) -> UserApplicationService:
     container: ApplicationContainer = request.app.state.container
-    return container.users
+    return container.users.service
 
 
 @router.post(
