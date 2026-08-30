@@ -73,6 +73,13 @@ uv run uvicorn app.main:app --reload
 uv run python -m app.interfaces.console app info
 ```
 
+查看当前应用名称和版本，或列出可用命令：
+
+```shell
+uv run python -m app.interfaces.console --version
+uv run python -m app.interfaces.console --help
+```
+
 通过现有用户应用服务创建和查询用户：
 
 ```shell
@@ -85,6 +92,8 @@ uv run python -m app.interfaces.console users list --offset 0 --limit 20
 ```
 
 用户命令直接调用 `ApplicationContainer.users.service`，不依赖 FastAPI、HTTP Controller 或 HTTP 响应结构。命令结果使用 JSON 输出，业务时间沿用运行环境的本地墙上时间；业务或领域校验失败时使用退出码 `2`。数据库迁移继续使用 Alembic 原生命令，不由 Console 重复包装。
+
+Console 命令继承公共 `ConsoleCommand` 基类，并通过 `group`、`group_help`、`name` 和 `help` 声明所属命令组及帮助信息。启动时只扫描 `app.interfaces.console.commands` 包，自动发现其中的具体命令类，并检查重复命令和命令组说明冲突。新增命令类后不需要修改 `main.py`；命令模块不得在导入阶段执行数据库连接或其他外部操作。
 
 公共 `ApplicationRuntime` 只管理容器的启动和关闭，不包含 HTTP、Console、Worker 或 Scheduler 的宿主逻辑。未来的队列 Worker 和定时任务入口可以复用该生命周期，但应继续作为独立进程和独立入站接口实现。
 
@@ -890,6 +899,10 @@ app/
 ├── interfaces/
 │   ├── console/            # 一次性命令行入站接口
 │   │   ├── application.py  # Console 配置、日志和 Runtime 执行边界
+│   │   ├── command.py      # 可自动发现命令的抽象基类
+│   │   ├── context.py      # 单次命令使用的 Settings 与 Container 上下文
+│   │   ├── discovery.py    # commands 包扫描与具体命令类发现
+│   │   ├── registry.py     # 命令组创建、重复校验与 Typer 注册
 │   │   └── commands/       # 命令分组和参数/输出适配
 │   └── http/               # HTTP 入站接口
 │       ├── controllers/    # 业务 Controller 和版本化 Router

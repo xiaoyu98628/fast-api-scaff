@@ -91,6 +91,32 @@ def test_app_info_displays_runtime_configuration() -> None:
     assert "timezone:" in result.stdout
 
 
+def test_root_help_and_version_use_runtime_application_metadata() -> None:
+    runner, application = build_console(FakeUserService())
+
+    help_result = runner.invoke(application, ["--help"])
+    version_result = runner.invoke(application, ["--version"])
+
+    assert help_result.exit_code == 0
+    assert "应用命令行入口。" in help_result.stdout
+    assert "--version" in help_result.stdout
+    assert "fast-api-scaff" not in help_result.stdout
+    assert version_result.exit_code == 0
+    assert version_result.stdout.strip() == "console-test 1.2.3"
+
+
+def test_user_command_help_describes_available_operations() -> None:
+    runner, application = build_console(FakeUserService())
+
+    result = runner.invoke(application, ["users", "--help"])
+
+    assert result.exit_code == 0
+    assert "create" in result.stdout
+    assert "创建用户。" in result.stdout
+    assert "list" in result.stdout
+    assert "分页查询用户。" in result.stdout
+
+
 def test_user_commands_call_application_service() -> None:
     service = FakeUserService()
     runner, application = build_console(service)
