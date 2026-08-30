@@ -22,6 +22,7 @@ dependencies = [
     "memcachio>=0.5.1",
 
     "alembic>=1.19.1",
+    "typer>=0.21.0",
 ]
 
 [project.optional-dependencies]

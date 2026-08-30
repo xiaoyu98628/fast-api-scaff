@@ -47,6 +47,31 @@ APP_PORT=8000
 uv run uvicorn app.main:app --reload
 ```
 
+## Console
+
+项目提供模块化 Console 入口，用于从 HTTP 之外执行一次性应用操作。Console 与 FastAPI 共享配置加载、日志配置、`ApplicationContainer` 和资源生命周期；每次命令都会创建并启动容器，并在命令成功或失败后关闭已经创建的数据库和缓存资源。模块入口不绑定项目名称，也不要求项目安装为 Python 包。
+
+查看应用及已配置的资源连接：
+
+```shell
+uv run python -m app.interfaces.console app info
+```
+
+通过现有用户应用服务创建和查询用户：
+
+```shell
+uv run python -m app.interfaces.console users create \
+  --username admin \
+  --email admin@example.com \
+  --display-name Administrator
+
+uv run python -m app.interfaces.console users list --offset 0 --limit 20
+```
+
+用户命令直接调用 `ApplicationContainer.users.service`，不依赖 FastAPI、HTTP Controller 或 HTTP 响应结构。命令结果使用 JSON 输出，业务或领域校验失败时使用退出码 `2`。数据库迁移继续使用 Alembic 原生命令，不由 Console 重复包装。
+
+公共 `ApplicationRuntime` 只管理容器的启动和关闭，不包含 HTTP、Console、Worker 或 Scheduler 的宿主逻辑。未来的队列 Worker 和定时任务入口可以复用该生命周期，但应继续作为独立进程和独立入站接口实现。
+
 ## 日志
 
 应用使用 Python 标准库 `logging` 输出单行结构化日志，支持 `json` 和 `text` 两种格式。默认使用 JSON 并只启用 stdout，不创建或写入日志文件，适合由 Docker、Kubernetes 或宿主日志系统统一采集：
@@ -815,7 +840,7 @@ database/                       # 数据库迁移环境
     ├── model_registry.py       # main 数据库 ORM Model 显式注册入口
     └── migrations/             # Alembic 环境和版本脚本
 app/
-├── bootstrap/              # 应用创建、容器装配、生命周期和应用事件
+├── bootstrap/              # 应用创建、容器装配、公共 Runtime、生命周期和应用事件
 ├── config/                 # 应用、日志、数据库与缓存配置模型
 ├── contexts/               # 按限界上下文组织的业务代码
 │   └── user/               # 用户限界上下文
@@ -847,6 +872,9 @@ app/
 │   │       └── redis/      # Redis String 实现和数据类型聚合入口
 │   └── resources/          # 通用延迟资源管理
 ├── interfaces/
+│   ├── console/            # 一次性命令行入站接口
+│   │   ├── application.py  # Console 配置、日志和 Runtime 执行边界
+│   │   └── commands/       # 命令分组和参数/输出适配
 │   └── http/               # HTTP 入站接口
 │       ├── controllers/    # 业务 Controller 和版本化 Router
 │       ├── exceptions/     # HTTP 异常及异常处理器
