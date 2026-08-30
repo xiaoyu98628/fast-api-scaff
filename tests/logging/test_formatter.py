@@ -1,5 +1,6 @@
 import json
 import logging
+from datetime import datetime
 
 from starlette_context import request_cycle_context
 from starlette_context.header_keys import HeaderKeys
@@ -11,7 +12,7 @@ from app.interfaces.http.logging import HttpLogEvent
 
 
 def test_json_formatter_renders_structured_event_and_request_id() -> None:
-    formatter = JsonLogFormatter(service="test-service", environment="test", service_version="1.2.3", timezone="UTC")
+    formatter = JsonLogFormatter(service="test-service", environment="test", service_version="1.2.3")
     record = logging.LogRecord(
         name="app.test",
         level=logging.INFO,
@@ -39,11 +40,11 @@ def test_json_formatter_renders_structured_event_and_request_id() -> None:
     assert payload["request_id"] == "request-123"
     assert payload["event"] == "http.request.completed"
     assert payload["details"] == {"status_code": 200}
-    assert payload["timestamp"] == "2023-11-14T22:13:20.123Z"
+    assert payload["timestamp"] == _local_timestamp(record.created)
 
 
 def test_json_formatter_keeps_details_nested() -> None:
-    formatter = JsonLogFormatter(service="test-service", environment="test", service_version="1.2.3", timezone="UTC")
+    formatter = JsonLogFormatter(service="test-service", environment="test", service_version="1.2.3")
     record = logging.LogRecord(
         name="app.test",
         level=logging.WARNING,
@@ -66,7 +67,7 @@ def test_json_formatter_keeps_details_nested() -> None:
 
 
 def test_text_formatter_renders_structured_fields_on_one_line() -> None:
-    formatter = TextLogFormatter(service="test-service", environment="test", service_version="1.2.3", timezone="UTC")
+    formatter = TextLogFormatter(service="test-service", environment="test", service_version="1.2.3")
     record = logging.LogRecord(
         name="app.test",
         level=logging.INFO,
@@ -84,7 +85,7 @@ def test_text_formatter_renders_structured_fields_on_one_line() -> None:
     rendered = formatter.format(record)
 
     assert "\n" not in rendered
-    assert 'timestamp="2023-11-14T22:13:20.123Z"' in rendered
+    assert f'timestamp="{_local_timestamp(record.created)}"' in rendered
     assert 'level="INFO"' in rendered
     assert 'logger="app.test"' in rendered
     assert 'service="test-service"' in rendered
@@ -97,7 +98,7 @@ def test_text_formatter_renders_structured_fields_on_one_line() -> None:
 
 
 def test_text_formatter_keeps_exception_on_one_line() -> None:
-    formatter = TextLogFormatter(service="test-service", environment="test", service_version="1.2.3", timezone="UTC")
+    formatter = TextLogFormatter(service="test-service", environment="test", service_version="1.2.3")
 
     try:
         raise ValueError("invalid\nvalue")
@@ -119,8 +120,8 @@ def test_text_formatter_keeps_exception_on_one_line() -> None:
     assert 'exception={"type":"ValueError","message":"invalid\\nvalue","stacktrace":"Traceback' in rendered
 
 
-def test_json_formatter_uses_configured_iana_timezone() -> None:
-    formatter = JsonLogFormatter(service="test-service", environment="test", service_version="1.2.3", timezone="Asia/Shanghai")
+def test_json_formatter_uses_runtime_local_timezone() -> None:
+    formatter = JsonLogFormatter(service="test-service", environment="test", service_version="1.2.3")
     record = logging.LogRecord(
         name="app.test",
         level=logging.INFO,
@@ -134,7 +135,7 @@ def test_json_formatter_uses_configured_iana_timezone() -> None:
 
     payload = json.loads(formatter.format(record))
 
-    assert payload["timestamp"] == "2023-11-15T06:13:20.123+08:00"
+    assert payload["timestamp"] == _local_timestamp(record.created)
 
 
 def test_log_extra_builds_standard_event_and_details() -> None:
@@ -144,3 +145,7 @@ def test_log_extra_builds_standard_event_and_details() -> None:
         "event": HttpLogEvent.REQUEST_COMPLETED,
         "details": {"status_code": 200},
     }
+
+
+def _local_timestamp(created: float) -> str:
+    return datetime.fromtimestamp(created).astimezone().isoformat(timespec="milliseconds")

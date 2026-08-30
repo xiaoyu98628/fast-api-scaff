@@ -1,5 +1,5 @@
 import json
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import cast
 from uuid import UUID
 
@@ -22,7 +22,7 @@ from app.interfaces.console.application import ConsoleApplication
 from app.interfaces.console.main import create_console
 
 _USER_ID = UUID("00000000-0000-0000-0000-000000000001")
-_NOW = datetime(2026, 8, 30, 12, 0, tzinfo=UTC)
+_NOW = datetime(2026, 8, 30, 20, 0)
 
 
 class FakeUserService:
@@ -53,7 +53,7 @@ class FakeUserService:
 
 def build_settings() -> Settings:
     return Settings(
-        app=AppSettings(name="console-test", version="1.2.3", env="testing", timezone="Asia/Shanghai", _env_file=None),
+        app=AppSettings(name="console-test", version="1.2.3", env="testing", _env_file=None),
         database=DatabaseSettings(_env_file=None),
         cache=CacheSettings(_env_file=None),
         cors=CorsSettings(_env_file=None),
@@ -88,7 +88,7 @@ def test_app_info_displays_runtime_configuration() -> None:
     assert "name: console-test" in result.stdout
     assert "version: 1.2.3" in result.stdout
     assert "environment: testing" in result.stdout
-    assert "timezone: Asia/Shanghai" in result.stdout
+    assert "timezone:" in result.stdout
 
 
 def test_user_commands_call_application_service() -> None:
@@ -110,6 +110,8 @@ def test_user_commands_call_application_service() -> None:
     )
     listed = runner.invoke(application, ["users", "list", "--offset", "0", "--limit", "10"])
 
+    expected_time = _NOW.isoformat()
+
     assert created.exit_code == 0
     assert json.loads(created.stdout) == {
         "id": str(_USER_ID),
@@ -117,8 +119,8 @@ def test_user_commands_call_application_service() -> None:
         "email": "alice@example.com",
         "display_name": "Alice",
         "status": "active",
-        "created_at": _NOW.isoformat(),
-        "updated_at": _NOW.isoformat(),
+        "created_at": expected_time,
+        "updated_at": expected_time,
     }
     assert listed.exit_code == 0
     assert json.loads(listed.stdout)["items"] == [json.loads(created.stdout)]

@@ -13,9 +13,9 @@ from app.infrastructure.logging.drivers.registry import DEFAULT_LOGGING_DRIVERS
 from app.infrastructure.logging.errors import LoggingConfigurationError
 
 
-def build_settings(logging_settings: LoggingSettings, *, timezone: str = "UTC") -> Settings:
+def build_settings(logging_settings: LoggingSettings) -> Settings:
     return Settings(
-        app=AppSettings(timezone=timezone, _env_file=None),
+        app=AppSettings(_env_file=None),
         database=DatabaseSettings(_env_file=None),
         cache=CacheSettings(_env_file=None),
         cors=CorsSettings(_env_file=None),
@@ -63,7 +63,7 @@ def test_configure_logging_selects_text_formatter(monkeypatch: pytest.MonkeyPatc
     }
 
 
-def test_configure_logging_passes_global_timezone_to_formatters(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_configure_logging_does_not_pass_an_application_timezone(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, object] = {}
 
     def capture_config(config: dict[str, object]) -> None:
@@ -71,12 +71,12 @@ def test_configure_logging_passes_global_timezone_to_formatters(monkeypatch: pyt
 
     monkeypatch.setattr(logging.config, "dictConfig", capture_config)
 
-    configure_logging(build_settings(LoggingSettings(_env_file=None), timezone="Asia/Shanghai"))
+    configure_logging(build_settings(LoggingSettings(_env_file=None)))
 
     formatters = captured["formatters"]
     assert isinstance(formatters, dict)
-    assert formatters["json"]["timezone"] == "Asia/Shanghai"
-    assert formatters["text"]["timezone"] == "Asia/Shanghai"
+    assert "timezone" not in formatters["json"]
+    assert "timezone" not in formatters["text"]
 
 
 def test_configure_logging_rejects_missing_active_handler() -> None:

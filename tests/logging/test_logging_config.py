@@ -1,32 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from app.config.app import AppSettings
 from app.config.logging import LoggingSettings
-
-
-def test_app_timezone_defaults_to_utc() -> None:
-    settings = AppSettings(_env_file=None)
-
-    assert settings.timezone == "UTC"
-
-
-def test_app_timezone_is_loaded_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("APP_TIMEZONE", "Asia/Shanghai")
-
-    settings = AppSettings(_env_file=None)
-
-    assert settings.timezone == "Asia/Shanghai"
-
-
-def test_app_timezone_rejects_local() -> None:
-    with pytest.raises(ValidationError, match="有效的 IANA 时区"):
-        AppSettings(timezone="local", _env_file=None)
-
-
-def test_app_timezone_rejects_invalid_iana_timezone() -> None:
-    with pytest.raises(ValidationError, match="有效的 IANA 时区"):
-        AppSettings(timezone="Asia/Shanghai123", _env_file=None)
 
 
 def test_logging_defaults_to_json_stdout_stream() -> None:

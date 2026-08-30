@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime
 
 import typer
 
@@ -19,12 +20,13 @@ class ApplicationInfo:
 
 
 async def get_application_info(container: ApplicationContainer, settings: Settings) -> ApplicationInfo:
+    local_time = datetime.now().astimezone()
     return ApplicationInfo(
         name=settings.app.name,
         version=settings.app.version,
         environment=settings.app.env,
         debug=settings.app.debug,
-        timezone=settings.app.timezone,
+        timezone=f"{local_time.tzname()} ({local_time.strftime('%z')})",
         database_connections=container.databases.connection_names,
         cache_connections=container.caches.connection_names,
     )

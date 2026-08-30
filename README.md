@@ -22,18 +22,34 @@ uv sync --extra dev
 cp sample.env .env
 ```
 
-应用名称、版本、运行环境、调试模式、全局时区与服务编码通过以下环境变量配置：
+应用名称、版本、运行环境、调试模式与服务编码通过以下环境变量配置：
 
 ```env
 APP_NAME=fast-api-scaff
 APP_VERSION=3.0.0
 APP_ENV=local
 APP_DEBUG=false
-APP_TIMEZONE=Asia/Shanghai
 APP_SERVICE_CODE=001
 ```
 
-`APP_TIMEZONE` 使用 IANA 时区名称，例如 `UTC`、`Asia/Shanghai`、`America/New_York`。未配置时默认使用 `UTC`；非法时区会在应用启动时被拒绝。应用日志使用该全局时区输出 ISO 8601 时间，`UTC` 使用 `Z`，其他时区保留明确的 UTC 偏移量。
+应用不维护独立的时区配置，业务时间、数据库 `DATETIME`、HTTP、Console 和日志统一继承 Python 进程所在操作系统或容器的本地时区。直接在宿主机启动时应先正确配置操作系统时区；需要临时指定时区时，必须在 Python 进程启动前导出标准 `TZ` 环境变量。Compose 会读取 `.env` 中的 `TZ`，Docker 镜像默认使用 `Asia/Shanghai`：
+
+```env
+TZ=Asia/Shanghai
+```
+
+业务时间使用本地墙上时间并以不带偏移的 `DATETIME` 持久化。HTTP 和 Console 保持该本地时间表示，日志额外携带运行环境的 UTC 偏移，方便定位事件发生时刻。
+
+例如，运行环境为 `Asia/Shanghai` 时创建的数据保持一致：
+
+```text
+数据库：2026-08-30 18:42:20
+HTTP：  2026-08-30T18:42:20
+Console：2026-08-30T18:42:20
+日志：  2026-08-30T18:42:20+08:00
+```
+
+本地时间是持久化协议的一部分。数据库产生业务数据后，不应直接修改服务器或容器时区；确需修改时，必须同步迁移已有时间字段，避免新旧数据使用不同的墙上时间语义。开发机、CI、服务器和容器应配置为相同的时区。
 
 Docker 容器内的 Uvicorn 固定监听 `0.0.0.0:8000`。Compose 使用 `APP_PORT` 配置宿主机发布端口，默认将宿主机的 `8000` 端口映射到容器的 `8000` 端口：
 
@@ -68,7 +84,7 @@ uv run python -m app.interfaces.console users create \
 uv run python -m app.interfaces.console users list --offset 0 --limit 20
 ```
 
-用户命令直接调用 `ApplicationContainer.users.service`，不依赖 FastAPI、HTTP Controller 或 HTTP 响应结构。命令结果使用 JSON 输出，业务或领域校验失败时使用退出码 `2`。数据库迁移继续使用 Alembic 原生命令，不由 Console 重复包装。
+用户命令直接调用 `ApplicationContainer.users.service`，不依赖 FastAPI、HTTP Controller 或 HTTP 响应结构。命令结果使用 JSON 输出，业务时间沿用运行环境的本地墙上时间；业务或领域校验失败时使用退出码 `2`。数据库迁移继续使用 Alembic 原生命令，不由 Console 重复包装。
 
 公共 `ApplicationRuntime` 只管理容器的启动和关闭，不包含 HTTP、Console、Worker 或 Scheduler 的宿主逻辑。未来的队列 Worker 和定时任务入口可以复用该生命周期，但应继续作为独立进程和独立入站接口实现。
 

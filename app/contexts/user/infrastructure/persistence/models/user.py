@@ -7,7 +7,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.infrastructure.database.orm.main import MainBase
 
 
-class UserRecord(MainBase):
+class UserModel(MainBase):
     """用户聚合的数据库持久化模型。"""
 
     __tablename__ = "users"
@@ -23,5 +23,5 @@ class UserRecord(MainBase):
     email: Mapped[str] = mapped_column(String(254), nullable=False, comment="邮箱地址")
     display_name: Mapped[str] = mapped_column(String(80), nullable=False, comment="显示名称")
     status: Mapped[str] = mapped_column(String(16), nullable=False, comment="用户状态")
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, comment="创建时间")
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, comment="更新时间")
+    created_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False, comment="创建时间")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False, comment="更新时间")

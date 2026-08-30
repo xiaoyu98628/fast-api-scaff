@@ -1,6 +1,6 @@
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from uuid import UUID
 
 from app.contexts.user.application.dto import CreateUserCommand, UpdateUserCommand, UserDTO, UserPageDTO
@@ -11,16 +11,12 @@ from app.contexts.user.domain.user import User
 from app.contexts.user.domain.values import UserId
 
 
-def utc_now() -> datetime:
-    return datetime.now(UTC)
-
-
 @dataclass(frozen=True, slots=True)
 class UserApplicationService:
     """编排用户管理用例，不依赖 HTTP 或 SQLAlchemy。"""
 
     unit_of_work_factory: UserUnitOfWorkFactory
-    clock: Callable[[], datetime] = utc_now
+    clock: Callable[[], datetime] = datetime.now
 
     async def create(self, command: CreateUserCommand) -> UserDTO:
         user = User.create(
