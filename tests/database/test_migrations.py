@@ -7,6 +7,7 @@ from typing import cast
 import pytest
 from alembic import command
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 
 from app.config.database import DatabaseSettings
 from app.runtime.paths import PROJECT_ROOT
@@ -80,6 +81,7 @@ def test_main_migration_upgrade_creates_users_table(
 
     alembic_config = Config(str(PROJECT_ROOT / "database/main/alembic.ini"))
     command.upgrade(alembic_config, "head")
+    expected_revision = ScriptDirectory.from_config(alembic_config).get_current_head()
 
     with sqlite3.connect(database_path) as connection:
         users_schema = connection.execute(
@@ -90,7 +92,8 @@ def test_main_migration_upgrade_creates_users_table(
 
     assert users_schema is not None
     assert "CONSTRAINT ck_users_status" in users_schema[0]
-    assert revision == ("6e6d522f2b6f",)
+    assert expected_revision is not None
+    assert revision == (expected_revision,)
 
     command.downgrade(alembic_config, "base")
 
