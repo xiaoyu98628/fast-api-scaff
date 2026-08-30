@@ -10,6 +10,7 @@ from app.config.cache import CacheSettings
 from app.config.cors import CorsSettings
 from app.config.database import DatabaseSettings
 from app.config.settings import Settings
+from app.contexts.user.composition import build_user_context
 from app.infrastructure.cache.manager import CacheManager
 from app.infrastructure.database.manager import DatabaseManager
 
@@ -47,9 +48,11 @@ async def test_application_startup_failure_is_logged(caplog: pytest.LogCaptureFi
     async def fail_startup() -> None:
         raise RuntimeError("startup failed")
 
+    databases = DatabaseManager(settings.database)
     container = ApplicationContainer(
-        databases=DatabaseManager(settings.database),
+        databases=databases,
         caches=CacheManager(settings.cache),
+        users=build_user_context(databases),
         startup_callbacks=(fail_startup,),
     )
     app = create_app(settings, container_builder=lambda _settings: container)

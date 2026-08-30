@@ -1,16 +1,11 @@
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.config.base import BASE_SETTINGS_CONFIG
 from app.runtime.paths import STORAGE_DIR
-
-type DatabaseTablePrefix = Annotated[
-    str,
-    Field(pattern=r"^(?:[a-z][a-z0-9_]*_)?$"),
-]
 
 
 class DatabaseSettings(BaseSettings):
@@ -36,7 +31,6 @@ class BaseDatabaseSettings(BaseModel):
 
     echo: bool = False
     slow_query_ms: int = Field(default=500, ge=0)
-    table_prefix: DatabaseTablePrefix = ""
 
 
 class PooledDatabaseSettings(BaseDatabaseSettings):

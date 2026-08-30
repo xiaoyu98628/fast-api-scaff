@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from app.config.database import DatabaseSettings, MySQLDatabaseSettings, PostgreSQLDatabaseSettings, SQLiteDatabaseSettings
+from app.config.database import DatabaseSettings, SQLiteDatabaseSettings
 from app.runtime.paths import STORAGE_DIR
 
 
@@ -20,7 +20,6 @@ def test_nested_environment_is_loaded_as_raw_snapshot(monkeypatch: pytest.Monkey
     monkeypatch.setenv("DB_DEFAULT", "main")
     monkeypatch.setenv("DB_CONNECTIONS__MAIN__DRIVER", "sqlite")
     monkeypatch.setenv("DB_CONNECTIONS__MAIN__DATABASE", ":memory:")
-    monkeypatch.setenv("DB_CONNECTIONS__MAIN__TABLE_PREFIX", "main_")
 
     settings = DatabaseSettings(_env_file=None)
 
@@ -29,49 +28,8 @@ def test_nested_environment_is_loaded_as_raw_snapshot(monkeypatch: pytest.Monkey
         "main": {
             "driver": "sqlite",
             "database": ":memory:",
-            "table_prefix": "main_",
         }
     }
-
-
-@pytest.mark.parametrize(
-    "settings_type",
-    [MySQLDatabaseSettings, PostgreSQLDatabaseSettings, SQLiteDatabaseSettings],
-)
-def test_all_database_drivers_default_to_empty_table_prefix(settings_type: type[object]) -> None:
-    if settings_type is MySQLDatabaseSettings:
-        settings = MySQLDatabaseSettings(
-            driver="mysql",
-            host="127.0.0.1",
-            database="application",
-            username="user",
-            password="secret",
-        )
-    elif settings_type is PostgreSQLDatabaseSettings:
-        settings = PostgreSQLDatabaseSettings(
-            driver="postgresql",
-            host="127.0.0.1",
-            database="application",
-            username="user",
-            password="secret",
-        )
-    else:
-        settings = SQLiteDatabaseSettings(driver="sqlite", database=":memory:")
-
-    assert settings.table_prefix == ""
-
-
-@pytest.mark.parametrize(
-    "table_prefix",
-    ["FastApi_", "fast-api_", "123_", "missing_separator"],
-)
-def test_table_prefix_rejects_unstable_identifier_fragments(table_prefix: str) -> None:
-    with pytest.raises(ValidationError):
-        SQLiteDatabaseSettings(
-            driver="sqlite",
-            database=":memory:",
-            table_prefix=table_prefix,
-        )
 
 
 @pytest.mark.parametrize(
@@ -97,6 +55,6 @@ def test_database_driver_rejects_unknown_configuration_fields() -> None:
             {
                 "driver": "sqlite",
                 "database": ":memory:",
-                "echp": True,
+                "table_prefix": "legacy_",
             }
         )

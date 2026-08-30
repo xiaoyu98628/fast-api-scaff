@@ -45,7 +45,7 @@ def configure_logging(
                     "environment": settings.app.env,
                     "service_version": settings.app.version,
                     "timezone": settings.app.timezone,
-                }
+                },
             },
             "handlers": handlers,
             "root": {

@@ -120,7 +120,7 @@ docker compose up --build
 
 ## 应用容器
 
-数据库和缓存管理器都保存在 `ApplicationContainer` 中。FastAPI 生命周期启动时会创建容器，并将其保存到 `app.state.container`；应用关闭时，容器会统一释放已经创建的数据库和缓存资源。
+数据库、缓存管理器和各业务上下文都保存在 `ApplicationContainer` 中。每个业务上下文负责组装并公开自己的应用服务，避免将所有业务服务的构建细节集中到顶层组合根。FastAPI 生命周期启动时会创建容器，并将其保存到 `app.state.container`；应用关闭时，容器会统一释放已经创建的数据库和缓存资源。
 
 Controller 可以通过 `Request` 获取容器：
 
@@ -132,13 +132,15 @@ from app.bootstrap.container import ApplicationContainer
 
 async def example(request: Request) -> dict[str, object]:
     container: ApplicationContainer = request.app.state.container
+    user_service = container.users.service
     return {
         "databases": container.databases.connection_names,
         "caches": container.caches.connection_names,
+        "user_service": type(user_service).__name__,
     }
 ```
 
-业务代码应通过容器中的管理器获取资源，不要自行创建数据库 Engine、Redis 客户端或 Memcached 客户端。
+同一业务上下文增加应用服务时，只需调整该上下文的组合模块和容器，不需要修改顶层组合根。新增完整业务上下文时，仍需在 `ApplicationContainer` 中显式连接一次。业务代码应通过容器中的管理器获取资源，不要自行创建数据库 Engine、Redis 客户端或 Memcached 客户端。
 
 ## 延迟加载行为
 
@@ -265,6 +267,32 @@ async def search(request: Request) -> dict[str, object] | None:
 
 业务 HTTP Controller 位于 `app.interfaces.http.controllers`。`controllers/router.py` 聚合 `/api` 下的版本化接口，`controllers/v1/router.py` 聚合 `/api/v1` 下的业务接口。`routes/register.py` 负责将业务 Router 注册到 FastAPI 应用，并直接注册不属于业务上下文的 `/health` 宿主探活接口。
 
+## 用户管理
+
+`app.contexts.user` 是用户限界上下文，负责用户资料的创建、查询、更新、禁用和删除。当前上下文不包含密码、登录、Token、角色或权限；认证与授权能力不应直接堆叠到用户资料聚合中。
+
+用户上下文采用分层 DDD 结构：
+
+- `domain` 定义用户聚合、值对象、领域规则和 Repository 契约，不依赖 FastAPI 或 SQLAlchemy；
+- `application` 通过应用服务和 Unit of Work 契约编排用例；
+- `infrastructure.persistence` 使用 SQLAlchemy 实现 Repository、Data Mapper 和 Unit of Work；
+- `app.interfaces.http.controllers.v1.users` 负责请求模型、统一响应和业务异常到 HTTP 的转换；
+- `app.bootstrap` 是组合根，负责将具体 Unit of Work 注入用户应用服务。
+
+用户管理提供以下接口：
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `POST` | `/api/v1/users` | 创建用户 |
+| `GET` | `/api/v1/users/{user_id}` | 查询用户 |
+| `GET` | `/api/v1/users?offset=0&limit=20` | 分页查询用户 |
+| `PUT` | `/api/v1/users/{user_id}` | 完整更新用户资料和状态 |
+| `DELETE` | `/api/v1/users/{user_id}` | 删除用户，成功时返回 `204 No Content` |
+
+用户名会去除首尾空白并转换为小写，只能包含 3 到 32 位小写字母、数字或下划线；邮箱会去除首尾空白并转换为小写。用户名和邮箱都具有唯一约束。用户状态当前支持 `active` 和 `disabled`。
+
+用户写操作使用 Unit of Work 管理事务，应用服务不会自行创建或关闭数据库 Engine。删除当前采用物理删除；如果业务需要审计、恢复或数据保留策略，应先明确新的领域规则，再引入软删除。
+
 ## 统一响应
 
 普通 JSON API 使用统一响应结构。`code` 由三位 HTTP 状态码、三位服务编码和四位局部响应码组成，`APP_SERVICE_CODE` 用于配置当前服务的三位编码：
@@ -384,7 +412,6 @@ DB_CONNECTIONS__MAIN__DRIVER=postgresql
 DB_CONNECTIONS__MAIN__HOST=127.0.0.1
 DB_CONNECTIONS__MAIN__PORT=5432
 DB_CONNECTIONS__MAIN__DATABASE=fast-api
-DB_CONNECTIONS__MAIN__TABLE_PREFIX=
 DB_CONNECTIONS__MAIN__USERNAME=postgres
 DB_CONNECTIONS__MAIN__PASSWORD=postgres
 DB_CONNECTIONS__MAIN__ECHO=false
@@ -401,7 +428,6 @@ DB_CONNECTIONS__LEGACY__DRIVER=mysql
 DB_CONNECTIONS__LEGACY__HOST=127.0.0.1
 DB_CONNECTIONS__LEGACY__PORT=3306
 DB_CONNECTIONS__LEGACY__DATABASE=legacy
-DB_CONNECTIONS__LEGACY__TABLE_PREFIX=
 DB_CONNECTIONS__LEGACY__USERNAME=root
 DB_CONNECTIONS__LEGACY__PASSWORD=root
 DB_CONNECTIONS__LEGACY__CHARSET=utf8mb4
@@ -412,7 +438,6 @@ DB_CONNECTIONS__LEGACY__CHARSET=utf8mb4
 ```env
 DB_CONNECTIONS__LOCAL__DRIVER=sqlite
 DB_CONNECTIONS__LOCAL__DATABASE=data/database.sqlite
-DB_CONNECTIONS__LOCAL__TABLE_PREFIX=
 ```
 
 SQLite 相对路径基于项目的 `storage` 目录解析。上面的配置最终指向：
@@ -423,9 +448,7 @@ storage/data/database.sqlite
 
 也可以使用绝对路径或 `:memory:` 内存数据库。
 
-所有数据库连接都支持 `ECHO` 和 `TABLE_PREFIX`。`ECHO` 默认为 `false`；`TABLE_PREFIX` 默认为空字符串，表示不为 ORM 表名添加前缀。非空前缀只能包含小写字母、数字和下划线，必须以小写字母开头并以下划线结尾，例如 `fast_api_`。
-
-表前缀属于 ORM 结构标识，由 `orm/prefix.py` 独立解析，不属于运行时数据库连接资源。模型导入时会读取对应连接的前缀，修改配置后需要重启进程；已经投入使用的前缀不能直接修改，必须通过迁移显式重命名现有表。
+所有数据库连接都支持 `ECHO`，默认为 `false`。数据库表使用模型声明的固定名称；需要隔离不同服务的数据结构时，应使用独立数据库或数据库 Schema。
 
 PostgreSQL 和 MySQL 额外支持以下连接池配置：
 
@@ -478,21 +501,7 @@ uv run alembic -c database/main/alembic.ini current
 uv run alembic -c database/main/alembic.ini revision --autogenerate -m "create todos table"
 ```
 
-迁移模板为每个新迁移提供 `table_name()`。迁移文件应使用不含前缀的逻辑表名，并在执行时根据 main 连接的 `TABLE_PREFIX` 构建物理表名：
-
-```python
-def upgrade() -> None:
-    examples = table_name("examples")
-    op.create_table(examples, ...)
-
-
-def downgrade() -> None:
-    op.drop_table(table_name("examples"))
-```
-
-Alembic 自动生成的候选代码仍会包含生成环境中的物理表名，必须人工将表名、外键目标以及包含表名的索引和约束名称改为基于 `table_name()` 的动态形式。同一数据库在整条迁移链中必须保持同一个表前缀；修改已有数据库的前缀需要单独编写重命名迁移。
-
-自动生成的迁移必须完成上述检查后再执行。升级到最新版本：
+自动生成的迁移使用模型声明的固定表名。提交迁移前仍应检查 `upgrade()` 和 `downgrade()` 是否准确表达预期结构变化，尤其是表或字段重命名、数据迁移等 Alembic 无法可靠推断的操作。升级到最新版本：
 
 ```shell
 uv run alembic -c database/main/alembic.ini upgrade head
@@ -504,23 +513,21 @@ uv run alembic -c database/main/alembic.ini upgrade head
 uv run alembic -c database/main/alembic.ini downgrade -1
 ```
 
-main 数据库 ORM 模型继承实际定义模块中的 `MainBase`，并通过不含前缀的 `__table_name__` 声明核心表名：
+main 数据库 ORM 模型继承实际定义模块中的 `MainBase`，并通过 SQLAlchemy 标准的 `__tablename__` 声明表名：
 
 ```python
-from typing import ClassVar
-
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infrastructure.database.orm.main import MainBase
 
 
 class ExampleModel(MainBase):
-    __table_name__: ClassVar[str] = "examples"
+    __tablename__ = "examples"
 
     id: Mapped[int] = mapped_column(primary_key=True)
 ```
 
-如果 main 连接配置 `TABLE_PREFIX=fast_api_`，实际表名为 `fast_api_examples`。索引、联合索引、唯一约束和检查约束应在模型的 `__table_args__` 中显式定义；主键、外键等未显式命名的约束使用 ORM Metadata 的统一命名约定。新增模型模块时，还必须将该模块加入 main 迁移环境的模型加载入口，确保模型已经注册到 `MainBase.metadata`。
+实际表名与 `__tablename__` 一致。索引、联合索引、唯一约束和检查约束应在模型的 `__table_args__` 中显式定义；主键、外键等未显式命名的约束使用 ORM Metadata 的统一命名约定。新增 main 数据库 ORM 模型时，还必须将模型类加入 `database.main.model_registry` 的 `_MAIN_DATABASE_MODELS`，确保模型已经注册到 `MainBase.metadata`；Alembic 的 `env.py` 不直接导入业务 Model。
 
 ### 使用默认数据库
 
@@ -804,10 +811,17 @@ from app.infrastructure.cache.contracts.client import CacheClient
 
 ```text
 database/                       # 数据库迁移环境
-└── main/                       # main 数据库 Alembic 配置和版本脚本
+└── main/                       # main 数据库配置、模型注册和版本脚本
+    ├── model_registry.py       # main 数据库 ORM Model 显式注册入口
+    └── migrations/             # Alembic 环境和版本脚本
 app/
 ├── bootstrap/              # 应用创建、容器装配、生命周期和应用事件
 ├── config/                 # 应用、日志、数据库与缓存配置模型
+├── contexts/               # 按限界上下文组织的业务代码
+│   └── user/               # 用户限界上下文
+│       ├── domain/         # 聚合、值对象、领域异常和 Repository 契约
+│       ├── application/    # 用例 DTO、应用服务和 Unit of Work 契约
+│       └── infrastructure/ # SQLAlchemy 持久化适配器
 ├── infrastructure/
 │   ├── logging/            # 与业务框架无关的 Logging Core
 │   │   ├── configure.py    # 组装 Formatter、Filter 和 Handler

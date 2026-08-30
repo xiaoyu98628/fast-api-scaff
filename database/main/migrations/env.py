@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from app.config.database import DatabaseSettings
 from app.infrastructure.database.connections.resolver import resolve_database_definition
 from app.infrastructure.database.connections.spec import DatabaseEngineSpec
-from app.infrastructure.database.orm.main import MainBase
+from database.main.model_registry import load_main_database_metadata
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -24,7 +24,7 @@ if config.config_file_name is not None:
 # for 'autogenerate' support
 # from myapp import mymodel
 # target_metadata = mymodel.Base.metadata
-target_metadata = MainBase.metadata
+target_metadata = load_main_database_metadata()
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:

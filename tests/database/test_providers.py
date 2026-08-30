@@ -122,7 +122,6 @@ def test_sqlite_provider_builds_supported_engine_spec() -> None:
         {
             "driver": "sqlite",
             "database": ":memory:",
-            "table_prefix": "main_",
             "echo": True,
         }
     )
