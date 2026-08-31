@@ -26,7 +26,7 @@ cp sample.env .env
 
 ```env
 APP_NAME=fast-api-scaff
-APP_VERSION=3.0.0
+APP_VERSION=3.0.3
 APP_ENV=local
 APP_DEBUG=false
 APP_SERVICE_CODE=001
@@ -116,7 +116,7 @@ LOG_HANDLERS__STDOUT__STREAM=stdout
 `LOG_FORMAT=text` 的输出示例：
 
 ```text
-timestamp="2026-08-27T23:30:12.123+08:00" level="INFO" logger="app.interfaces.http.access" service="fast-api-scaff" environment="local" service_version="3.0.0" message="HTTP request completed" request_id="550e8400-e29b-41d4-a716-446655440000" event="http.request.completed" details={"method":"GET","route":"/items/{item_id}","status_code":200,"duration_ms":1.25}
+timestamp="2026-08-27T23:30:12.123+08:00" level="INFO" logger="app.interfaces.http.access" service="fast-api-scaff" environment="local" service_version="3.0.3" message="HTTP request completed" request_id="550e8400-e29b-41d4-a716-446655440000" event="http.request.completed" details={"method":"GET","route":"/items/{item_id}","status_code":200,"duration_ms":1.25}
 ```
 
 项目模块通过标准库获取 logger，不直接创建 Handler：
