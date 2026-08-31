@@ -14,7 +14,7 @@ class AppSettings(BaseSettings):
     )
 
     name: str = "fast-api-scaff"
-    version: str = "3.0.0"
+    version: str = "3.0.3"
     env: str = "local"
     debug: bool = False
     service_code: str = Field(default="001", pattern=r"^\d{3}$")

@@ -8,13 +8,12 @@ from app.config.cache import CacheSettings
 from app.config.cors import CorsSettings
 from app.config.database import DatabaseSettings
 from app.config.settings import Settings
-from app.interfaces.http.shared.response.codes.builder import (
-    ResponseCodeBuilder,
-    configure_response_code_builder,
-)
+from app.interfaces.http.dependencies.response import JsonResponseFactoryDependency
+from app.interfaces.http.shared.response.codes.builder import ResponseCodeBuilder
 from app.interfaces.http.shared.response.codes.contract import CodeDefinition
 from app.interfaces.http.shared.response.codes.error_code import ErrorCode
 from app.interfaces.http.shared.response.codes.success_code import SuccessCode
+from app.interfaces.http.shared.response.factory import JsonResponseFactory
 from app.interfaces.http.shared.response.json import JsonResponse
 
 
@@ -52,16 +51,11 @@ def test_response_code_definition_and_builder() -> None:
         ResponseCodeBuilder("01")
 
 
-def test_json_response_requires_configuration() -> None:
-    with pytest.raises(RuntimeError, match="尚未完成初始化"):
-        JsonResponse.success(data={"value": 1})
+def test_json_response_factory_builds_success_and_error() -> None:
+    responses = JsonResponseFactory(code_builder=ResponseCodeBuilder("123"))
 
-
-def test_json_response_builds_success_and_error() -> None:
-    configure_response_code_builder("123")
-
-    success = JsonResponse.success(data={"value": 1}, request_id="request-success")
-    error = JsonResponse.error(
+    success = responses.success(data={"value": 1}, request_id="request-success")
+    error = responses.error(
         ErrorCode.VALIDATION_ERROR,
         data={"field": "name"},
         request_id="request-error",
@@ -83,17 +77,34 @@ def test_json_response_builds_success_and_error() -> None:
     }
 
     with pytest.raises(ValueError, match="2xx"):
-        JsonResponse.success(data=None, code=ErrorCode.BAD_REQUEST)
+        responses.success(data=None, code=ErrorCode.BAD_REQUEST)
 
     with pytest.raises(ValueError, match="4xx 或 5xx"):
-        JsonResponse.error(SuccessCode.OK)
+        responses.error(SuccessCode.OK)
 
 
-def test_response_code_builder_rejects_conflicting_service_code() -> None:
-    configure_response_code_builder("001")
+def test_json_response_factories_keep_service_codes_isolated() -> None:
+    first = JsonResponseFactory(code_builder=ResponseCodeBuilder("001"))
+    second = JsonResponseFactory(code_builder=ResponseCodeBuilder("002"))
 
-    with pytest.raises(RuntimeError, match="同一进程不能配置多个服务编码"):
-        configure_response_code_builder("002")
+    assert first.success(data=None).code == "2000010000"
+    assert second.success(data=None).code == "2000020000"
+
+
+@pytest.mark.asyncio
+async def test_apps_keep_response_service_codes_isolated() -> None:
+    first_app = create_app(build_settings(service_code="001"))
+    second_app = create_app(build_settings(service_code="002"))
+
+    async with (
+        AsyncClient(transport=ASGITransport(app=first_app), base_url="http://first") as first_client,
+        AsyncClient(transport=ASGITransport(app=second_app), base_url="http://second") as second_client,
+    ):
+        first_response = await first_client.get("/health")
+        second_response = await second_client.get("/health")
+
+    assert first_response.json()["code"] == "2000010000"
+    assert second_response.json()["code"] == "2000020000"
 
 
 @pytest.mark.asyncio
@@ -123,8 +134,8 @@ async def test_non_ok_success_keeps_http_status_and_response_code_consistent(suc
         status_code=success_code.status_code,
         response_model=JsonResponse[dict[str, int]],
     )
-    async def create_item() -> JsonResponse[dict[str, int]]:
-        return JsonResponse.success(data={"id": 1}, code=success_code)
+    async def create_item(responses: JsonResponseFactoryDependency) -> JsonResponse[dict[str, int]]:
+        return responses.success(data={"id": 1}, code=success_code)
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
         response = await client.post("/items")

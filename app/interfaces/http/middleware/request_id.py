@@ -11,7 +11,7 @@ from app.infrastructure.logging.record import log_extra
 from app.interfaces.http.logging import HttpLogEvent
 from app.interfaces.http.shared.response.codes.builder import ResponseCodeBuilder
 from app.interfaces.http.shared.response.codes.error_code import ErrorCode
-from app.interfaces.http.shared.response.json import JsonResponse
+from app.interfaces.http.shared.response.factory import JsonResponseFactory
 
 _REQUEST_ID_LOGGER = logging.getLogger("app.interfaces.http.request_id")
 
@@ -45,14 +45,10 @@ def build_request_id_middleware(service_code: str) -> Middleware:
 
 def _build_invalid_request_id_response(service_code: str) -> StarletteJsonResponse:
     code = ErrorCode.BAD_REQUEST
-    code_builder = ResponseCodeBuilder(service_code)
-
-    payload = JsonResponse[object](
-        code=code_builder.build(code),
-        is_success=False,
-        message=code.message,
-        data=None,
+    responses = JsonResponseFactory(
+        code_builder=ResponseCodeBuilder(service_code),
     )
+    payload = responses.error(code)
 
     return StarletteJsonResponse(
         status_code=code.status_code,

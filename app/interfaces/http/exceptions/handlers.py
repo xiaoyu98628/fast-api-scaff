@@ -7,10 +7,10 @@ from starlette.exceptions import HTTPException
 from starlette.responses import JSONResponse as StarletteJsonResponse
 from starlette.responses import Response
 
+from app.interfaces.http.dependencies.response import provide_json_response_factory
 from app.interfaces.http.exceptions.error import HttpError
 from app.interfaces.http.shared.response.codes.contract import CodeContract, CodeDefinition
 from app.interfaces.http.shared.response.codes.error_code import ErrorCode
-from app.interfaces.http.shared.response.json import JsonResponse
 
 _HTTP_ERROR_CODES: dict[int, ErrorCode] = {
     400: ErrorCode.BAD_REQUEST,
@@ -39,14 +39,15 @@ async def render_exception(request: Request, exception: Exception) -> Response:
     return await handle_unexpected_exception(request, exception)
 
 
-async def handle_http_error(_request: Request, exception: Exception) -> Response:
+async def handle_http_error(request: Request, exception: Exception) -> Response:
     if not isinstance(exception, HttpError):
         raise TypeError("handle_http_error 只能处理 HttpError")
 
     if exception.code.status_code >= 500:
-        return _render_error(ErrorCode.INTERNAL_ERROR)
+        return _render_error(request, ErrorCode.INTERNAL_ERROR)
 
     return _render_error(
+        request,
         exception.code,
         message=exception.message,
         data=exception.data,
@@ -55,13 +56,14 @@ async def handle_http_error(_request: Request, exception: Exception) -> Response
 
 
 async def handle_request_validation_error(
-    _request: Request,
+    request: Request,
     exception: Exception,
 ) -> Response:
     if not isinstance(exception, RequestValidationError):
         raise TypeError("handle_request_validation_error 只能处理 RequestValidationError")
 
     return _render_error(
+        request,
         ErrorCode.VALIDATION_ERROR,
         data=_build_validation_data(exception),
     )
@@ -78,6 +80,7 @@ async def handle_http_exception(request: Request, exception: Exception) -> Respo
     message, data = _resolve_http_exception_content(exception)
 
     return _render_error(
+        request,
         code,
         message=message,
         data=data,
@@ -85,8 +88,8 @@ async def handle_http_exception(request: Request, exception: Exception) -> Respo
     )
 
 
-async def handle_unexpected_exception(_request: Request, _exception: Exception) -> Response:
-    return _render_error(ErrorCode.INTERNAL_ERROR)
+async def handle_unexpected_exception(request: Request, _exception: Exception) -> Response:
+    return _render_error(request, ErrorCode.INTERNAL_ERROR)
 
 
 def _resolve_http_error_code(status_code: int) -> CodeContract:
@@ -132,13 +135,15 @@ def _build_validation_data(exception: RequestValidationError) -> list[dict[str, 
 
 
 def _render_error(
+    request: Request,
     code: CodeContract,
     *,
     message: str | None = None,
     data: object | None = None,
     headers: Mapping[str, str] | None = None,
 ) -> Response:
-    payload = JsonResponse.error(
+    responses = provide_json_response_factory(request)
+    payload = responses.error(
         code,
         message=message,
         data=data,
