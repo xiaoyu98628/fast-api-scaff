@@ -5,7 +5,6 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
-import app.interfaces.http.shared.response.codes.builder as response_code_builder_module
 from app.bootstrap.app import create_app
 from app.config.app import AppSettings
 from app.config.cache import CacheSettings
@@ -13,11 +12,6 @@ from app.config.cors import CorsSettings
 from app.config.database import DatabaseSettings
 from app.config.settings import Settings
 from app.contexts.user.infrastructure.persistence.models.user import UserModel
-
-
-@pytest.fixture(autouse=True)
-def reset_response_code_builder(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(response_code_builder_module, "_response_code_builder", None)
 
 
 def build_settings() -> Settings:

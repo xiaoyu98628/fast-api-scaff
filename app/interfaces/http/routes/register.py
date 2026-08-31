@@ -2,11 +2,12 @@ from fastapi import FastAPI
 from starlette.requests import Request
 
 from app.interfaces.http.controllers.router import api_router
+from app.interfaces.http.dependencies.response import JsonResponseFactoryDependency
 from app.interfaces.http.shared.response.json import JsonResponse
 
 
-async def health(request: Request) -> JsonResponse[dict[str, str]]:
-    return JsonResponse.success(data={"message": "ok"})
+async def health(request: Request, responses: JsonResponseFactoryDependency) -> JsonResponse[dict[str, str]]:
+    return responses.success(data={"message": "ok"})
 
 
 def register_routes(app: FastAPI) -> None:

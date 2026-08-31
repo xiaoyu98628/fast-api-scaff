@@ -379,14 +379,15 @@ APP_SERVICE_CODE=001
 
 HTTP 状态码仍然表达请求的实际结果，不会因为使用统一响应而全部返回 `200`。`204 No Content`、文件下载、流式响应和 API 文档端点不使用统一 JSON 响应。`request_id` 与响应头 `X-Request-ID` 保持一致。
 
-HTTP Controller 通过 `JsonResponse` 的静态方法构造普通 JSON 响应，业务用例只返回业务结果，不依赖 HTTP 响应模型：
+HTTP Controller 注入当前 FastAPI 应用持有的 `JsonResponseFactory` 来构造普通 JSON 响应，业务用例只返回业务结果，不依赖 HTTP 响应模型：
 
 ```python
+from app.interfaces.http.dependencies.response import JsonResponseFactoryDependency
 from app.interfaces.http.shared.response.json import JsonResponse
 
 
-async def example() -> JsonResponse[dict[str, int]]:
-    return JsonResponse.success(data={"value": 1})
+async def example(responses: JsonResponseFactoryDependency) -> JsonResponse[dict[str, int]]:
+    return responses.success(data={"value": 1})
 ```
 
 `JsonResponse` 是响应体模型，不会自行修改 FastAPI 路由的 HTTP 状态码。返回 `201 Created`、`202 Accepted` 等非 `200` 成功响应时，路由和响应体必须复用同一个成功码定义：
@@ -394,6 +395,7 @@ async def example() -> JsonResponse[dict[str, int]]:
 ```python
 from fastapi import APIRouter
 
+from app.interfaces.http.dependencies.response import JsonResponseFactoryDependency
 from app.interfaces.http.shared.response.codes.success_code import SuccessCode
 from app.interfaces.http.shared.response.json import JsonResponse
 
@@ -406,20 +408,20 @@ router = APIRouter()
     status_code=SuccessCode.CREATED.status_code,
     response_model=JsonResponse[dict[str, int]],
 )
-async def create_item() -> JsonResponse[dict[str, int]]:
-    return JsonResponse.success(
+async def create_item(responses: JsonResponseFactoryDependency) -> JsonResponse[dict[str, int]]:
+    return responses.success(
         data={"id": 1},
         code=SuccessCode.CREATED,
     )
 ```
 
-这样实际 HTTP 状态和响应体中的完整响应码都会使用 `201`。如果只向 `JsonResponse.success()` 传入 `SuccessCode.CREATED`，而没有设置路由的 `status_code`，FastAPI 仍会返回默认的 `200 OK`。
+这样实际 HTTP 状态和响应体中的完整响应码都会使用 `201`。如果只向 `responses.success()` 传入 `SuccessCode.CREATED`，而没有设置路由的 `status_code`，FastAPI 仍会返回默认的 `200 OK`。
 
-应用创建时使用 `APP_SERVICE_CODE` 初始化进程级响应码构造器。同一 Python 进程只能对应一个服务编码，Controller 不需要注入响应工厂。SSE、`204 No Content`、文件下载和其他流式响应不使用 `JsonResponse`。
+应用创建时使用 `APP_SERVICE_CODE` 初始化该 FastAPI 应用自己的响应工厂；同一 Python 进程中的不同应用可以使用不同服务编码，互不影响。`JsonResponse` 只负责响应体数据结构，不持有应用状态。SSE、`204 No Content`、文件下载和其他流式响应不使用 `JsonResponseFactory`；后续如果 SSE 需要统一构造能力，应单独定义 SSE 响应工厂。
 
 ### 异常处理
 
-应用在 HTTP 边界统一注册异常处理器，并将普通 JSON API 的异常转换为 `JsonResponse.error()`：
+应用在 HTTP 边界统一注册异常处理器，并使用当前应用的 `JsonResponseFactory` 将普通 JSON API 的异常转换为统一错误响应：
 
 - 请求参数校验失败使用 `VALIDATION_ERROR` 和 `422`；
 - 路由不存在使用 `ROUTE_NOT_FOUND` 和 `404`；
