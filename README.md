@@ -329,6 +329,18 @@ async def search(request: Request) -> dict[str, object] | None:
 - `app.interfaces.http.controllers.v1.users` 负责请求模型、统一响应和业务异常到 HTTP 的转换；
 - `app.bootstrap` 是组合根，负责将具体 Unit of Work 注入用户应用服务。
 
+当前用户上下文只使用 `main` 数据库连接。`app.contexts.user.composition` 在组装应用服务时通过 `partial` 同时绑定 `DatabaseManager` 和连接名，应用服务得到的仍然是无参数 `UserUnitOfWorkFactory`，不会依赖数据库连接名称：
+
+```python
+unit_of_work_factory = partial(
+    SqlAlchemyUserUnitOfWork,
+    databases,
+    connection_name="main",
+)
+```
+
+一个 Unit of Work 表达一个事务边界，并对应一个固定数据库连接。后续如果用户上下文需要访问第二个数据库，应根据数据职责定义独立的 Repository 和 Unit of Work 工厂，并在组合层分别绑定连接；应用服务依赖这些业务契约，不直接传递 `main`、`legacy` 等基础设施连接名。两个独立数据库的事务不能通过依次调用两次 `commit()` 获得原子性：同一用例必须同时写入两个数据库时，应先明确一致性要求，再采用 Outbox、Saga、补偿机制，或者调整数据边界使强一致数据位于同一个数据库。
+
 用户管理提供以下接口：
 
 | 方法 | 路径 | 说明 |

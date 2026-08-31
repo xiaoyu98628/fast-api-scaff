@@ -13,8 +13,9 @@ from app.infrastructure.database.manager import DatabaseManager
 class SqlAlchemyUserUnitOfWork:
     """以一个 SQLAlchemy Session 实现用户用例事务。"""
 
-    def __init__(self, databases: DatabaseManager) -> None:
+    def __init__(self, databases: DatabaseManager, connection_name: str) -> None:
         self._databases = databases
+        self._connection_name = connection_name
         self._session_context: AbstractAsyncContextManager[AsyncSession] | None = None
         self._session: AsyncSession | None = None
         self._users: UserRepository | None = None
@@ -27,7 +28,7 @@ class SqlAlchemyUserUnitOfWork:
         return self._users
 
     async def __aenter__(self) -> SqlAlchemyUserUnitOfWork:
-        self._session_context = self._databases.session("main")
+        self._session_context = self._databases.session(self._connection_name)
         self._session = await self._session_context.__aenter__()
         self._users = SqlAlchemyUserRepository(self._session)
         return self
