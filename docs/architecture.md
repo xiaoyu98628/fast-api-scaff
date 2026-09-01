@@ -16,7 +16,7 @@ app/
 │       ├── application/    # 用例、Command/DTO、UoW 协议、应用错误
 │       ├── infrastructure/ # SQLAlchemy Repository/UoW/Mapper/Model
 │       └── composition.py  # 用户上下文装配
-├── infrastructure/        # 跨上下文基础设施能力：数据库、缓存、日志
+├── infrastructure/        # 跨上下文基础设施能力：数据库、缓存、HTTP 出站、日志
 ├── interfaces/
 │   ├── http/               # FastAPI 宿主
 │   └── console/            # Typer 宿主
@@ -47,7 +47,7 @@ infrastructure ┘      ↑
 - Interfaces 依赖 Application DTO/错误，不把 FastAPI/Typer 传入业务层；
 - Bootstrap/Composition 是允许知道具体实现的装配边界。
 
-`tests/test_architecture.py` 用 AST 检查 Domain 与 Application 的导入。相对导入也会被视为违规，项目统一要求绝对、显式导入。这类测试防止边界在日常迭代中悄悄腐化。
+`tests/test_architecture.py` 用 AST 检查 Domain、Application、Infrastructure 与 Interfaces 的导入。它不仅保护核心层，还禁止共享 Infrastructure 反向依赖业务或宿主、上下文 Infrastructure 跨上下文依赖，以及 Interfaces 直接穿透到上下文 Infrastructure。相对导入也会被视为违规，项目统一要求绝对、显式导入。这类测试防止边界在日常迭代中悄悄腐化。
 
 ## 3. 用户限界上下文
 
@@ -135,6 +135,7 @@ Application Service 可以做跨聚合的流程编排和权限决策，但不应
 
 - `DatabaseManager`；
 - `CacheManager`；
+- `HttpClientManager`；
 - 已组装的 `UserContext`；
 - 启动和关闭 callback。
 
@@ -150,11 +151,13 @@ Application Service 可以做跨聚合的流程编排和权限决策，但不应
 
 - 防止同一 runtime 重复启动；
 - 构建容器并执行 startup callbacks；
-- 启动失败时尝试关闭；
+- 启动失败时尝试关闭；若启动与清理同时失败，以异常组完整保留两侧根因；
 - 关闭时先清空当前引用，再聚合资源关闭错误；
 - 支持 `async with`。
 
-HTTP lifespan 和 Console 都复用 runtime。这样资源的初始化、失败清理和关闭顺序不会在不同入口重复实现。
+HTTP lifespan 和 Console 都复用 runtime。这样资源的初始化、失败清理和关闭顺序不会在不同入口重复实现。数据库、缓存和 HTTP 出站资源都由管理器延迟创建，并由容器 callback 逆序关闭；未初始化资源不会在关闭阶段被创建。关闭进入不可取消清理区间，单个 callback 失败或收到取消后仍会尝试剩余 callback，最后通过异常组保留全部根因。Manager/延迟资源是一次性生命周期对象，关闭开始后拒绝新获取，也不能通过再次调用 `get()` 隐式重建。
+
+顶层 HTTP 出站能力只负责驱动无关请求、连接池、超时、传输错误和日志，不知道具体上游协议。上下文若需要调用外部服务，应在自己的 application 层定义业务窄端口，在 infrastructure 层使用公共 HTTP 客户端实现，并由 composition 注入；application service 不应持有整个容器，也不应直接导入 HTTPX。
 
 未来增加常驻 Scheduler 时，也应建立独立宿主：读取同一 Settings、配置适合 Scheduler 的日志、通过 Runtime 获取容器、响应终止信号并优雅关闭。它不应通过 HTTP 请求或系统 cron 间接触发，也不应把无限循环塞进 Console 命令。但当前仓库尚未实现 Scheduler，以上只是扩展边界，不是现有功能。
 

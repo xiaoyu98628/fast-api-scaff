@@ -1,5 +1,6 @@
 from functools import partial
 
+from anyio import CancelScope
 from pydantic import ValidationError
 
 from app.config.cache import CacheSettings
@@ -62,16 +63,17 @@ class CacheManager:
         return await resource.get()
 
     async def aclose(self) -> None:
-        errors: list[Exception] = []
+        errors: list[BaseException] = []
 
-        for resource in reversed(tuple(self._resources.values())):
-            try:
-                await resource.aclose()
-            except Exception as error:
-                errors.append(error)
+        with CancelScope(shield=True):
+            for resource in reversed(tuple(self._resources.values())):
+                try:
+                    await resource.aclose()
+                except BaseException as error:
+                    errors.append(error)
 
         if errors:
-            raise ExceptionGroup("缓存客户端关闭失败", errors)
+            raise BaseExceptionGroup("缓存客户端关闭失败", errors)
 
     async def _create(self, definition: CacheResourceDefinition) -> ManagedCacheResource:
         resource = await definition.factory()

@@ -1,12 +1,16 @@
+import asyncio
+
 import pytest
 
 from app.bootstrap.container import ApplicationContainer
 from app.bootstrap.runtime import ApplicationRuntime
 from app.config.cache import CacheSettings
 from app.config.database import DatabaseSettings
+from app.config.http import HttpSettings
 from app.contexts.user.composition import build_user_context
 from app.infrastructure.cache.manager import CacheManager
 from app.infrastructure.database.manager import DatabaseManager
+from app.infrastructure.http.manager import HttpClientManager
 
 
 def build_container(
@@ -16,12 +20,14 @@ def build_container(
 ) -> ApplicationContainer:
     databases = DatabaseManager(DatabaseSettings(_env_file=None))
     caches = CacheManager(CacheSettings(_env_file=None))
+    http = HttpClientManager(HttpSettings(_env_file=None))
     return ApplicationContainer(
         databases=databases,
         caches=caches,
+        http=http,
         users=build_user_context(databases),
         startup_callbacks=startup_callbacks,
-        async_shutdown_callbacks=(*async_shutdown_callbacks, databases.aclose, caches.aclose),
+        async_shutdown_callbacks=(*async_shutdown_callbacks, databases.aclose, caches.aclose, http.aclose),
     )
 
 
@@ -66,6 +72,53 @@ async def test_runtime_closes_container_when_start_fails() -> None:
 
     assert runtime.container is None
     assert events == ["start", "stop"]
+
+
+@pytest.mark.asyncio
+async def test_runtime_preserves_startup_and_cleanup_failures() -> None:
+    startup_error = RuntimeError("startup failed")
+    cleanup_error = RuntimeError("cleanup failed")
+
+    async def fail_start() -> None:
+        raise startup_error
+
+    async def fail_cleanup() -> None:
+        raise cleanup_error
+
+    container = build_container(
+        startup_callbacks=(fail_start,),
+        async_shutdown_callbacks=(fail_cleanup,),
+    )
+    runtime = ApplicationRuntime(lambda: container)
+
+    with pytest.raises(ExceptionGroup, match="startup and cleanup failed") as captured_error:
+        await runtime.start()
+
+    assert captured_error.value.exceptions[0] is startup_error
+    shutdown_group = captured_error.value.exceptions[1]
+    assert isinstance(shutdown_group, ExceptionGroup)
+    assert shutdown_group.exceptions == (cleanup_error,)
+    assert runtime.container is None
+
+
+@pytest.mark.asyncio
+async def test_container_continues_shutdown_after_cancellation() -> None:
+    events: list[str] = []
+
+    async def cancelled() -> None:
+        events.append("cancelled")
+        raise asyncio.CancelledError
+
+    async def remaining() -> None:
+        events.append("remaining")
+
+    container = build_container(async_shutdown_callbacks=(remaining, cancelled))
+
+    with pytest.raises(BaseExceptionGroup) as captured_error:
+        await container.aclose()
+
+    assert events == ["cancelled", "remaining"]
+    assert any(isinstance(error, asyncio.CancelledError) for error in captured_error.value.exceptions)
 
 
 @pytest.mark.asyncio

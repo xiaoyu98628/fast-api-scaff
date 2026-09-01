@@ -185,7 +185,7 @@ async def check_cache(container: ApplicationContainer) -> bool:
 
 `connection_names` 只是配置名称，`is_initialized` 只是资源创建状态，只有实际 `ping`/读写能说明后端当前可达。
 
-应用关闭会逆序关闭已初始化缓存资源。多个关闭错误会聚合，不会只保留最后一个。
+应用关闭会逆序关闭已初始化缓存资源。多个关闭错误会聚合，不会只保留最后一个。Manager 进入关闭后是终态：不会创建未初始化资源，也不允许再次获取客户端；新的宿主生命周期必须构建新的容器和 Manager。
 
 ## 9. 错误分类与降级
 

@@ -74,6 +74,8 @@ Provider 负责把严格校验后的配置转换为与 SQLAlchemy 有关的 Engi
 - `/health` 不访问数据库；
 - 宿主关闭时只 dispose 已初始化的 Engine。
 
+Manager 进入关闭后是终态：不会创建尚未初始化的 Engine，也不允许再次 `get/session`。需要重新启动时必须由新的应用 Runtime 构建新容器，不能复用已经关闭的 Manager。
+
 如果需要数据库就绪探针，应显式定义就绪语义和超时，并与仅表示进程存活的健康检查区分。
 
 ## 5. Engine 与 Session

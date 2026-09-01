@@ -13,6 +13,7 @@ from app.config.app import AppSettings
 from app.config.cache import CacheSettings
 from app.config.cors import CorsSettings
 from app.config.database import DatabaseSettings
+from app.config.http import HttpSettings
 from app.config.settings import Settings
 from app.contexts.user.application.dto import CreateUserCommand, UserDTO, UserPageDTO
 from app.contexts.user.application.service import UserApplicationService
@@ -21,6 +22,8 @@ from app.contexts.user.domain.errors import InvalidUserDataError
 from app.contexts.user.domain.values import UserStatus
 from app.infrastructure.cache.manager import CacheManager
 from app.infrastructure.database.manager import DatabaseManager
+from app.infrastructure.http.errors import HttpTransportError
+from app.infrastructure.http.manager import HttpClientManager
 from app.interfaces.console.application import ConsoleApplication
 from app.interfaces.console.exit_codes import ConsoleExitCode
 from app.interfaces.console.main import create_console, run_console
@@ -76,11 +79,14 @@ def build_console(service: FakeUserService) -> tuple[CliRunner, typer.Typer]:
 
     def build_container(_settings: Settings) -> ApplicationContainer:
         databases = DatabaseManager(settings.database)
+        caches = CacheManager(settings.cache)
+        http = HttpClientManager(HttpSettings(_env_file=None))
         return ApplicationContainer(
             databases=databases,
-            caches=CacheManager(settings.cache),
+            caches=caches,
+            http=http,
             users=UserContext(service=cast(UserApplicationService, service)),
-            async_shutdown_callbacks=(databases.aclose,),
+            async_shutdown_callbacks=(databases.aclose, caches.aclose, http.aclose),
         )
 
     console = ConsoleApplication(
@@ -219,6 +225,19 @@ def test_run_console_renders_expected_configuration_error(capsys: pytest.Capture
     assert output.out == ""
     assert "Error: 配置 service_code：" in output.err
     assert "Traceback" not in output.err
+
+
+def test_run_console_renders_outbound_http_error(capsys: pytest.CaptureFixture[str]) -> None:
+    def fail() -> None:
+        raise HttpTransportError("上游服务不可用")
+
+    with pytest.raises(SystemExit) as exit_error:
+        run_console(fail, ConsolePresenter())
+
+    output = capsys.readouterr()
+    assert exit_error.value.code == ConsoleExitCode.FAILURE
+    assert output.out == ""
+    assert output.err.strip() == "Error: 上游服务不可用"
 
 
 def test_run_console_preserves_unexpected_programming_error() -> None:

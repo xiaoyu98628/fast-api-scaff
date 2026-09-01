@@ -153,7 +153,21 @@ HTTP lifespan 产生：
 
 `statement_id` 是归一化 SQL 的短哈希，用于聚合相同查询，不是安全校验值，也不能还原 SQL。
 
-## 9. HTTP 与 Console 的输出差异
+## 9. HTTP 出站日志
+
+出站客户端使用 `app.infrastructure.http` logger，事件包括：
+
+- `http.outbound.request.completed/failed/cancelled`；
+- `http.outbound.stream.connected/completed/failed/cancelled`；
+- `http.outbound.pool.timeout`；
+- `http.outbound.pool.orphan_discarded/orphan_close_failed/compatibility_failed`；
+- `http.outbound.resource.created/closed`。
+
+请求 details 只记录 method、origin、可选 operation、状态码、耗时、响应大小和错误类型，不记录 URL path、query、header 或 body。operation 必须是调用方定义的稳定低基数字段，不能包含用户 ID、token 或完整 URL。
+
+任务取消保持取消语义，以 `cancelled` INFO 事件记录，不记录为出站 ERROR。连接池等待超时先记录 `pool.timeout` WARNING，随后由公共客户端记录对应请求或流的失败事件。流上下文内由调用方业务代码抛出的非 HTTP 异常不会伪装成 `stream.failed`；底层传输和读取错误仍会记录失败事件。连接池孤儿清理是固定 HTTPX/httpcore 版本下的取消兼容行为，出现 compatibility 事件时应检查依赖是否被升级。
+
+## 10. HTTP 与 Console 的输出差异
 
 | 宿主 | stream 配置为 stdout 时 | 原因 |
 | --- | --- | --- |
@@ -168,7 +182,7 @@ uv run python -m app.interfaces.console users list 1>result.json 2>command.log
 
 不要绕过项目配置给 Console 新增直接写 stdout 的日志 handler，否则会破坏这个契约。
 
-## 10. Handler 与驱动
+## 11. Handler 与驱动
 
 当前内置驱动只有 `stream`：
 
@@ -183,7 +197,7 @@ uv run python -m app.interfaces.console users list 1>result.json 2>command.log
 
 同时输出两个流在多数场景会产生重复日志，不建议把相同级别无过滤地写 stdout 和 stderr。需要按级别分流时，应先设计过滤器和采集规则，而不是仅激活两个 handler。
 
-## 11. 扩展日志驱动
+## 12. 扩展日志驱动
 
 1. 定义严格配置模型；
 2. 实现 `LoggingDriverBuilder`，返回标准库 dictConfig handler 片段；
@@ -195,7 +209,7 @@ uv run python -m app.interfaces.console users list 1>result.json 2>command.log
 
 远程日志传输更适合由 stdout + 部署侧采集器完成。若应用进程直连远端日志服务，必须避免在事件循环中阻塞，并明确失败是否影响业务请求。
 
-## 12. 敏感信息规则
+## 13. 敏感信息规则
 
 禁止记录：
 
@@ -207,7 +221,7 @@ uv run python -m app.interfaces.console users list 1>result.json 2>command.log
 
 可以记录稳定 ID、字段名、约束名、错误类型、耗时和状态。需要调试敏感字段时也应脱敏、限时并有明确删除/恢复步骤。
 
-## 13. 常见问题
+## 14. 常见问题
 
 | 症状 | 检查项 |
 | --- | --- |
@@ -218,6 +232,8 @@ uv run python -m app.interfaces.console users list 1>result.json 2>command.log
 | 业务日志没有 request ID | 是否在 HTTP 请求上下文内、是否使用已配置 handler |
 | 同一请求有两条访问日志 | 是否又启用了 `uvicorn.access` 或代理重复采集 |
 | 看不到普通 SQL | 默认只记录慢/失败查询；目标连接 `ECHO` 是否开启 |
+| 出站请求没有 path/query | 按脱敏设计只记录 origin 和 operation |
+| 请求取消后出现孤儿清理告警 | 检查取消频率；若出现 compatibility 事件则核对锁定依赖版本 |
 | 日志量突然增大 | `LOG_LEVEL`、数据库 ECHO、访问日志排除和重复 handler |
 | 时间 offset 不正确 | 宿主 `TZ` 和进程重启 |
 

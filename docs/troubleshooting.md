@@ -47,6 +47,8 @@ git status --short
 | Alembic autogenerate 无变化 | Model 未注册 | 更新 `database/main/model_registry.py` |
 | 普通 SQL 没日志 | ECHO 默认 false | 临时开启目标连接 ECHO 并评估敏感信息 |
 | request ID 不在日志 | 不在 HTTP 上下文或日志未走配置 handler | 查中间件顺序和 logger/handler |
+| 出站请求等待连接池超时 | 目标池容量耗尽或流未关闭 | 查普通/流式池配置、并发和 `async with` |
+| 出站请求未走预期代理 | `HTTP_TRUST_ENV=false` | 明确启用后检查 proxy/NO_PROXY 环境变量 |
 
 ## 3. 配置加载失败
 
@@ -170,7 +172,32 @@ uv run alembic -c database/main/alembic.ini current
 - 最终 key UTF-8 最长 250 字节；
 - codec 变更后旧值可能解码失败，使用 schema 版本和有限 TTL。
 
-## 8. Console 问题
+## 8. HTTP 出站问题
+
+### 连接、超时与状态码
+
+- `HttpPoolTimeoutError` 表示等待连接池容量超时，区分普通池与流式池配置；
+- `HttpTimeoutError` 表示连接、读或写阶段超时；
+- `HttpTransportError` 表示网络或传输协议失败；
+- `HttpResponseTooLargeError` 表示普通响应解压后超过 `HTTP_MAX_RESPONSE_BYTES`，需要核对上游契约或改用带业务限制的流式消费；
+- 4xx/5xx 不会自动抛异常，应由具体上游适配器按协议检查；
+- 基础客户端不会自动重试，不能通过盲目重发 POST 掩盖超时。
+
+连接池容量超时会产生 `http.outbound.pool.timeout` WARNING，并带有 `pool=standard` 或 `pool=stream`；同一次调用随后还会产生对应请求/流失败事件。任务取消使用 `request.cancelled` 或 `stream.cancelled` INFO 事件，不应按上游故障告警。
+
+若只有流式请求耗尽容量，确认每次都使用 `async with container.http.stream(...)`，并检查消费任务是否能够响应取消。普通与流式请求使用不同连接池，调整时不要只改 `HTTP_POOL__*`。
+
+### TLS、代理与版本兼容
+
+生产应保持 `HTTP_VERIFY=true` 并修复证书链。`HTTP_TRUST_ENV=false` 时不会读取进程代理变量；启用后同时检查 `HTTP_PROXY`、`HTTPS_PROXY` 和 `NO_PROXY`，避免内部地址误走代理。
+
+若出现 `http.outbound.pool.compatibility_failed`，检查 `httpx` 与 `httpcore` 是否仍是项目锁定版本。请求取消清理依赖固定版本的私有连接池结构，升级后必须运行 `tests/outbound_http/test_http11_cancellation.py` 和全量验证。
+
+日志默认不包含 path、query、header 或 body。用稳定 `operation` 定位调用，再结合已脱敏的上游错误和分布式追踪信息排查；不要为了临时诊断记录 Authorization 或完整响应体。
+
+若请求目标来自 HTTP/Console 输入，不要把用户提供的完整 URL 直接交给出站客户端。目标 scheme、host 和 port 必须来自受信任配置，业务输入只能作为经过校验和编码的 path/query 数据，否则可能形成 SSRF。
+
+## 9. Console 问题
 
 ### 退出码 2
 
@@ -195,7 +222,7 @@ uv run python -m app.interfaces.console users list 1>result.json 2>error.log
 - 是否存在重复 group/name 或不一致 group_help；
 - import 顶层是否抛错或执行外部副作用。
 
-## 9. 日志问题
+## 10. 日志问题
 
 ### 没有日志
 
@@ -216,7 +243,7 @@ uv run python -m app.interfaces.console users list 1>result.json 2>error.log
 
 日志时间是本地 aware 时间，领域数据是本地 naive 时间，两者表现不同但应对应同一 `TZ`。request ID 只在 HTTP 上下文自然存在；Console/启动日志没有是正常行为。
 
-## 10. Docker 问题
+## 11. Docker 问题
 
 当前 `compose.yml` 只启动应用服务。它：
 
@@ -230,7 +257,7 @@ uv run python -m app.interfaces.console users list 1>result.json 2>error.log
 
 Dockerfile 的生产默认命令不带 reload，但 Compose 覆盖了它。不要把当前 Compose 直接当生产编排。
 
-## 11. 时间不一致
+## 12. 时间不一致
 
 当前设计要求本地无时区业务时间。常见错误：
 
@@ -242,7 +269,7 @@ Dockerfile 的生产默认命令不带 reload，但 Compose 覆盖了它。不�
 
 解决前先明确旧值究竟代表哪个时区。不要仅通过加/减 8 小时“修复”表象。跨时区改造必须同步 Domain、时钟、DTO、ORM、迁移和客户端契约。
 
-## 12. 架构测试失败
+## 13. 架构测试失败
 
 错误形如：
 
@@ -254,7 +281,7 @@ app/contexts/example/application/service.py:10 imports app.infrastructure.cache.
 
 跨上下文协作也不要直接 import 对方 infrastructure。通过明确的公开应用端口或上层 workflow 协调，并明确事务/一致性边界。
 
-## 13. 仍无法定位时
+## 14. 仍无法定位时
 
 保留以下最小证据：
 

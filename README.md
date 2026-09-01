@@ -10,10 +10,11 @@
 - MySQL、PostgreSQL、SQLite 异步 SQLAlchemy；
 - Repository、Mapper、Unit of Work 与 Alembic migration；
 - Redis、Memcached、Memory 字节级 KV 缓存；
+- 普通与流式 HTTP 出站请求、独立连接池、阶段超时和结构化日志；
 - JSON/Text 结构化日志、request ID、访问日志和数据库查询日志；
 - 架构依赖测试、pytest、Ruff 与 ty 检查。
 
-当前不包含认证/授权、常驻 Scheduler/Worker、领域事件/Outbox/Saga、跨数据库原子事务、Redis 高级数据结构或缓存自动降级。它们需要按实际业务边界设计，不能把规划项当作现有功能。
+当前不包含认证/授权、常驻 Scheduler/Worker、领域事件/Outbox/Saga、跨数据库原子事务、Redis 高级数据结构、缓存自动降级或通用 HTTP 自动重试。它们需要按实际业务边界设计，不能把规划项当作现有功能。
 
 ## 五分钟启动
 
@@ -83,6 +84,8 @@ docker compose up --build
 
 当前 `compose.yml` 只启动应用，不提供 MySQL、PostgreSQL、Redis 或 Memcached。容器内 `127.0.0.1` 指向容器自身；请使用 SQLite + Memory，或配置容器可访问的外部服务地址。Compose 使用 Uvicorn reload，仅适合本地开发。
 
+生产镜像以 UID/GID 1000 的非 root 用户运行。镜像中的应用代码和虚拟环境由 root 持有，运行用户只对 `storage/data`、`storage/logs` 和自己的 home 目录拥有写权限。Compose 会把项目目录挂载到 `/app`；若使用 SQLite 或其他本地文件存储，请确保宿主机对应目录允许该用户写入。需要适配其他运行平台时，可通过 `APP_UID`、`APP_GID` 构建参数覆盖镜像用户。
+
 ## 文档
 
 - [完整手册导航](docs/index.md)
@@ -92,6 +95,7 @@ docker compose up --build
 - [Console 命令](docs/console.md)
 - [数据库](docs/database.md)
 - [缓存](docs/cache.md)
+- [HTTP 出站请求](docs/outbound-http.md)
 - [日志](docs/logging.md)
 - [架构说明](docs/architecture.md)
 - [开发与质量](docs/development.md)

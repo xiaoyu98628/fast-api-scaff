@@ -2,6 +2,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from functools import partial
 
+from anyio import CancelScope
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from app.config.database import DatabaseSettings
@@ -63,16 +64,17 @@ class DatabaseManager:
             yield session
 
     async def aclose(self) -> None:
-        errors: list[Exception] = []
+        errors: list[BaseException] = []
 
-        for resource in reversed(tuple(self._resources.values())):
-            try:
-                await resource.aclose()
-            except Exception as error:
-                errors.append(error)
+        with CancelScope(shield=True):
+            for resource in reversed(tuple(self._resources.values())):
+                try:
+                    await resource.aclose()
+                except BaseException as error:
+                    errors.append(error)
 
         if errors:
-            raise ExceptionGroup("数据库资源关闭失败", errors)
+            raise BaseExceptionGroup("数据库资源关闭失败", errors)
 
     async def _create(
         self,

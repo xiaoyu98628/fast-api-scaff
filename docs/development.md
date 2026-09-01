@@ -82,7 +82,7 @@ Ruff format 的 `--check` 不修改文件；实际格式化会改变代码，执
 - not found、预检查冲突；
 - 异常时不误提交；
 - DTO 不泄露聚合可变状态；
-- offset/limit 等用例输入语义。
+- 查询顺序、分页结果和 DTO 组装。
 
 ### Infrastructure
 
@@ -98,17 +98,20 @@ Ruff format 的 `--check` 不修改文件；实际格式化会改变代码，执
 
 ### Interface
 
-HTTP 测试覆盖 status、统一响应、schema、错误映射、中间件和 OpenAPI；Console 测试覆盖参数、stdout/stderr、退出码、发现和生命周期。
+HTTP 测试覆盖 status、统一响应、schema、分页等请求参数约束、错误映射、中间件和 OpenAPI；Console 测试覆盖参数约束、stdout/stderr、退出码、发现和生命周期。
 
 不要让 HTTP 测试成为唯一业务测试，否则 Console 或未来其他宿主复用时无法证明规则独立于 FastAPI。
 
 ## 4. 架构约束
 
-架构测试扫描 `app/contexts/*/domain` 与 `application` 的绝对 import：
+架构测试扫描项目模块的绝对 import，并保护以下方向：
 
 - Domain 只能依赖当前上下文 Domain 和标准库；
 - Application 只能依赖当前上下文 Application/Domain 和标准库；
-- 相对导入视为违规；
+- 顶层共享 Infrastructure 不能反向依赖 Bootstrap、Contexts 或 Interfaces；
+- 上下文 Infrastructure 不能依赖宿主、全局 Bootstrap、其他上下文或全局组合根；
+- Interfaces 不能绕过上下文边界直接依赖上下文 Infrastructure；
+- `app/` 内相对导入视为违规；
 - 一个上下文不能直接 import 另一个上下文内部层。
 
 这项测试没有覆盖所有设计问题。例如它不能发现 application service 接收 `object` 后在运行时当容器使用，也不能判断 Repository 是否偷偷 commit。因此仍需要构造签名审查、代码审查和行为测试。

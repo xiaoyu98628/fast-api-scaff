@@ -11,6 +11,7 @@
 | 应用 | `APP_` | `APP_NAME` |
 | 日志 | `LOG_` | `LOG_LEVEL` |
 | CORS | `CORS_` | `CORS_ALLOW_ORIGINS` |
+| HTTP 出站 | `HTTP_` | `HTTP_TIMEOUT__CONNECT` |
 | 数据库 | `DB_` | `DB_CONNECTIONS__MAIN__DRIVER` |
 | 缓存 | `CACHE_` | `CACHE_CONNECTIONS__LOCAL__DRIVER` |
 
@@ -86,7 +87,39 @@ handler 定义、驱动和输出协议详见[日志](logging.md)。配置中的 
 
 当 `CORS_ALLOW_CREDENTIALS=true` 时，`CORS_ALLOW_ORIGINS` 不能包含 `*`，配置模型会拒绝启动。生产环境建议显式列出来源、方法和请求头，不要把默认通配符当成安全策略。
 
-## 6. 数据库全局配置
+## 6. HTTP 出站配置
+
+HTTP 出站配置在 `load_settings()` 时严格校验，普通请求和流式请求共享阶段超时，但使用独立连接池。
+
+阶段超时：
+
+| 变量 | 类型 | 默认值 | 约束与说明 |
+| --- | --- | --- | --- |
+| `HTTP_TIMEOUT__CONNECT` | `float` | `3.0` | 建立 TCP/TLS 连接，正数秒 |
+| `HTTP_TIMEOUT__READ` | `float` | `10.0` | 等待响应数据，正数秒 |
+| `HTTP_TIMEOUT__WRITE` | `float` | `10.0` | 发送请求数据，正数秒 |
+
+普通连接池使用 `HTTP_POOL__*`，流式连接池使用 `HTTP_STREAM_POOL__*`：
+
+| 后缀 | 普通池默认值 | 流式池默认值 | 约束与说明 |
+| --- | --- | --- | --- |
+| `TIMEOUT` | `5.0` | `10.0` | 等待连接池容量，正数秒 |
+| `MAX_CONNECTIONS` | `100` | `100` | 总连接数，至少 1 |
+| `MAX_KEEPALIVE_CONNECTIONS` | `20` | `10` | keep-alive 容量，0 到总连接数 |
+| `KEEPALIVE_EXPIRY` | `30.0` | `30.0` | 空闲连接过期时间，正数秒 |
+
+其他配置：
+
+| 变量 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `HTTP_VERIFY` | `bool` | `true` | 验证服务端 TLS 证书；生产不应关闭 |
+| `HTTP_FOLLOW_REDIRECTS` | `bool` | `false` | 是否自动跟随重定向 |
+| `HTTP_TRUST_ENV` | `bool` | `false` | 是否读取 `HTTP_PROXY`、`HTTPS_PROXY`、`NO_PROXY` 等环境变量 |
+| `HTTP_MAX_RESPONSE_BYTES` | `int` | `10485760` | 普通响应解压后的最大缓冲字节数，至少为 1；不限制流式响应 |
+
+连接池延迟到首次出站请求时创建。配置不包含具体上游地址、认证或自动重试策略；这些属于使用该上游的上下文适配器。调用方式、错误和流生命周期见[HTTP 出站请求](outbound-http.md)。
+
+## 7. 数据库全局配置
 
 | 变量 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
@@ -95,7 +128,7 @@ handler 定义、驱动和输出协议详见[日志](logging.md)。配置中的 
 
 连接定义会在该连接第一次被获取时解析和严格校验，不是统一在进程读取 `.env` 时全部校验。因此一个从未使用的错误数据库连接可能不会阻止 `/health`，但会在首次访问时失败。
 
-### 6.1 公共字段
+### 7.1 公共字段
 
 | 后缀 | 类型 | 默认值 | 约束 |
 | --- | --- | --- | --- |
@@ -103,7 +136,7 @@ handler 定义、驱动和输出协议详见[日志](logging.md)。配置中的 
 | `ECHO` | `bool` | `false` | SQLAlchemy SQL echo |
 | `SLOW_QUERY_MS` | `int` | `500` | 慢查询阈值毫秒，必须大于等于 0 |
 
-### 6.2 MySQL
+### 7.2 MySQL
 
 以连接名 `MAIN` 为例：
 
@@ -122,11 +155,11 @@ handler 定义、驱动和输出协议详见[日志](logging.md)。配置中的 
 
 使用 `mysql` 驱动时底层异步驱动为项目已安装的 asyncmy。
 
-### 6.3 PostgreSQL
+### 7.3 PostgreSQL
 
 字段与 MySQL 的连接池字段一致，但默认端口为 `5432`，没有 `CHARSET` 字段。`DRIVER` 可写 `postgresql` 或 `pgsql`；底层异步驱动为 asyncpg。
 
-### 6.4 SQLite
+### 7.4 SQLite
 
 | 后缀 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
@@ -139,7 +172,7 @@ SQLite 不接受 MySQL/PostgreSQL 的连接池字段。连接模型使用 `extra
 
 完整数据库行为见[数据库](database.md)。
 
-## 7. 缓存全局配置
+## 8. 缓存全局配置
 
 | 变量 | 类型 | 默认值 | 约束与说明 |
 | --- | --- | --- | --- |
@@ -150,7 +183,7 @@ SQLite 不接受 MySQL/PostgreSQL 的连接池字段。连接模型使用 `extra
 
 与数据库不同，所有缓存连接定义会在 `CacheManager` 构造时校验。因此无效的未使用缓存连接也会阻止 HTTP/Console 宿主构建容器。远程网络连接仍是延迟建立。
 
-### 7.1 公共字段
+### 8.1 公共字段
 
 每个连接都需要 `DRIVER`，并可配置 `KEY_PREFIX`。最终 key 为：
 
@@ -160,7 +193,7 @@ SQLite 不接受 MySQL/PostgreSQL 的连接池字段。连接模型使用 `extra
 
 空 prefix 会被省略。namespace/prefix 不能包含空白、控制字符，也不能以冒号开头或结尾。
 
-### 7.2 Redis
+### 8.2 Redis
 
 | 后缀 | 类型 | 默认值 | 约束 |
 | --- | --- | --- | --- |
@@ -175,7 +208,7 @@ SQLite 不接受 MySQL/PostgreSQL 的连接池字段。连接模型使用 `extra
 | `CONNECT_TIMEOUT` | `float` | `5.0` | 正数秒 |
 | `READ_TIMEOUT` | `float` | `5.0` | 正数秒 |
 
-### 7.3 Memcached
+### 8.3 Memcached
 
 | 后缀 | 类型 | 默认值 | 约束 |
 | --- | --- | --- | --- |
@@ -190,7 +223,7 @@ SQLite 不接受 MySQL/PostgreSQL 的连接池字段。连接模型使用 `extra
 | `READ_TIMEOUT` | `float` | `5.0` | 正数秒 |
 | `BLOCKING_TIMEOUT` | `float` | `5.0` | 正数秒 |
 
-### 7.4 Memory
+### 8.4 Memory
 
 ```dotenv
 CACHE_CONNECTIONS__LOCAL__DRIVER=memory
@@ -201,19 +234,20 @@ Memory 没有网络参数。数据仅存在于当前进程内，进程重启即�
 
 完整语义见[缓存](cache.md)。
 
-## 8. 校验与连接时机
+## 9. 校验与连接时机
 
 | 阶段 | 会发生什么 | 不会发生什么 |
 | --- | --- | --- |
-| `load_settings()` | 读取应用、日志、CORS、数据库/缓存原始字典 | 不创建数据库 Engine，不连接远程缓存 |
-| 构建容器 | 构建管理器；校验所有缓存定义 | 不访问数据库网络，不主动 ping 缓存 |
+| `load_settings()` | 读取并校验应用、日志、CORS、HTTP 出站配置，读取数据库/缓存原始字典 | 不创建 HTTP/数据库资源，不连接远程缓存 |
+| 构建容器 | 构建管理器；校验所有缓存定义 | 不访问 HTTP 上游或数据库网络，不主动 ping 缓存 |
+| 首次 HTTP `request/stream` | 创建普通与流式连接池并访问目标上游 | 不会探测其他上游，不会自动重试 |
 | 首次数据库 `get/session` | 校验目标定义、创建 Engine/Session 工厂 | 不保证每个已配置连接都可用 |
 | 首次缓存 `get/set/ping` | 创建目标缓存资源并访问后端 | 不会自动回退到 Memory |
 | 关闭宿主 | 逆序关闭已初始化资源 | 未初始化资源不会被无意义连接 |
 
 这解释了为什么“应用能启动”不等于“所有依赖都健康”。生产就绪检查应主动验证业务必需的连接，但不要把非关键依赖随意绑进基础 `/health`，否则会改变健康语义。
 
-## 9. 修改配置后的操作
+## 10. 修改配置后的操作
 
 - HTTP：重启 Uvicorn 进程；`--reload` 是否监视 `.env` 取决于运行器行为，不应作为配置热更新契约。
 - Console：每次命令是新进程，重新执行即可。
@@ -221,12 +255,14 @@ Memory 没有网络参数。数据仅存在于当前进程内，进程重启即�
 - 数据库结构：修改模型配置不等于迁移，仍需创建并应用 Alembic revision。
 - `TZ`：视为数据语义变更，不是普通重启配置。
 
-## 10. 配置安全与禁止做法
+## 11. 配置安全与禁止做法
 
 - 不提交真实 `.env`、密码或连接串；`sample.env` 只能放示例值。
 - 不在业务层直接读取 `os.environ`；配置只应在组合根解析并注入。
 - 不用 `APP_ENV` 隐式拼接大量魔法默认值；部署差异应显式可审计。
 - 不依赖 `/health` 推断数据库和缓存已经连接。
+- 不通过 `HTTP_VERIFY=false` 长期绕过生产 TLS 证书问题。
+- 不假设基础 HTTP 客户端会自动重试或把 4xx/5xx 转成异常。
 - 不通过改变 `DB_DEFAULT` 猜测用户上下文会切库；当前组合明确指定 `main`。
 - 不把 Memory 当作多进程共享缓存或持久存储。
 - 不把 `LOG_LEVEL=DEBUG` 当作生产故障的长期方案，尤其不要记录密码、令牌和完整个人数据。
