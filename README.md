@@ -65,12 +65,18 @@ uv run uvicorn app.main:app --reload
 
 ## Console
 
-项目提供模块化 Console 入口，用于从 HTTP 之外执行一次性应用操作。Console 与 FastAPI 共享配置加载、日志配置、`ApplicationContainer` 和资源生命周期；每次命令都会创建并启动容器，并在命令成功或失败后关闭已经创建的数据库和缓存资源。模块入口不绑定项目名称，也不要求项目安装为 Python 包。
+项目提供模块化 Console 入口，用于从 HTTP 之外执行一次性应用操作。需要业务资源的命令与 FastAPI 共享配置加载、`ApplicationContainer` 和资源生命周期，每次执行都会创建容器，并在命令成功或失败后关闭已经创建的数据库和缓存资源；`--version`、`--help` 和 `app info` 等只读取元数据的命令不会启动容器。模块入口不绑定项目名称，也不要求项目安装为 Python 包。
 
 查看应用及已配置的资源连接：
 
 ```shell
 uv run python -m app.interfaces.console app info
+```
+
+`app info` 和业务命令的成功结果统一以单个 JSON 文档写入 stdout，例如：
+
+```json
+{"name":"fast-api-scaff","version":"3.0.3","environment":"local","debug":false,"timezone":"CST (+0800)","database_connections":["main"],"cache_connections":["session"]}
 ```
 
 查看当前应用名称和版本，或列出可用命令：
@@ -91,7 +97,15 @@ uv run python -m app.interfaces.console users create \
 uv run python -m app.interfaces.console users list --offset 0 --limit 20
 ```
 
-用户命令直接调用 `ApplicationContainer.users.service`，不依赖 FastAPI、HTTP Controller 或 HTTP 响应结构。命令结果使用 JSON 输出，业务时间沿用运行环境的本地墙上时间；业务或领域校验失败时使用退出码 `2`。数据库迁移继续使用 Alembic 原生命令，不由 Console 重复包装。
+用户命令直接调用 `ApplicationContainer.users.service`，不依赖 FastAPI、HTTP Controller 或 HTTP 响应结构。业务时间沿用运行环境的本地墙上时间。Console 将成功结果写入 stdout，将错误和 stream 日志写入 stderr，stdout 因此可以直接交给 `jq` 等工具解析；HTTP、未来 Worker 和 Scheduler 仍遵循各自的日志输出约定，不受 Console 的 stderr 规则影响。
+
+Console 使用以下退出码：
+
+- `0`：命令执行成功；
+- `1`：业务、配置或可预期的运行错误；
+- `2`：Typer 检测到命令、参数或选项使用错误。
+
+已知配置、日志、数据库和缓存错误只输出简洁错误消息，不显示 Python 堆栈；未知编程错误继续保留 traceback，避免隐藏代码缺陷。数据库迁移继续使用 Alembic 原生命令，不由 Console 重复包装。
 
 Console 命令继承公共 `ConsoleCommand` 基类，并通过 `group`、`group_help`、`name` 和 `help` 声明所属命令组及帮助信息。启动时只扫描 `app.interfaces.console.commands` 包，自动发现其中的具体命令类，并检查重复命令和命令组说明冲突。新增命令类后不需要修改 `main.py`；命令模块不得在导入阶段执行数据库连接或其他外部操作。
 
