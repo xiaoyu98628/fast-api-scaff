@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import datetime
 from types import TracebackType
 from uuid import UUID
 
@@ -67,7 +67,7 @@ class FakeUserUnitOfWork:
 def build_service(repository: FakeUserRepository) -> UserApplicationService:
     return UserApplicationService(
         unit_of_work_factory=lambda: FakeUserUnitOfWork(repository),
-        clock=lambda: datetime(2026, 8, 28, tzinfo=UTC),
+        clock=lambda: datetime(2026, 8, 28, 18, 0),
     )
 
 

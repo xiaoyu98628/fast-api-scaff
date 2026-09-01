@@ -8,7 +8,7 @@ from app.contexts.user.domain.values import UserStatus
 
 
 def test_user_creation_normalizes_identity_fields() -> None:
-    now = datetime(2026, 8, 28, tzinfo=UTC)
+    now = datetime(2026, 8, 28, 18, 0)
 
     user = User.create(
         username="  Alice_01 ",
@@ -26,7 +26,7 @@ def test_user_creation_normalizes_identity_fields() -> None:
 
 
 def test_user_profile_update_preserves_creation_time() -> None:
-    created_at = datetime(2026, 8, 28, tzinfo=UTC)
+    created_at = datetime(2026, 8, 28, 18, 0)
     updated_at = created_at + timedelta(minutes=1)
     user = User.create(username="alice", email="alice@example.com", display_name="Alice", now=created_at)
 
@@ -47,7 +47,7 @@ def test_user_profile_update_preserves_creation_time() -> None:
 
 
 def test_invalid_profile_update_does_not_partially_change_user() -> None:
-    now = datetime(2026, 8, 28, tzinfo=UTC)
+    now = datetime(2026, 8, 28, 18, 0)
     user = User.create(username="alice", email="alice@example.com", display_name="Alice", now=now)
 
     with pytest.raises(InvalidUserDataError):
@@ -80,5 +80,45 @@ def test_user_creation_rejects_invalid_profile(username: str, email: str, displa
             username=username,
             email=email,
             display_name=display_name,
+            now=datetime(2026, 8, 28, 18, 0),
+        )
+
+
+def test_user_rejects_timezone_aware_business_time() -> None:
+    with pytest.raises(InvalidUserDataError, match="本地无时区时间"):
+        User.create(
+            username="alice",
+            email="alice@example.com",
+            display_name="Alice",
             now=datetime(2026, 8, 28, tzinfo=UTC),
         )
+
+
+def test_user_rehydration_rechecks_domain_invariants() -> None:
+    now = datetime(2026, 8, 28, 18, 0)
+    user = User.create(username="alice", email="alice@example.com", display_name="Alice", now=now)
+
+    with pytest.raises(InvalidUserDataError, match="显示名称"):
+        User.rehydrate(
+            user_id=user.id,
+            username=user.username,
+            email=user.email,
+            display_name="   ",
+            status=user.status,
+            created_at=user.created_at,
+            updated_at=user.updated_at,
+        )
+
+
+def test_user_fields_can_only_be_changed_through_domain_methods() -> None:
+    user = User.create(
+        username="alice",
+        email="alice@example.com",
+        display_name="Alice",
+        now=datetime(2026, 8, 28, 18, 0),
+    )
+
+    with pytest.raises(AttributeError):
+        setattr(user, "display_name", "")
+
+    assert user.display_name == "Alice"

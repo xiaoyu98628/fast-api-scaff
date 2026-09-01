@@ -4,10 +4,15 @@ from types import TracebackType
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.contexts.user.application.errors import UserConflictError
+from app.contexts.user.application.errors import UserConflictError, UserConflictField
 from app.contexts.user.domain.repository import UserRepository
 from app.contexts.user.infrastructure.persistence.repository import SqlAlchemyUserRepository
 from app.infrastructure.database.manager import DatabaseManager
+
+_USER_UNIQUE_CONSTRAINT_MARKERS: dict[UserConflictField, tuple[str, ...]] = {
+    "username": ("uq_users_username", "users_username_key", "users.username"),
+    "email": ("uq_users_email", "users_email_key", "users.email"),
+}
 
 
 class SqlAlchemyUserUnitOfWork:
@@ -57,4 +62,39 @@ class SqlAlchemyUserUnitOfWork:
             await self._session.commit()
         except IntegrityError as error:
             await self._session.rollback()
-            raise UserConflictError("identity") from error
+            field = _resolve_user_conflict_field(error)
+            if field is None:
+                raise
+
+            raise UserConflictError(field) from error
+
+
+def _resolve_user_conflict_field(error: IntegrityError) -> UserConflictField | None:
+    details = _integrity_error_details(error)
+
+    for field, markers in _USER_UNIQUE_CONSTRAINT_MARKERS.items():
+        if any(marker in details for marker in markers):
+            return field
+
+    return None
+
+
+def _integrity_error_details(error: IntegrityError) -> str:
+    original = error.orig
+    candidates = (
+        original,
+        getattr(original, "__cause__", None),
+        getattr(original, "diag", None),
+    )
+    details: list[str] = []
+
+    for candidate in candidates:
+        if candidate is None:
+            continue
+
+        details.append(str(candidate))
+        constraint_name = getattr(candidate, "constraint_name", None)
+        if isinstance(constraint_name, str):
+            details.append(constraint_name)
+
+    return " ".join(details).lower()
