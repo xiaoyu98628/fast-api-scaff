@@ -1,7 +1,7 @@
 from typing import Literal
 from uuid import UUID
 
-type UserConflictField = Literal["username", "email", "identity"]
+type UserConflictField = Literal["username", "email"]
 
 
 class UserApplicationError(Exception):

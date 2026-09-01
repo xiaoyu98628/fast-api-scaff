@@ -186,25 +186,18 @@ docker compose up --build
 
 数据库、缓存管理器和各业务上下文都保存在 `ApplicationContainer` 中。每个业务上下文负责组装并公开自己的应用服务，避免将所有业务服务的构建细节集中到顶层组合根。FastAPI 生命周期启动时会创建容器，并将其保存到 `app.state.container`；应用关闭时，容器会统一释放已经创建的数据库和缓存资源。
 
-Controller 可以通过 `Request` 获取容器：
+HTTP 依赖提供器可以从 `Request` 获取容器，并向 Controller 暴露当前用例真正需要的应用服务。Controller 不直接依赖完整容器：
 
 ```python
-from fastapi import Request
-
-from app.bootstrap.container import ApplicationContainer
+from app.interfaces.http.controllers.v1.users.dependencies import UserServiceDependency
 
 
-async def example(request: Request) -> dict[str, object]:
-    container: ApplicationContainer = request.app.state.container
-    user_service = container.users.service
-    return {
-        "databases": container.databases.connection_names,
-        "caches": container.caches.connection_names,
-        "user_service": type(user_service).__name__,
-    }
+async def example(service: UserServiceDependency) -> dict[str, object]:
+    page = await service.list(offset=0, limit=20)
+    return {"total": page.total}
 ```
 
-同一业务上下文增加应用服务时，只需调整该上下文的组合模块和容器，不需要修改顶层组合根。新增完整业务上下文时，仍需在 `ApplicationContainer` 中显式连接一次。业务代码应通过容器中的管理器获取资源，不要自行创建数据库 Engine、Redis 客户端或 Memcached 客户端。
+同一业务上下文增加应用服务时，只需调整该上下文的组合模块和容器，不需要修改顶层组合根。新增完整业务上下文时，仍需在 `ApplicationContainer` 中显式连接一次。数据库和缓存 Manager 属于组合根、宿主能力与基础设施适配器；领域层和应用层通过 Repository、Unit of Work 或上下文自有端口使用外部能力，不直接依赖 Manager，也不自行创建数据库 Engine、Redis 客户端或 Memcached 客户端。
 
 ## 延迟加载行为
 
@@ -365,7 +358,7 @@ unit_of_work_factory = partial(
 | `PUT` | `/api/v1/users/{user_id}` | 完整更新用户资料和状态 |
 | `DELETE` | `/api/v1/users/{user_id}` | 删除用户，成功时返回 `204 No Content` |
 
-用户名会去除首尾空白并转换为小写，只能包含 3 到 32 位小写字母、数字或下划线；邮箱会去除首尾空白并转换为小写。用户名和邮箱都具有唯一约束。用户状态当前支持 `active` 和 `disabled`。
+用户名会去除首尾空白并转换为小写，只能包含 3 到 32 位小写字母、数字或下划线；邮箱会去除首尾空白并转换为小写。用户名和邮箱都具有唯一约束。用户状态当前支持 `active` 和 `disabled`。用户聚合只接受本地无时区时间，创建、更新以及从持久化数据恢复时都会检查该时间协议；应用服务默认通过 `datetime.now()` 产生时间。
 
 用户写操作使用 Unit of Work 管理事务，应用服务不会自行创建或关闭数据库 Engine。删除当前采用物理删除；如果业务需要审计、恢复或数据保留策略，应先明确新的领域规则，再引入软删除。
 
@@ -607,30 +600,27 @@ class ExampleModel(MainBase):
 
 实际表名与 `__tablename__` 一致。索引、联合索引、唯一约束和检查约束应在模型的 `__table_args__` 中显式定义；主键、外键等未显式命名的约束使用 ORM Metadata 的统一命名约定。新增 main 数据库 ORM 模型时，还必须将模型类加入 `database.main.model_registry` 的 `_MAIN_DATABASE_MODELS`，确保模型已经注册到 `MainBase.metadata`；Alembic 的 `env.py` 不直接导入业务 Model。
 
-### 使用默认数据库
+### 基础设施适配器使用默认数据库
 
-通过 `container.databases.session()` 获取默认数据库会话：
+基础设施适配器可以通过注入的 `DatabaseManager` 获取默认数据库会话。以下是技术能力示例，不应直接放入 Controller、领域服务或应用服务：
 
 ```python
-from fastapi import Request
 from sqlalchemy import text
 
-from app.bootstrap.container import ApplicationContainer
+from app.infrastructure.database.manager import DatabaseManager
 
 
-async def database_example(request: Request) -> dict[str, int]:
-    container: ApplicationContainer = request.app.state.container
-
-    async with container.databases.session() as session:
+async def database_example(databases: DatabaseManager) -> int:
+    async with databases.session() as session:
         result = await session.execute(text("SELECT 1"))
 
-    return {"value": result.scalar_one()}
+    return result.scalar_one()
 ```
 
 `session()` 本身不会自动提交写操作。需要事务时使用 `session.begin()`：
 
 ```python
-async with container.databases.session() as session:
+async with databases.session() as session:
     async with session.begin():
         await session.execute(...)
 ```
@@ -640,18 +630,18 @@ async with container.databases.session() as session:
 将连接名传给 `session()`：
 
 ```python
-async with container.databases.session("legacy") as session:
+async with databases.session("legacy") as session:
     result = await session.execute(...)
 ```
 
 需要直接访问 SQLAlchemy Engine 时，可以使用：
 
 ```python
-engine = await container.databases.get_engine()
-legacy_engine = await container.databases.get_engine("legacy")
+engine = await databases.get_engine()
+legacy_engine = await databases.get_engine("legacy")
 ```
 
-通常业务查询应优先使用 `session()`，不要在业务代码中自行关闭 Session 或 Engine；应用容器会统一管理 Engine 生命周期。
+业务上下文应由 Repository 和 Unit of Work 封装这些调用，不把 Session 或 Engine 暴露给应用层。基础设施适配器也不自行关闭 Session 或 Engine；应用容器会统一管理 Engine 生命周期。
 
 ## 缓存
 
@@ -661,7 +651,7 @@ legacy_engine = await container.databases.get_engine("legacy")
 - Memcached：异步客户端 `memcachio`，SASL 认证可选
 - Memory：用于单元测试和单进程本地开发
 
-三种后端对业务层暴露相同的字节级 `CacheClient` 协议。Memory 不跨进程共享，也不会在远程缓存故障时自动接管，因此不能作为生产环境的透明降级方案。
+三种后端提供相同的字节级 `CacheClient` 协议，供缓存基础设施适配器复用。Memory 不跨进程共享，也不会在远程缓存故障时自动接管，因此不能作为生产环境的透明降级方案。
 
 ### 配置方式
 
@@ -828,19 +818,16 @@ await cache.set("permanent", b"value", ttl=NO_EXPIRATION)
 
 公共 API 中的 TTL 始终表示相对秒数。Memcached 协议会将超过 30 天的 expiry 解释为 Unix 时间戳，后端会自动完成转换，避免它与 Redis 的行为不一致。
 
-### 业务使用
+### 宿主与基础设施适配器使用
 
-通过 `container.caches.get()` 获取默认缓存：
+组合根、健康检查、维护命令和缓存基础设施适配器可以通过 `container.caches.get()` 获取默认缓存。以下示例展示字节级缓存能力，不表示 Controller 应直接操作缓存：
 
 ```python
-from fastapi import Request
-
 from app.bootstrap.container import ApplicationContainer
 from app.infrastructure.cache.contracts.client import CacheClient
 
 
-async def cache_example(request: Request) -> dict[str, object]:
-    container: ApplicationContainer = request.app.state.container
+async def cache_maintenance(container: ApplicationContainer) -> dict[str, object]:
     cache: CacheClient = await container.caches.get()
 
     await cache.set("user:1", b"xiaoyu", ttl=60)
@@ -877,13 +864,7 @@ healthy = await container.caches.ping()
 
 `ping()` 和关闭能力属于资源管理职责，不出现在业务 `CacheClient` 协议中。健康检查通过 `CacheManager.ping()` 执行，客户端由应用容器统一关闭。
 
-Controller 或 Service 只依赖：
-
-```python
-from app.infrastructure.cache.contracts.client import CacheClient
-```
-
-不要直接导入 Redis、Memcached 或 Memory Connection、Storage，也不要自行实例化驱动客户端。底层异常会转换为 `CacheConnectionError` 或 `CacheOperationError`，但不会被静默吞掉；是否在缓存失败后回源，应由业务用例显式决定。
+当前用户上下文没有缓存依赖。业务上下文未来需要缓存时，应在自己的 `application` 层定义带有业务语义的端口，并由 `infrastructure` 适配器使用 `CacheClient` 实现；应用服务依赖该上下文端口，不直接依赖 `app.infrastructure.cache`，Controller 也不通过容器操作缓存。不要直接导入 Redis、Memcached 或 Memory Connection、Storage，也不要自行实例化驱动客户端。底层异常会转换为 `CacheConnectionError` 或 `CacheOperationError`，但不会被静默吞掉；是否在缓存失败后回源，应由业务用例显式决定。
 
 ## 项目结构
 

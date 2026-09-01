@@ -14,7 +14,6 @@ def user_error_to_http(error: UserBoundaryError) -> HttpError:
         code = {
             "username": UserErrorCode.USERNAME_CONFLICT,
             "email": UserErrorCode.EMAIL_CONFLICT,
-            "identity": UserErrorCode.IDENTITY_CONFLICT,
         }[error.field]
         return HttpError(code)
 

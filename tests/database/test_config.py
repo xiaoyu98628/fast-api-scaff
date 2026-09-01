@@ -1,8 +1,11 @@
+import os
+
 import pytest
 from pydantic import ValidationError
 
 from app.config.database import DatabaseSettings, SQLiteDatabaseSettings
-from app.runtime.paths import STORAGE_DIR
+from app.infrastructure.database.connections.resolver import resolve_database_definition
+from app.runtime.paths import PROJECT_ROOT, STORAGE_DIR
 
 
 def test_raw_settings_do_not_validate_connection_semantics() -> None:
@@ -30,6 +33,19 @@ def test_nested_environment_is_loaded_as_raw_snapshot(monkeypatch: pytest.Monkey
             "database": ":memory:",
         }
     }
+
+
+def test_sample_environment_contains_valid_database_connections(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in tuple(os.environ):
+        if name.startswith("DB_"):
+            monkeypatch.delenv(name)
+
+    settings = DatabaseSettings(_env_file=PROJECT_ROOT / "sample.env")
+
+    assert settings.connections
+    for name in settings.connections:
+        definition = resolve_database_definition(settings, name)
+        assert definition.engine_spec.url.drivername
 
 
 @pytest.mark.parametrize(

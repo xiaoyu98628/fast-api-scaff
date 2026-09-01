@@ -16,8 +16,8 @@ def user_to_model(user: User) -> UserModel:
 
 
 def user_to_domain(model: UserModel) -> User:
-    return User(
-        id=UserId(model.id),
+    return User.rehydrate(
+        user_id=UserId(model.id),
         username=Username(model.username),
         email=EmailAddress(model.email),
         display_name=model.display_name,
