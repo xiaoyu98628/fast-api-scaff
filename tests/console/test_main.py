@@ -168,7 +168,7 @@ def test_user_commands_call_application_service() -> None:
             "Alice",
         ],
     )
-    listed = runner.invoke(application, ["users", "list", "--offset", "0", "--limit", "10"])
+    listed = runner.invoke(application, ["users", "list", "--page", "1", "--limit", "10"])
 
     expected_time = _NOW.isoformat()
 
@@ -183,7 +183,12 @@ def test_user_commands_call_application_service() -> None:
         "updated_at": expected_time,
     }
     assert listed.exit_code == 0
-    assert json.loads(listed.stdout)["items"] == [json.loads(created.stdout)]
+    assert json.loads(listed.stdout) == {
+        "items": [json.loads(created.stdout)],
+        "total": 1,
+        "page": 1,
+        "limit": 10,
+    }
 
 
 def test_user_business_error_and_usage_error_use_distinct_exit_codes() -> None:
@@ -202,12 +207,20 @@ def test_user_business_error_and_usage_error_use_distinct_exit_codes() -> None:
             "x",
         ],
     )
-    usage_error = runner.invoke(application, ["users", "list", "--limit", "0"])
+    invalid_page_error = runner.invoke(application, ["users", "list", "--page", "0"])
+    invalid_limit_error = runner.invoke(application, ["users", "list", "--limit", "0"])
+    excessive_limit_error = runner.invoke(application, ["users", "list", "--limit", "101"])
+    legacy_offset_error = runner.invoke(application, ["users", "list", "--offset", "0"])
+    legacy_page_size_error = runner.invoke(application, ["users", "list", "--page-size", "20"])
 
     assert business_error.exit_code == ConsoleExitCode.FAILURE
     assert business_error.stdout == ""
     assert business_error.stderr.strip() == "Error: 测试用户数据不合法"
-    assert usage_error.exit_code == ConsoleExitCode.USAGE
+    assert invalid_page_error.exit_code == ConsoleExitCode.USAGE
+    assert invalid_limit_error.exit_code == ConsoleExitCode.USAGE
+    assert excessive_limit_error.exit_code == ConsoleExitCode.USAGE
+    assert legacy_offset_error.exit_code == ConsoleExitCode.USAGE
+    assert legacy_page_size_error.exit_code == ConsoleExitCode.USAGE
 
 
 def test_run_console_renders_expected_configuration_error(capsys: pytest.CaptureFixture[str]) -> None:

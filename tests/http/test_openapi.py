@@ -37,6 +37,11 @@ def test_openapi_metadata_and_swagger_settings() -> None:
     response_schema_name = health_response["$ref"].rsplit("/", maxsplit=1)[-1]
     response_schema = schema["components"]["schemas"][response_schema_name]
     assert set(response_schema["properties"]) == {"code", "success", "message", "data", "request_id"}
+    user_list_parameters = schema["paths"]["/api/v1/users"]["get"]["parameters"]
+    assert {parameter["name"] for parameter in user_list_parameters} == {
+        "limit",
+        "page",
+    }
     assert app.swagger_ui_parameters is not None
     assert app.swagger_ui_parameters["filter"] is True
     assert app.swagger_ui_parameters["displayRequestDuration"] is True

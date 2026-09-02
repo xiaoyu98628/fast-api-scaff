@@ -1,3 +1,4 @@
+from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Query, Response, status
@@ -7,8 +8,9 @@ from app.contexts.user.application.errors import UserApplicationError
 from app.contexts.user.domain.errors import UserDomainError
 from app.interfaces.http.controllers.v1.users.dependencies import UserServiceDependency
 from app.interfaces.http.controllers.v1.users.errors import user_error_to_http
-from app.interfaces.http.controllers.v1.users.schemas import CreateUserRequest, UpdateUserRequest, UserListResponse, UserResponse
+from app.interfaces.http.controllers.v1.users.schemas import CreateUserRequest, UpdateUserRequest, UserResponse
 from app.interfaces.http.dependencies.response import JsonResponseFactoryDependency
+from app.interfaces.http.shared.pagination import PageParams, PageResponse
 from app.interfaces.http.shared.response.codes.success_code import SuccessCode
 from app.interfaces.http.shared.response.json import JsonResponse
 
@@ -39,15 +41,25 @@ async def create_user(
     return responses.success(UserResponse.from_dto(user), code=SuccessCode.CREATED)
 
 
-@router.get("", response_model=JsonResponse[UserListResponse])
+@router.get("", response_model=JsonResponse[PageResponse[UserResponse]])
 async def list_users(
     service: UserServiceDependency,
     responses: JsonResponseFactoryDependency,
-    offset: int = Query(default=0, ge=0),
-    limit: int = Query(default=20, ge=1, le=100),
-) -> JsonResponse[UserListResponse]:
-    page = await service.list(offset=offset, limit=limit)
-    return responses.success(UserListResponse.from_dto(page))
+    pagination: Annotated[PageParams, Query()],
+) -> JsonResponse[PageResponse[UserResponse]]:
+    pagination_input = pagination.to_input()
+    result = await service.list(
+        offset=pagination_input.offset,
+        limit=pagination_input.limit,
+    )
+    return responses.success(
+        PageResponse[UserResponse](
+            items=[UserResponse.from_dto(user) for user in result.items],
+            total=result.total,
+            page=pagination_input.page,
+            limit=pagination_input.limit,
+        )
+    )
 
 
 @router.get("/{user_id}", response_model=JsonResponse[UserResponse])

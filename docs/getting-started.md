@@ -62,7 +62,7 @@ curl http://127.0.0.1:8000/health
 curl -X POST http://127.0.0.1:8000/api/v1/users \
   -H 'Content-Type: application/json' \
   -d '{"username":"alice","email":"alice@example.com","display_name":"Alice"}'
-curl 'http://127.0.0.1:8000/api/v1/users?offset=0&limit=20'
+curl 'http://127.0.0.1:8000/api/v1/users?page=1&limit=20'
 ```
 
 验证 Console：

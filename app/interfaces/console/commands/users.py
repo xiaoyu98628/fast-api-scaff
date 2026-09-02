@@ -2,13 +2,18 @@ from functools import partial
 
 import typer
 
-from app.contexts.user.application.dto import CreateUserCommand, UserDTO, UserPageDTO
+from app.contexts.user.application.dto import CreateUserCommand, UserDTO
 from app.contexts.user.application.errors import UserApplicationError
 from app.contexts.user.domain.errors import UserDomainError
 from app.interfaces.console.command import ConsoleCommand
 from app.interfaces.console.context import ConsoleContext
 from app.interfaces.console.exit_codes import ConsoleExitCode
 from app.interfaces.console.presentation import ConsolePresenter
+from app.interfaces.shared.pagination import PageInput, PageOutput
+
+DEFAULT_PAGE = 1
+DEFAULT_LIMIT = 20
+MAX_LIMIT = 100
 
 
 async def create_user(
@@ -30,10 +35,18 @@ async def create_user(
 async def list_users(
     context: ConsoleContext,
     *,
-    offset: int,
-    limit: int,
-) -> UserPageDTO:
-    return await context.container.users.service.list(offset=offset, limit=limit)
+    pagination: PageInput,
+) -> PageOutput[UserDTO]:
+    result = await context.container.users.service.list(
+        offset=pagination.offset,
+        limit=pagination.limit,
+    )
+    return PageOutput(
+        items=result.items,
+        total=result.total,
+        page=pagination.page,
+        limit=pagination.limit,
+    )
 
 
 def _exit_for_user_error(presenter: ConsolePresenter, error: UserApplicationError | UserDomainError) -> None:
@@ -69,8 +82,14 @@ class ListUsersConsoleCommand(ConsoleCommand):
 
     def handle(
         self,
-        offset: int = typer.Option(0, min=0, help="跳过的记录数。"),
-        limit: int = typer.Option(20, min=1, max=100, help="返回的最大记录数。"),
+        page: int = typer.Option(DEFAULT_PAGE, min=1, help="页码，从 1 开始。"),
+        limit: int = typer.Option(
+            DEFAULT_LIMIT,
+            min=1,
+            max=MAX_LIMIT,
+            help="每页记录数。",
+        ),
     ) -> None:
-        page = self._console.run(partial(list_users, offset=offset, limit=limit))
-        self._console.presenter.result(page)
+        pagination = PageInput(page=page, limit=limit)
+        result = self._console.run(partial(list_users, pagination=pagination))
+        self._console.presenter.result(result)

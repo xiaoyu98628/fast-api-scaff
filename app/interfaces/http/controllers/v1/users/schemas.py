@@ -3,7 +3,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.contexts.user.application.dto import UserDTO, UserPageDTO
+from app.contexts.user.application.dto import UserDTO
 from app.contexts.user.domain.values import UserStatus
 
 
@@ -38,20 +38,4 @@ class UserResponse(BaseModel):
             status=user.status,
             created_at=user.created_at,
             updated_at=user.updated_at,
-        )
-
-
-class UserListResponse(BaseModel):
-    items: list[UserResponse]
-    total: int
-    offset: int
-    limit: int
-
-    @classmethod
-    def from_dto(cls, page: UserPageDTO) -> UserListResponse:
-        return cls(
-            items=[UserResponse.from_dto(user) for user in page.items],
-            total=page.total,
-            offset=page.offset,
-            limit=page.limit,
         )

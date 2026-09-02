@@ -38,7 +38,7 @@ git status --short
 | 更新时后写覆盖先写 | 当前无乐观并发控制 | 按业务引入 version/条件更新/锁 |
 | 时间相差 8 小时或无 offset | 本地无时区语义/TZ 不一致 | 统一 TZ，勿盲目转换已有数据 |
 | CORS 凭据配置无法启动 | origins 同时含 `*` | 显式列出可信来源 |
-| `limit` 请求返回 422 | 范围必须为 1–100 | 修正参数并查看 validation data |
+| `page`/`limit` 请求返回 422 | 页码从 1 开始，每页范围为 1–100；旧 `offset`/`page_size` 不再接受 | 修正参数并查看 validation data |
 | DELETE 解析 JSON 失败 | 204 没有响应体 | 客户端按 status 处理 |
 | `f` 没有生效 | Base64/URL/JSON 格式不合法 | 用项目 encode 函数生成并确认它替换查询串 |
 | 多 worker 缓存不一致 | 使用 Memory | 换共享后端，Memory 仅单进程 |

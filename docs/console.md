@@ -48,10 +48,10 @@ uv run python -m app.interfaces.console users create \
 分页查询：
 
 ```bash
-uv run python -m app.interfaces.console users list --offset 0 --limit 20
+uv run python -m app.interfaces.console users list --page 1 --limit 20
 ```
 
-约束与 HTTP 一致：`offset >= 0`，`1 <= limit <= 100`，用户资料还会经过领域校验。用户上下文固定使用 `main` 数据库连接，运行前必须完成 Alembic 迁移。
+约束与 HTTP 一致：`page >= 1`，`1 <= limit <= 100`；默认值分别为 1 和 20。分页结果包含 `items`、`total`、`page` 和 `limit`。用户资料还会经过领域校验。用户上下文固定使用 `main` 数据库连接，运行前必须完成 Alembic 迁移。
 
 ## 4. 输出协议
 

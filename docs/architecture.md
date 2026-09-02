@@ -19,7 +19,8 @@ app/
 ├── infrastructure/        # 跨上下文基础设施能力：数据库、缓存、HTTP 出站、日志
 ├── interfaces/
 │   ├── http/               # FastAPI 宿主
-│   └── console/            # Typer 宿主
+│   ├── console/            # Typer 宿主
+│   └── shared/             # 多宿主共享、框架无关的接口协议值
 └── runtime/                # 项目路径等进程运行约定
 
 database/main/              # main 数据库的 Alembic 环境与模型注册
@@ -180,7 +181,10 @@ HTTP lifespan 和 Console 都复用 runtime。这样资源的初始化、失败�
 
 - HTTP 负责 schema、status、统一 JSON 和异常到 HTTP 映射；
 - Console 负责 Typer 参数、JSON stdout、错误 stderr 和退出码；
+- HTTP 与 Console 复用 `app.interfaces.shared` 中框架无关的分页输入/输出规则；
 - 二者都不实现业务规则，不直接操作 ORM。
+
+外部接口统一使用 `page/limit`，宿主适配器在调用应用服务前换算为 `offset/limit`。`app.interfaces.shared` 中的分页对象只记录已校验的值并计算 offset，不定义默认值和取值范围；HTTP 使用 Pydantic、Console 使用 Typer 分别声明自己的输入策略。因此两个宿主可以独立调整限制，同时不会把展示层页码语义下沉到 Application、Repository 或数据库实现。
 
 新增宿主的判断标准不是“能否 import service”，而是是否完整承担自身协议边界、日志、生命周期、取消和错误语义。
 

@@ -57,7 +57,7 @@ curl http://127.0.0.1:8000/health
 curl -X POST http://127.0.0.1:8000/api/v1/users \
   -H 'Content-Type: application/json' \
   -d '{"username":"alice","email":"alice@example.com","display_name":"Alice"}'
-curl 'http://127.0.0.1:8000/api/v1/users?offset=0&limit=20'
+curl 'http://127.0.0.1:8000/api/v1/users?page=1&limit=20'
 ```
 
 `/health` 不主动访问数据库或远程缓存。用户接口成功才表示 `main` 数据库配置、迁移和实际查询链路可用。
@@ -71,7 +71,7 @@ uv run python -m app.interfaces.console users create \
   --username alice \
   --email alice@example.com \
   --display-name Alice
-uv run python -m app.interfaces.console users list --offset 0 --limit 20
+uv run python -m app.interfaces.console users list --page 1 --limit 20
 ```
 
 命令结果写 stdout，日志和错误写 stderr；退出码 0/1/2 分别表示成功、运行失败和用法错误。
