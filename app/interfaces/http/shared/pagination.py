@@ -1,6 +1,8 @@
+from collections.abc import Callable, Iterable
+
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.interfaces.shared.pagination import PageInput, PageMeta
+from app.interfaces.shared.pagination import PageInput, PageMeta, calculate_total_pages
 
 DEFAULT_PAGE = 1
 DEFAULT_LIMIT = 20
@@ -20,3 +22,26 @@ class PageParams(BaseModel):
 class PageResponse[T](BaseModel):
     items: list[T]
     meta: PageMeta
+
+
+def build_page_response[S, T](
+    *,
+    items: Iterable[S],
+    total: int,
+    pagination: PageInput,
+    item_mapper: Callable[[S], T],
+) -> PageResponse[T]:
+    mapped_items: list[T] = [item_mapper(item) for item in items]
+
+    return PageResponse(
+        items=mapped_items,
+        meta=PageMeta(
+            page=pagination.page,
+            limit=pagination.limit,
+            total=total,
+            total_pages=calculate_total_pages(
+                total=total,
+                limit=pagination.limit,
+            ),
+        ),
+    )
