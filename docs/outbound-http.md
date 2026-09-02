@@ -130,4 +130,6 @@ JSON 解码失败、调用参数错误和调用方业务处理异常不属于网
 
 HTTP/Console 入口可以从容器选择客户端。业务 application service 不应持有整个 `ApplicationContainer`；当上下文需要访问上游时，应在该上下文 application 层定义符合业务语言的窄端口，由 infrastructure 适配器使用公共 HTTP 客户端实现，再由 composition 注入。
 
-HTTPX 和 httpcore 当前按精确版本锁定，因为 HTTP/1.1 请求取消兼容逻辑隔离访问了它们的私有连接池。升级任一依赖时，必须先运行请求取消集成测试、类型检查和全量回归，不能只更新锁文件。
+HTTPX 和 httpcore 在 `pyproject.toml` 中保留可升级的依赖范围，在 `uv.lock` 中记录当前经过验证的精确版本。HTTP/1.1 请求取消兼容逻辑隔离访问了它们的私有连接池，并声明对应的已测试版本；测试环境与声明不一致时兼容契约测试会失败。不兼容降级日志同时记录已测试版本和实际安装版本。
+
+升级时执行 `uv lock --upgrade-package httpx --upgrade-package httpcore`，然后运行 `tests/outbound_http/test_http11_cancellation.py`、全部出站 HTTP 测试、类型检查和全量回归。若新版公开行为已经正确处理取消残留，应删除不再需要的私有兼容逻辑；否则先适配兼容层并更新已测试版本常量，再提交新锁文件。不能只更新锁文件或为了通过版本测试直接修改常量。

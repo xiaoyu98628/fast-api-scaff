@@ -27,9 +27,11 @@ def user_to_domain(model: UserModel) -> User:
     )
 
 
-def update_user_model(model: UserModel, user: User) -> None:
-    model.username = user.username.value
-    model.email = user.email.value
-    model.display_name = user.display_name
-    model.status = user.status.value
-    model.updated_at = user.updated_at
+def user_update_values(user: User) -> dict[str, object]:
+    return {
+        "username": user.username.value,
+        "email": user.email.value,
+        "display_name": user.display_name,
+        "status": user.status.value,
+        "updated_at": user.updated_at,
+    }

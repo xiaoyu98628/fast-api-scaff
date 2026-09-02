@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from dataclasses import dataclass
+from importlib.metadata import version
 from math import ceil
 from typing import Any
 
@@ -8,6 +9,9 @@ import httpx
 
 from app.infrastructure.http.logging import HTTP_LOGGER, HttpLogEvent
 from app.infrastructure.logging.record import log_extra
+
+TESTED_HTTPX_VERSION = "0.28.1"
+TESTED_HTTPCORE_VERSION = "1.0.9"
 
 
 @dataclass(slots=True)
@@ -153,5 +157,11 @@ class HttpxPoolCompatibility:
         HTTP_LOGGER.log(
             logging.WARNING,
             "HTTPX/httpcore pool internals are not compatible with orphan cleanup",
-            extra=log_extra(HttpLogEvent.POOL_COMPATIBILITY_FAILED),
+            extra=log_extra(
+                HttpLogEvent.POOL_COMPATIBILITY_FAILED,
+                tested_httpx_version=TESTED_HTTPX_VERSION,
+                installed_httpx_version=version("httpx"),
+                tested_httpcore_version=TESTED_HTTPCORE_VERSION,
+                installed_httpcore_version=version("httpcore"),
+            ),
         )

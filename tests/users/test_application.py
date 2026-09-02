@@ -15,6 +15,7 @@ from app.contexts.user.domain.values import EmailAddress, UserId, Username, User
 class FakeUserRepository:
     def __init__(self) -> None:
         self.items: dict[UUID, User] = {}
+        self.remove_before_update = False
 
     async def find(self, user_id: UserId) -> User | None:
         return self.items.get(user_id.value)
@@ -32,11 +33,18 @@ class FakeUserRepository:
     async def add(self, user: User) -> None:
         self.items[user.id.value] = user
 
-    async def update(self, user: User) -> None:
-        self.items[user.id.value] = user
+    async def update(self, user: User) -> bool:
+        if self.remove_before_update:
+            self.items.pop(user.id.value, None)
 
-    async def remove(self, user_id: UserId) -> None:
-        self.items.pop(user_id.value, None)
+        if user.id.value not in self.items:
+            return False
+
+        self.items[user.id.value] = user
+        return True
+
+    async def remove(self, user_id: UserId) -> bool:
+        return self.items.pop(user_id.value, None) is not None
 
 
 class FakeUserUnitOfWork:
@@ -114,3 +122,31 @@ async def test_user_service_rejects_duplicate_username_and_email() -> None:
 
     assert username_error.value.field == "username"
     assert email_error.value.field == "email"
+
+
+@pytest.mark.asyncio
+async def test_user_service_reports_not_found_when_update_target_disappears() -> None:
+    repository = FakeUserRepository()
+    service = build_service(repository)
+    created = await service.create(CreateUserCommand(username="alice", email="alice@example.com", display_name="Alice"))
+    repository.remove_before_update = True
+
+    with pytest.raises(UserNotFoundError):
+        await service.update(
+            UpdateUserCommand(
+                user_id=created.id,
+                username="alice_new",
+                email="new@example.com",
+                display_name="Alice New",
+                status=UserStatus.ACTIVE,
+            )
+        )
+
+
+@pytest.mark.asyncio
+async def test_user_service_reports_not_found_when_delete_matches_nothing() -> None:
+    repository = FakeUserRepository()
+    service = build_service(repository)
+
+    with pytest.raises(UserNotFoundError):
+        await service.delete(UUID("00000000-0000-0000-0000-000000000002"))

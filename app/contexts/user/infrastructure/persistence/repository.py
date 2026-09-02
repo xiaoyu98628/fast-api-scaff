@@ -1,9 +1,12 @@
-from sqlalchemy import func, select
+from typing import cast
+
+from sqlalchemy import delete, func, select, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.contexts.user.domain.user import User
 from app.contexts.user.domain.values import EmailAddress, UserId, Username
-from app.contexts.user.infrastructure.persistence.mapper import update_user_model, user_to_domain, user_to_model
+from app.contexts.user.infrastructure.persistence.mapper import user_to_domain, user_to_model, user_update_values
 from app.contexts.user.infrastructure.persistence.models.user import UserModel
 
 
@@ -41,12 +44,14 @@ class SqlAlchemyUserRepository:
     async def add(self, user: User) -> None:
         self._session.add(user_to_model(user))
 
-    async def update(self, user: User) -> None:
-        model = await self._session.get(UserModel, user.id.value)
-        if model is not None:
-            update_user_model(model, user)
+    async def update(self, user: User) -> bool:
+        statement = (
+            update(UserModel).where(UserModel.id == user.id.value).values(**user_update_values(user)).execution_options(synchronize_session=False)
+        )
+        result = cast(CursorResult[tuple[object, ...]], await self._session.execute(statement))
+        return result.rowcount == 1
 
-    async def remove(self, user_id: UserId) -> None:
-        model = await self._session.get(UserModel, user_id.value)
-        if model is not None:
-            await self._session.delete(model)
+    async def remove(self, user_id: UserId) -> bool:
+        statement = delete(UserModel).where(UserModel.id == user_id.value).execution_options(synchronize_session=False)
+        result = cast(CursorResult[tuple[object, ...]], await self._session.execute(statement))
+        return result.rowcount == 1

@@ -118,6 +118,8 @@ HTTP / Console
 - `UserUnitOfWork` 定义一个用例的事务边界；
 - Application Service 编排读取、领域行为、唯一性预检查与 commit。
 
+Repository 的 `update()` 和 `remove()` 使用带主键条件的单条 DML，并返回是否匹配记录。Application Service 将零匹配转换为 `UserNotFoundError`，避免目标在并发期间已经删除时仍返回成功。这个返回值属于领域持久化协议，不向上层暴露 SQLAlchemy result。
+
 不要让领域对象继承 ORM Model，也不要把 SQLAlchemy Session 传进领域方法。显式 mapper 看起来多一层代码，但能避免 ORM 状态、懒加载和数据库字段成为领域模型的隐性 API。
 
 ## 7. 事务行为
@@ -131,7 +133,7 @@ HTTP / Console
 
 一个应用用例应尽量对应一个明确事务。不要在 Repository 中偷偷 commit，否则多个聚合操作无法被同一个 UoW 原子包裹，错误处理也会碎片化。
 
-当前更新没有乐观锁版本字段。作为使用说明型脚手架，它展示事务边界和聚合更新方式，但并不承诺解决并发覆盖。真实业务若存在并发写，应按冲突语义选择版本号、条件更新、悲观锁或事件模型，并补充 409 映射与并发测试。
+当前原子 UPDATE/DELETE 能识别写入时目标已经不存在，但没有乐观锁版本字段，因此不防止两个并发更新互相覆盖。作为使用说明型脚手架，它展示事务边界和聚合更新方式，但不承诺解决并发覆盖。真实业务若存在并发写，应按冲突语义选择版本号、条件更新、悲观锁或事件模型，并补充 409 映射与并发测试。
 
 ## 8. 唯一性与异常映射
 
@@ -211,7 +213,7 @@ uv run alembic -c database/main/alembic.ini downgrade -1
 2. 把新 Model 加入对应 `model_registry.py`；
 3. 生成 revision；
 4. 人工审查 upgrade 和 downgrade，不能盲信 autogenerate；
-5. 在临时 SQLite 执行 upgrade → downgrade，或按目标方言运行集成验证；
+5. 在临时 SQLite 执行 upgrade → downgrade，并由 CI 在 MySQL/PostgreSQL 执行 upgrade → downgrade → upgrade；
 6. 用实际数据库执行 upgrade；
 7. 再启动依赖新 schema 的应用版本。
 

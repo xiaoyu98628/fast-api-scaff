@@ -1,0 +1,78 @@
+name: Quality
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: fast_api_scaff
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --host=127.0.0.1 --user=root --password=root"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: fast_api_scaff
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready --username=postgres --dbname=fast_api_scaff"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.12.8"
+          enable-cache: true
+
+      - name: Install Python and dependencies
+        run: |
+          uv python install 3.14
+          uv sync --frozen --extra dev
+
+      - name: Run quality checks
+        run: |
+          uv run python -m pytest -q
+          uv run ruff check app tests database
+          uv run ruff format --check app tests database
+          uv run ty check app tests database
+          git diff --check
+
+      - name: Verify MySQL migrations
+        env:
+          DB_DEFAULT: main
+          DB_CONNECTIONS: '{"main":{"driver":"mysql","host":"127.0.0.1","port":3306,"database":"fast_api_scaff","username":"root","password":"root"}}'
+        run: |
+          uv run alembic -c database/main/alembic.ini upgrade head
+          uv run alembic -c database/main/alembic.ini downgrade base
+          uv run alembic -c database/main/alembic.ini upgrade head
+
+      - name: Verify PostgreSQL migrations
+        env:
+          DB_DEFAULT: main
+          DB_CONNECTIONS: '{"main":{"driver":"postgresql","host":"127.0.0.1","port":5432,"database":"fast_api_scaff","username":"postgres","password":"postgres"}}'
+        run: |
+          uv run alembic -c database/main/alembic.ini upgrade head
+          uv run alembic -c database/main/alembic.ini downgrade base
+          uv run alembic -c database/main/alembic.ini upgrade head

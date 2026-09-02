@@ -12,6 +12,7 @@ from app.interfaces.console.presentation import ConsolePresenter
 
 DEFAULT_PAGE = 1
 DEFAULT_LIMIT = 20
+MAX_LIMIT = 1000
 
 
 async def create_user(
@@ -75,10 +76,12 @@ class ListUsersConsoleCommand(ConsoleCommand):
 
     def handle(
         self,
-        page: int = typer.Option(DEFAULT_PAGE, help="示例页码。"),
+        page: int = typer.Option(DEFAULT_PAGE, min=1, help="页码，从 1 开始。"),
         limit: int = typer.Option(
             DEFAULT_LIMIT,
-            help="示例每页记录数。",
+            min=1,
+            max=MAX_LIMIT,
+            help="每页记录数，范围为 1–1000。",
         ),
     ) -> None:
         result = self._console.run(partial(list_users, page=page, limit=limit))

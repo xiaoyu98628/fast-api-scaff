@@ -51,7 +51,7 @@ uv run python -m app.interfaces.console users create \
 uv run python -m app.interfaces.console users list --page 1 --limit 20
 ```
 
-`page` 和 `limit` 的默认值分别为 1 和 20；该命令只用于演示 Console 调用应用用例，不声明范围约束。结果直接序列化应用 DTO，包含 `items`、`total`、`offset` 和 `limit`。正式后台批处理应根据任务语义使用 `batch_size` 和进度输出。用户上下文固定使用 `main` 数据库连接，运行前必须完成 Alembic 迁移。
+`page` 从 1 开始，默认值为 1；`limit` 范围为 1–1000，默认值为 20。非法范围由 Typer 作为用法错误拒绝并返回退出码 2。结果直接序列化应用 DTO，包含 `items`、`total`、`offset` 和 `limit`。正式后台批处理应根据任务语义使用 `batch_size` 和进度输出。用户上下文固定使用 `main` 数据库连接，运行前必须完成 Alembic 迁移。
 
 ## 4. 输出协议
 

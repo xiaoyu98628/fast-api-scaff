@@ -61,6 +61,8 @@ git diff --check
 
 Ruff format 的 `--check` 不修改文件；实际格式化会改变代码，执行前遵守项目确认规则并确保范围明确。
 
+仓库的 GitHub Actions 会执行同一组质量命令，并启动临时 MySQL/PostgreSQL 服务验证 main migration 的 upgrade、downgrade 和再次 upgrade。SQLite 迁移仍由 pytest 在临时文件中验证。HTTPX/httpcore 升级还必须通过 `tests/outbound_http/test_http11_cancellation.py`，因为取消兼容层使用了固定版本下验证过的私有连接池结构。
+
 ## 3. 测试分层
 
 ### Domain

@@ -1,10 +1,16 @@
+from importlib.metadata import version
 from types import SimpleNamespace
 from typing import Any, cast
 
 import httpx
 import pytest
 
-from app.infrastructure.http.drivers.httpx.pool import HttpPoolRuntime, HttpxPoolCompatibility
+from app.infrastructure.http.drivers.httpx.pool import (
+    TESTED_HTTPCORE_VERSION,
+    TESTED_HTTPX_VERSION,
+    HttpPoolRuntime,
+    HttpxPoolCompatibility,
+)
 
 
 class FakeConnection:
@@ -47,6 +53,11 @@ class FakeClient:
 
     def _transport_for_url(self, _url: object) -> object:
         return self._transport
+
+
+def test_installed_http_dependencies_match_private_pool_compatibility_contract() -> None:
+    assert version("httpx") == TESTED_HTTPX_VERSION
+    assert version("httpcore") == TESTED_HTTPCORE_VERSION
 
 
 @pytest.mark.asyncio

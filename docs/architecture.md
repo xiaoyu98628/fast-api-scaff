@@ -182,7 +182,7 @@ HTTP lifespan 和 Console 都复用 runtime。这样资源的初始化、失败�
 - Console 负责 Typer 参数、JSON stdout、错误 stderr 和退出码；
 - 二者都不实现业务规则，不直接操作 ORM。
 
-HTTP 独立定义 `page/limit` 查询协议和 `items + meta` 分页响应，并在调用应用服务前把页码换算为 `offset/limit`。Console 的 `users list` 仅作为调用应用用例的示例，保留无范围约束的 `--page/--limit` 参数并直接输出应用 DTO；后台批处理应根据任务语义使用 `batch_size`、进度、stdout/stderr 和退出码，而不是复用 HTTP 分页响应。
+HTTP 独立定义 `page/limit` 查询协议和 `items + meta` 分页响应，并在调用应用服务前把页码换算为 `offset/limit`。Console 的 `users list` 也在宿主边界约束 `page` 和 `limit`，但直接输出应用 DTO；后台批处理应根据任务语义使用 `batch_size`、进度、stdout/stderr 和退出码，而不是复用 HTTP 分页响应。
 
 新增宿主的判断标准不是“能否 import service”，而是是否完整承担自身协议边界、日志、生命周期、取消和错误语义。
 

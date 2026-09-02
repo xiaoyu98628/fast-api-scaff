@@ -52,15 +52,17 @@ async def test_sqlalchemy_user_repository_persists_and_queries_users() -> None:
             status=UserStatus.DISABLED,
             now=now,
         )
-        await repository.update(found)
+        assert await repository.update(found) is True
         await session.commit()
 
         updated = await repository.find(user.id)
         assert updated is not None
         assert updated.status is UserStatus.DISABLED
 
-        await repository.remove(UserId(user.id.value))
+        assert await repository.remove(UserId(user.id.value)) is True
         await session.commit()
         assert await repository.find(user.id) is None
+        assert await repository.update(found) is False
+        assert await repository.remove(UserId(user.id.value)) is False
 
     await manager.aclose()
