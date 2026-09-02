@@ -13,7 +13,7 @@ from app.interfaces.shared.pagination import PageInput, PageOutput
 
 DEFAULT_PAGE = 1
 DEFAULT_LIMIT = 20
-MAX_LIMIT = 100
+MAX_LIMIT = 1000
 
 
 async def create_user(

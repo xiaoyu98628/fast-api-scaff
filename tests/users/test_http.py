@@ -73,12 +73,12 @@ async def test_user_http_crud_and_conflict_responses() -> None:
             assert get_response.status_code == 200
             assert get_response.json()["data"] == created
 
-            list_response = await client.get("/api/v1/users", params={"page": 1, "limit": 20})
+            list_response = await client.get("/api/v1/users", params={"page": 1, "limit": 1000})
             assert list_response.status_code == 200
             list_data = list_response.json()["data"]
             assert list_data["total"] == 1
             assert list_data["page"] == 1
-            assert list_data["limit"] == 20
+            assert list_data["limit"] == 1000
             assert "offset" not in list_data
             assert "page_size" not in list_data
             assert list_data["items"][0]["created_at"] == created["created_at"]
@@ -92,7 +92,7 @@ async def test_user_http_crud_and_conflict_responses() -> None:
             for invalid_params in (
                 {"page": 0, "limit": 20},
                 {"page": 1, "limit": 0},
-                {"page": 1, "limit": 101},
+                {"page": 1, "limit": 1001},
             ):
                 invalid_list_response = await client.get(
                     "/api/v1/users",

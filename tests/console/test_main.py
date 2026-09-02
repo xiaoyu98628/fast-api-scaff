@@ -168,7 +168,7 @@ def test_user_commands_call_application_service() -> None:
             "Alice",
         ],
     )
-    listed = runner.invoke(application, ["users", "list", "--page", "1", "--limit", "10"])
+    listed = runner.invoke(application, ["users", "list", "--page", "1", "--limit", "1000"])
 
     expected_time = _NOW.isoformat()
 
@@ -187,7 +187,7 @@ def test_user_commands_call_application_service() -> None:
         "items": [json.loads(created.stdout)],
         "total": 1,
         "page": 1,
-        "limit": 10,
+        "limit": 1000,
     }
 
 
@@ -209,7 +209,7 @@ def test_user_business_error_and_usage_error_use_distinct_exit_codes() -> None:
     )
     invalid_page_error = runner.invoke(application, ["users", "list", "--page", "0"])
     invalid_limit_error = runner.invoke(application, ["users", "list", "--limit", "0"])
-    excessive_limit_error = runner.invoke(application, ["users", "list", "--limit", "101"])
+    excessive_limit_error = runner.invoke(application, ["users", "list", "--limit", "1001"])
     legacy_offset_error = runner.invoke(application, ["users", "list", "--offset", "0"])
     legacy_page_size_error = runner.invoke(application, ["users", "list", "--page-size", "20"])
 
