@@ -103,11 +103,22 @@ def test_context_composition_does_not_cross_context_or_depend_on_hosts() -> None
     assert violations == []
 
 
-def test_interfaces_do_not_depend_on_context_infrastructure() -> None:
-    forbidden_prefixes = tuple(f"app.contexts.{path.name}.infrastructure" for path in _context_directories())
+def test_interfaces_do_not_depend_on_context_persistence_ports() -> None:
+    forbidden_prefixes: list[str] = []
+
+    for context_directory in _context_directories():
+        context_root = f"app.contexts.{context_directory.name}"
+        forbidden_prefixes.extend(
+            (
+                f"{context_root}.infrastructure",
+                f"{context_root}.domain.repository",
+                f"{context_root}.application.unit_of_work",
+            )
+        )
+
     violations = _find_forbidden_dependencies(
         _APP_ROOT / "interfaces",
-        forbidden_prefixes=forbidden_prefixes,
+        forbidden_prefixes=tuple(forbidden_prefixes),
     )
 
     assert violations == []
