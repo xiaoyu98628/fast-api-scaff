@@ -79,7 +79,7 @@ async def consume_events(container: ApplicationContainer) -> None:
 - `HTTP_TIMEOUT__READ`：等待响应数据；
 - `HTTP_TIMEOUT__WRITE`：发送请求数据。
 
-普通池使用 `HTTP_POOL__*`，流式池使用 `HTTP_STREAM_POOL__*`。每个池配置等待容量的 `TIMEOUT`、总连接数、keep-alive 连接数和过期时间。keep-alive 数不能大于总连接数。
+普通池使用 `HTTP_POOL__*`，流式池使用 `HTTP_STREAM_POOL__*`。每个池配置等待容量的 `TIMEOUT`、总连接数、keep-alive 连接数和过期时间。keep-alive 数不能大于总连接数。`HTTP_POOL_WARNING_RATIO` 控制进行中请求达到池容量多少比例时记录一次压力告警；请求数降到阈值以下后，下一次达到阈值会再次告警。
 
 `HttpRequest.timeout` 会覆盖该次请求的所有 HTTPX 超时阶段，包括等待连接池。若上游需要不同的 connect/read 策略，应通过上游适配器和公共契约显式设计，不要在业务代码中依赖 HTTPX 类型。
 
@@ -118,7 +118,9 @@ JSON 解码失败、调用参数错误和调用方业务处理异常不属于网
 
 ## 7. 日志与敏感信息
 
-普通请求记录完成、失败或取消，流式请求记录连接、完成、失败或取消；资源创建、关闭、连接池容量超时和孤儿连接清理也有独立事件。请求日志只包含 method、origin、可选 operation、状态、耗时和响应大小，不记录 path、query、请求/响应体或 header。
+普通请求记录完成、失败或取消，流式请求记录连接、完成、失败或取消；资源创建、关闭、连接池压力、容量超时和孤儿连接清理也有独立事件。请求日志只包含 method、origin、可选 operation、状态、耗时和响应大小，不记录 path、query、请求/响应体或 header。
+
+池压力和容量超时日志包含 pool、active、peak active、limit、usage、cancelled、pool timeout 与 orphan discarded；容量超时还尽力记录 client ID、pool ID 和固定依赖版本的池状态。底层私有池状态读取或维护失败只记录兼容/维护事件，不覆盖原始请求、业务异常或取消语义。
 
 任务取消记录 INFO 事件，不会记录为出站 ERROR。调用方在流上下文中抛出的非 HTTP 业务异常也不会被误报为出站流失败。完整事件列表见[日志](logging.md)。
 

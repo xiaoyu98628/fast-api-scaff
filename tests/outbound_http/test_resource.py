@@ -36,6 +36,9 @@ async def test_factory_creates_independent_standard_and_stream_clients() -> None
         assert standard_client is not stream_client
         assert standard_client.timeout.pool == 4.0
         assert stream_client.timeout.pool == 8.0
+        assert resource.standard_runtime.limit == 11
+        assert resource.stream_runtime.limit == 7
+        assert resource.standard_runtime.warning_ratio == 0.8
         assert resource._max_response_bytes == 4096
     finally:
         await resource.aclose()

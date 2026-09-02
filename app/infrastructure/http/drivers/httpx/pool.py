@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from dataclasses import dataclass
+from math import ceil
 from typing import Any
 
 import httpx
@@ -13,18 +14,43 @@ from app.infrastructure.logging.record import log_extra
 class HttpPoolRuntime:
     """单个连接池的进程内诊断计数。"""
 
+    name: str
+    limit: int
+    warning_ratio: float
     active: int = 0
     peak_active: int = 0
     cancelled: int = 0
     pool_timeout: int = 0
     orphan_discarded: int = 0
 
-    def acquire(self) -> None:
+    def acquire(self) -> bool:
+        pressure_before = self.under_pressure
         self.active += 1
         self.peak_active = max(self.peak_active, self.active)
+        return not pressure_before and self.under_pressure
 
     def release(self) -> None:
         self.active = max(0, self.active - 1)
+
+    @property
+    def warning_at(self) -> int:
+        return max(1, ceil(self.limit * self.warning_ratio))
+
+    @property
+    def under_pressure(self) -> bool:
+        return self.active >= self.warning_at
+
+    def log_details(self) -> dict[str, object]:
+        return {
+            "pool": self.name,
+            "active": self.active,
+            "peak_active": self.peak_active,
+            "limit": self.limit,
+            "usage": round(self.active / self.limit, 4),
+            "cancelled": self.cancelled,
+            "pool_timeout": self.pool_timeout,
+            "orphan_discarded": self.orphan_discarded,
+        }
 
 
 class HttpxPoolCompatibility:
@@ -67,6 +93,16 @@ class HttpxPoolCompatibility:
         except AttributeError, TypeError:
             self._log_compatibility_warning()
             return 0
+        except BaseException as error:
+            HTTP_LOGGER.warning(
+                "Failed to discard orphaned outbound HTTP connections",
+                extra=log_extra(
+                    HttpLogEvent.POOL_ORPHAN_DISCARD_FAILED,
+                    error_type=type(error).__name__,
+                ),
+                exc_info=True,
+            )
+            return 0
 
     async def wait_for_cleanup(self) -> None:
         if self._cleanup_tasks:
@@ -76,6 +112,14 @@ class HttpxPoolCompatibility:
     def _resolve_pool(client: httpx.AsyncClient, url: str) -> Any:
         transport: Any = client._transport_for_url(httpx.URL(url))
         return transport._pool
+
+    def snapshot(self, client: httpx.AsyncClient, url: str) -> tuple[str, str]:
+        """尽力读取 HTTPX/httpcore 私有池状态，失败时返回稳定诊断值。"""
+        try:
+            pool = self._resolve_pool(client, url)
+            return f"{id(pool):#x}", repr(pool)
+        except BaseException as error:
+            return "-", f"unavailable:{type(error).__name__}"
 
     def _start_cleanup(self, pool: Any, connections: list[Any]) -> None:
         if not connections:

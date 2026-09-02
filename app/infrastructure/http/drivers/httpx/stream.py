@@ -2,7 +2,6 @@ import logging
 import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Literal
 
 import httpx
 from anyio import CancelScope, get_cancelled_exc_class
@@ -62,11 +61,16 @@ async def open_httpx_stream(
     request: HttpRequest,
     pool_compatibility: HttpxPoolCompatibility,
     runtime: HttpPoolRuntime,
-    *,
-    pool_name: Literal["standard", "stream"],
 ) -> AsyncIterator[HttpxStreamResponse]:
     stream_context = client.stream(**build_httpx_request_arguments(request))
-    runtime.acquire()
+    if runtime.acquire():
+        write_http_log(
+            logging.WARNING,
+            HttpLogEvent.POOL_PRESSURE,
+            "Outbound HTTP connection pool is under pressure",
+            request,
+            **runtime.log_details(),
+        )
     entered = False
     cancelled = False
 
@@ -80,12 +84,16 @@ async def open_httpx_stream(
         raise
     except httpx.PoolTimeout as error:
         runtime.pool_timeout += 1
+        pool_id, pool_state = pool_compatibility.snapshot(client, request.url)
         write_http_log(
             logging.WARNING,
             HttpLogEvent.POOL_TIMEOUT,
             "Outbound HTTP connection pool timed out",
             request,
-            pool=pool_name,
+            client_id=f"{id(client):#x}",
+            pool_id=pool_id,
+            pool_state=pool_state,
+            **runtime.log_details(),
         )
         raise HttpPoolTimeoutError("等待 HTTP 连接池容量超时") from error
     except httpx.TimeoutException as error:

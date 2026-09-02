@@ -20,13 +20,24 @@ class HttpxResource:
         self,
         standard_client: httpx.AsyncClient,
         stream_client: httpx.AsyncClient,
+        standard_pool_limit: int = 100,
+        stream_pool_limit: int = 100,
+        pool_warning_ratio: float = 0.8,
         max_response_bytes: int = 10 * 1024 * 1024,
     ) -> None:
         self._standard_client = standard_client
         self._stream_client = stream_client
         self._max_response_bytes = max_response_bytes
-        self._standard_runtime = HttpPoolRuntime()
-        self._stream_runtime = HttpPoolRuntime()
+        self._standard_runtime = HttpPoolRuntime(
+            name="standard",
+            limit=standard_pool_limit,
+            warning_ratio=pool_warning_ratio,
+        )
+        self._stream_runtime = HttpPoolRuntime(
+            name="stream",
+            limit=stream_pool_limit,
+            warning_ratio=pool_warning_ratio,
+        )
         self._pool_compatibility = HttpxPoolCompatibility()
 
     @property
@@ -43,7 +54,6 @@ class HttpxResource:
             request,
             self._pool_compatibility,
             self._standard_runtime,
-            pool_name="standard",
         ) as response:
             content = await self._read_limited(response)
             return HttpResponse(
@@ -58,7 +68,6 @@ class HttpxResource:
             request,
             self._pool_compatibility,
             self._stream_runtime,
-            pool_name="stream",
         )
 
     async def aclose(self) -> None:

@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from app.infrastructure.http.clients.managed import ManagedHttpClient
+from app.infrastructure.http.contracts.client import HttpClient
 from app.infrastructure.http.contracts.driver import HttpDriver
 
 
@@ -9,7 +9,7 @@ class ManagedHttpResource:
     """组合底层驱动资源和应用公共客户端。"""
 
     driver: HttpDriver
-    client: ManagedHttpClient
+    client: HttpClient
 
     async def aclose(self) -> None:
         await self.driver.aclose()

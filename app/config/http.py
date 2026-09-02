@@ -49,6 +49,7 @@ class HttpSettings(BaseSettings):
         max_connections=100,
         max_keepalive_connections=10,
     )
+    pool_warning_ratio: float = Field(default=0.8, gt=0, le=1)
     max_response_bytes: int = Field(default=10 * 1024 * 1024, ge=1)
     verify: bool = True
     follow_redirects: bool = False

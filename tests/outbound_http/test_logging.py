@@ -151,6 +151,8 @@ async def test_pool_timeout_has_dedicated_event(caplog: pytest.LogCaptureFixture
     resource = HttpxResource(
         standard_client=httpx.AsyncClient(transport=httpx.MockTransport(fail)),
         stream_client=httpx.AsyncClient(transport=httpx.MockTransport(fail)),
+        standard_pool_limit=1,
+        pool_warning_ratio=1.0,
     )
 
     try:
@@ -160,6 +162,18 @@ async def test_pool_timeout_has_dedicated_event(caplog: pytest.LogCaptureFixture
         await resource.aclose()
 
     assert HttpLogEvent.POOL_TIMEOUT in _events(caplog)
+    assert HttpLogEvent.POOL_PRESSURE in _events(caplog)
+
+    timeout_record = next(record for record in caplog.records if getattr(record, "event", None) == HttpLogEvent.POOL_TIMEOUT)
+    details = getattr(timeout_record, "details")
+    assert details["pool"] == "standard"
+    assert details["active"] == 1
+    assert details["peak_active"] == 1
+    assert details["limit"] == 1
+    assert details["pool_timeout"] == 1
+    assert details["client_id"].startswith("0x")
+    assert details["pool_id"] == "-"
+    assert details["pool_state"] == "unavailable:AttributeError"
 
 
 @contextmanager

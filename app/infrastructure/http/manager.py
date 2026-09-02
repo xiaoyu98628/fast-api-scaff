@@ -3,6 +3,7 @@ from contextlib import AbstractAsyncContextManager, asynccontextmanager
 
 from app.config.http import HttpSettings
 from app.infrastructure.http.clients.managed import ManagedHttpClient
+from app.infrastructure.http.contracts.client import HttpClient
 from app.infrastructure.http.contracts.request import HttpRequest
 from app.infrastructure.http.contracts.response import HttpResponse
 from app.infrastructure.http.contracts.stream import HttpStreamResponse
@@ -25,7 +26,7 @@ class HttpClientManager:
     def is_initialized(self) -> bool:
         return self._resource.initialized
 
-    async def get(self) -> ManagedHttpClient:
+    async def get(self) -> HttpClient:
         return (await self._resource.get()).client
 
     async def request(self, request: HttpRequest) -> HttpResponse:

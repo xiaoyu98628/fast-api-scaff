@@ -10,7 +10,7 @@
 - MySQL、PostgreSQL、SQLite 异步 SQLAlchemy；
 - Repository、Mapper、Unit of Work 与 Alembic migration；
 - Redis、Memcached、Memory 字节级 KV 缓存；
-- 普通与流式 HTTP 出站请求、独立连接池、阶段超时和结构化日志；
+- 普通与流式 HTTP 出站请求、独立连接池、阶段超时、池压力诊断和结构化日志；
 - JSON/Text 结构化日志、request ID、访问日志和数据库查询日志；
 - 架构依赖测试、pytest、Ruff 与 ty 检查。
 

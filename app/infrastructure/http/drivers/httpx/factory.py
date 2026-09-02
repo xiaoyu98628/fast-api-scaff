@@ -10,6 +10,9 @@ def create_httpx_resource(settings: HttpSettings) -> HttpxResource:
     resource = HttpxResource(
         standard_client=_create_client(settings, settings.pool),
         stream_client=_create_client(settings, settings.stream_pool),
+        standard_pool_limit=settings.pool.max_connections,
+        stream_pool_limit=settings.stream_pool.max_connections,
+        pool_warning_ratio=settings.pool_warning_ratio,
         max_response_bytes=settings.max_response_bytes,
     )
     HTTP_LOGGER.info(

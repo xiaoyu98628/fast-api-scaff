@@ -115,6 +115,7 @@ HTTP 出站配置在 `load_settings()` 时严格校验，普通请求和流式�
 | `HTTP_VERIFY` | `bool` | `true` | 验证服务端 TLS 证书；生产不应关闭 |
 | `HTTP_FOLLOW_REDIRECTS` | `bool` | `false` | 是否自动跟随重定向 |
 | `HTTP_TRUST_ENV` | `bool` | `false` | 是否读取 `HTTP_PROXY`、`HTTPS_PROXY`、`NO_PROXY` 等环境变量 |
+| `HTTP_POOL_WARNING_RATIO` | `float` | `0.8` | 单个池的进行中请求达到容量比例时记录压力告警，范围为 `(0, 1]` |
 | `HTTP_MAX_RESPONSE_BYTES` | `int` | `10485760` | 普通响应解压后的最大缓冲字节数，至少为 1；不限制流式响应 |
 
 连接池延迟到首次出站请求时创建。配置不包含具体上游地址、认证或自动重试策略；这些属于使用该上游的上下文适配器。调用方式、错误和流生命周期见[HTTP 出站请求](outbound-http.md)。
