@@ -14,16 +14,17 @@ class AsyncLazy[T]:
         self._closer = closer
         self._value: T | None = None
         self._lock = asyncio.Lock()
+        self._closed = False
 
     @property
     def initialized(self) -> bool:
         return self._value is not None
 
     async def get(self) -> T:
-        if self._value is not None:
-            return self._value
-
         async with self._lock:
+            if self._closed:
+                raise RuntimeError("异步资源已经关闭")
+
             if self._value is None:
                 self._value = await self._factory()
 
@@ -31,6 +32,8 @@ class AsyncLazy[T]:
 
     async def aclose(self) -> None:
         async with self._lock:
+            self._closed = True
+
             if self._value is None:
                 return
 

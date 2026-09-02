@@ -48,10 +48,10 @@ curl -i -X POST http://127.0.0.1:8000/api/v1/users \
 查询列表：
 
 ```bash
-curl 'http://127.0.0.1:8000/api/v1/users?offset=0&limit=20'
+curl 'http://127.0.0.1:8000/api/v1/users?page=1&limit=20'
 ```
 
-`offset` 必须大于等于 0；`limit` 范围为 1–100，默认 20。
+`page` 从 1 开始，默认 1；`limit` 范围为 1–1000，默认 20。列表响应的 `data` 包含 `items` 和 `meta`；`meta` 包含 `page`、`limit`、`total` 和 `total_pages`，没有数据时 `total_pages` 为 0。分页名称和范围属于接口协议；进入应用层后，适配器会转换为 `offset/limit`。
 
 查询、更新和删除：
 
@@ -142,7 +142,7 @@ Python 生成示例：
 ```python
 from app.interfaces.http.middleware.query_param_decode import encode_query_param
 
-encoded = encode_query_param({"offset": 0, "limit": 20})
+encoded = encode_query_param({"page": 1, "limit": 20})
 print(encoded)
 ```
 

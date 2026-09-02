@@ -10,10 +10,12 @@
 - MySQL、PostgreSQL、SQLite 异步 SQLAlchemy；
 - Repository、Mapper、Unit of Work 与 Alembic migration；
 - Redis、Memcached、Memory 字节级 KV 缓存；
+- 普通与流式 HTTP 出站请求、独立连接池、阶段超时、池压力诊断和结构化日志；
 - JSON/Text 结构化日志、request ID、访问日志和数据库查询日志；
-- 架构依赖测试、pytest、Ruff 与 ty 检查。
+- 架构依赖测试、pytest、Ruff、ty 与 GitHub Actions 质量检查；
+- CI 使用临时 MySQL/PostgreSQL 服务验证 Alembic upgrade、downgrade 和再次 upgrade。
 
-当前不包含认证/授权、常驻 Scheduler/Worker、领域事件/Outbox/Saga、跨数据库原子事务、Redis 高级数据结构或缓存自动降级。它们需要按实际业务边界设计，不能把规划项当作现有功能。
+当前不包含认证/授权、常驻 Scheduler/Worker、领域事件/Outbox/Saga、跨数据库原子事务、Redis 高级数据结构、缓存自动降级或通用 HTTP 自动重试。它们需要按实际业务边界设计，不能把规划项当作现有功能。
 
 ## 五分钟启动
 
@@ -56,7 +58,7 @@ curl http://127.0.0.1:8000/health
 curl -X POST http://127.0.0.1:8000/api/v1/users \
   -H 'Content-Type: application/json' \
   -d '{"username":"alice","email":"alice@example.com","display_name":"Alice"}'
-curl 'http://127.0.0.1:8000/api/v1/users?offset=0&limit=20'
+curl 'http://127.0.0.1:8000/api/v1/users?page=1&limit=20'
 ```
 
 `/health` 不主动访问数据库或远程缓存。用户接口成功才表示 `main` 数据库配置、迁移和实际查询链路可用。
@@ -70,7 +72,7 @@ uv run python -m app.interfaces.console users create \
   --username alice \
   --email alice@example.com \
   --display-name Alice
-uv run python -m app.interfaces.console users list --offset 0 --limit 20
+uv run python -m app.interfaces.console users list --page 1 --limit 20
 ```
 
 命令结果写 stdout，日志和错误写 stderr；退出码 0/1/2 分别表示成功、运行失败和用法错误。
@@ -83,6 +85,8 @@ docker compose up --build
 
 当前 `compose.yml` 只启动应用，不提供 MySQL、PostgreSQL、Redis 或 Memcached。容器内 `127.0.0.1` 指向容器自身；请使用 SQLite + Memory，或配置容器可访问的外部服务地址。Compose 使用 Uvicorn reload，仅适合本地开发。
 
+生产镜像以 UID/GID 1000 的非 root 用户运行。镜像中的应用代码和虚拟环境由 root 持有，运行用户只对 `storage/data`、`storage/logs` 和自己的 home 目录拥有写权限。Compose 会把项目目录挂载到 `/app`；若使用 SQLite 或其他本地文件存储，请确保宿主机对应目录允许该用户写入。需要适配其他运行平台时，可通过 `APP_UID`、`APP_GID` 构建参数覆盖镜像用户。
+
 ## 文档
 
 - [完整手册导航](docs/index.md)
@@ -92,6 +96,7 @@ docker compose up --build
 - [Console 命令](docs/console.md)
 - [数据库](docs/database.md)
 - [缓存](docs/cache.md)
+- [HTTP 出站请求](docs/outbound-http.md)
 - [日志](docs/logging.md)
 - [架构说明](docs/architecture.md)
 - [开发与质量](docs/development.md)
@@ -108,5 +113,7 @@ uv run ruff format --check app tests database
 uv run ty check app tests database
 git diff --check
 ```
+
+GitHub Actions 还会在 MySQL 和 PostgreSQL 上执行迁移往返验证。HTTPX/httpcore 由 `uv.lock` 固定到当前已验证版本；升级时必须运行出站 HTTP 取消测试和全量质量检查。
 
 修改公开配置、入口、依赖、目录或调用方式时，必须同步 README、专题文档和 `sample.env`；文档只能描述已经实现并验证的能力。

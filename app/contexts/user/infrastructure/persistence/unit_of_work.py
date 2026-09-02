@@ -1,6 +1,7 @@
 from contextlib import AbstractAsyncContextManager
 from types import TracebackType
 
+from anyio import CancelScope
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -44,15 +45,29 @@ class SqlAlchemyUserUnitOfWork:
         exception: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
-        if self._session is not None and exception is not None:
-            await self._session.rollback()
+        cleanup_errors: list[BaseException] = []
 
-        if self._session_context is not None:
-            await self._session_context.__aexit__(exception_type, exception, traceback)
+        try:
+            with CancelScope(shield=True):
+                if self._session is not None and exception is not None:
+                    try:
+                        await self._session.rollback()
+                    except BaseException as error:
+                        cleanup_errors.append(error)
 
-        self._session_context = None
-        self._session = None
-        self._users = None
+                if self._session_context is not None:
+                    try:
+                        await self._session_context.__aexit__(exception_type, exception, traceback)
+                    except BaseException as error:
+                        cleanup_errors.append(error)
+        finally:
+            self._session_context = None
+            self._session = None
+            self._users = None
+
+        if cleanup_errors:
+            errors = ([exception] if exception is not None else []) + cleanup_errors
+            raise BaseExceptionGroup("用户事务退出和清理失败", errors) from None
 
     async def commit(self) -> None:
         if self._session is None:

@@ -5,6 +5,7 @@ from uuid import UUID
 
 import pytest
 import typer
+from click import unstyle
 from pydantic import ValidationError
 from typer.testing import CliRunner
 
@@ -13,6 +14,7 @@ from app.config.app import AppSettings
 from app.config.cache import CacheSettings
 from app.config.cors import CorsSettings
 from app.config.database import DatabaseSettings
+from app.config.http import HttpSettings
 from app.config.settings import Settings
 from app.contexts.user.application.dto import CreateUserCommand, UserDTO, UserPageDTO
 from app.contexts.user.application.service import UserApplicationService
@@ -21,6 +23,8 @@ from app.contexts.user.domain.errors import InvalidUserDataError
 from app.contexts.user.domain.values import UserStatus
 from app.infrastructure.cache.manager import CacheManager
 from app.infrastructure.database.manager import DatabaseManager
+from app.infrastructure.http.errors import HttpTransportError
+from app.infrastructure.http.manager import HttpClientManager
 from app.interfaces.console.application import ConsoleApplication
 from app.interfaces.console.exit_codes import ConsoleExitCode
 from app.interfaces.console.main import create_console, run_console
@@ -76,11 +80,14 @@ def build_console(service: FakeUserService) -> tuple[CliRunner, typer.Typer]:
 
     def build_container(_settings: Settings) -> ApplicationContainer:
         databases = DatabaseManager(settings.database)
+        caches = CacheManager(settings.cache)
+        http = HttpClientManager(HttpSettings(_env_file=None))
         return ApplicationContainer(
             databases=databases,
-            caches=CacheManager(settings.cache),
+            caches=caches,
+            http=http,
             users=UserContext(service=cast(UserApplicationService, service)),
-            async_shutdown_callbacks=(databases.aclose,),
+            async_shutdown_callbacks=(databases.aclose, caches.aclose, http.aclose),
         )
 
     console = ConsoleApplication(
@@ -124,11 +131,12 @@ def test_root_help_and_version_use_runtime_application_metadata() -> None:
 
     help_result = runner.invoke(application, ["--help"])
     version_result = runner.invoke(application, ["--version"])
+    help_output = unstyle(help_result.stdout)
 
     assert help_result.exit_code == 0
-    assert "应用命令行入口。" in help_result.stdout
-    assert "--version" in help_result.stdout
-    assert "fast-api-scaff" not in help_result.stdout
+    assert "应用命令行入口。" in help_output
+    assert "--version" in help_output
+    assert "fast-api-scaff" not in help_output
     assert version_result.exit_code == 0
     assert version_result.stdout.strip() == "console-test 1.2.3"
 
@@ -137,12 +145,13 @@ def test_user_command_help_describes_available_operations() -> None:
     runner, application = build_console(FakeUserService())
 
     result = runner.invoke(application, ["users", "--help"])
+    output = unstyle(result.stdout)
 
     assert result.exit_code == 0
-    assert "create" in result.stdout
-    assert "创建用户。" in result.stdout
-    assert "list" in result.stdout
-    assert "分页查询用户。" in result.stdout
+    assert "create" in output
+    assert "创建用户。" in output
+    assert "list" in output
+    assert "分页查询用户。" in output
 
 
 def test_user_commands_call_application_service() -> None:
@@ -162,7 +171,7 @@ def test_user_commands_call_application_service() -> None:
             "Alice",
         ],
     )
-    listed = runner.invoke(application, ["users", "list", "--offset", "0", "--limit", "10"])
+    listed = runner.invoke(application, ["users", "list", "--page", "1", "--limit", "1000"])
 
     expected_time = _NOW.isoformat()
 
@@ -177,7 +186,12 @@ def test_user_commands_call_application_service() -> None:
         "updated_at": expected_time,
     }
     assert listed.exit_code == 0
-    assert json.loads(listed.stdout)["items"] == [json.loads(created.stdout)]
+    assert json.loads(listed.stdout) == {
+        "items": [json.loads(created.stdout)],
+        "total": 1,
+        "offset": 0,
+        "limit": 1000,
+    }
 
 
 def test_user_business_error_and_usage_error_use_distinct_exit_codes() -> None:
@@ -196,12 +210,20 @@ def test_user_business_error_and_usage_error_use_distinct_exit_codes() -> None:
             "x",
         ],
     )
-    usage_error = runner.invoke(application, ["users", "list", "--limit", "0"])
+    invalid_page = runner.invoke(application, ["users", "list", "--page", "0"])
+    invalid_limit = runner.invoke(application, ["users", "list", "--limit", "0"])
+    excessive_limit = runner.invoke(application, ["users", "list", "--limit", "1001"])
+    legacy_offset_error = runner.invoke(application, ["users", "list", "--offset", "0"])
+    legacy_page_size_error = runner.invoke(application, ["users", "list", "--page-size", "20"])
 
     assert business_error.exit_code == ConsoleExitCode.FAILURE
     assert business_error.stdout == ""
     assert business_error.stderr.strip() == "Error: 测试用户数据不合法"
-    assert usage_error.exit_code == ConsoleExitCode.USAGE
+    assert invalid_page.exit_code == ConsoleExitCode.USAGE
+    assert invalid_limit.exit_code == ConsoleExitCode.USAGE
+    assert excessive_limit.exit_code == ConsoleExitCode.USAGE
+    assert legacy_offset_error.exit_code == ConsoleExitCode.USAGE
+    assert legacy_page_size_error.exit_code == ConsoleExitCode.USAGE
 
 
 def test_run_console_renders_expected_configuration_error(capsys: pytest.CaptureFixture[str]) -> None:
@@ -219,6 +241,19 @@ def test_run_console_renders_expected_configuration_error(capsys: pytest.Capture
     assert output.out == ""
     assert "Error: 配置 service_code：" in output.err
     assert "Traceback" not in output.err
+
+
+def test_run_console_renders_outbound_http_error(capsys: pytest.CaptureFixture[str]) -> None:
+    def fail() -> None:
+        raise HttpTransportError("上游服务不可用")
+
+    with pytest.raises(SystemExit) as exit_error:
+        run_console(fail, ConsolePresenter())
+
+    output = capsys.readouterr()
+    assert exit_error.value.code == ConsoleExitCode.FAILURE
+    assert output.out == ""
+    assert output.err.strip() == "Error: 上游服务不可用"
 
 
 def test_run_console_preserves_unexpected_programming_error() -> None:

@@ -15,6 +15,7 @@
 
 - [数据库](database.md)：多连接、SQLAlchemy、Repository、Unit of Work 和 Alembic。
 - [缓存](cache.md)：Redis、Memcached、Memory、key、TTL、编码与边界。
+- [HTTP 出站请求](outbound-http.md)：公共契约、普通/流式请求、连接池、超时和错误语义。
 - [日志](logging.md)：结构化日志、访问日志、字段、输出流和扩展驱动。
 
 ## 设计与维护
@@ -31,6 +32,7 @@
 - 用户限界上下文的增、查、改、删示例；
 - MySQL、PostgreSQL、SQLite 异步数据库连接；
 - Redis、Memcached、进程内 Memory 字节级 KV 缓存；
+- 普通与流式 HTTP 出站客户端、独立连接池和统一传输错误；
 - JSON/Text 结构化日志、请求 ID、访问日志和统一 HTTP 响应；
 - Alembic 数据库迁移与架构依赖测试。
 
@@ -41,5 +43,6 @@
 - 领域事件、Outbox、Saga 或跨数据库原子事务；
 - Redis Hash/List/Set/ZSet 等数据结构；
 - 缓存故障时的自动降级或透明回退。
+- 通用 HTTP 自动重试、熔断和具体上游服务注册。
 
 “尚未实现”并不表示不能扩展，而是提醒使用者不要把规划能力当成现有契约。扩展前先阅读[架构说明](architecture.md)中的边界与取舍。

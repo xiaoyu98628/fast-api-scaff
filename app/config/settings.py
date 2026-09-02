@@ -6,6 +6,7 @@ from app.config.app import AppSettings
 from app.config.cache import CacheSettings
 from app.config.cors import CorsSettings
 from app.config.database import DatabaseSettings
+from app.config.http import HttpSettings
 from app.config.logging import LoggingSettings
 
 
@@ -17,6 +18,7 @@ class Settings(BaseModel):
     app: AppSettings
     database: DatabaseSettings
     cache: CacheSettings
+    http: HttpSettings = HttpSettings(_env_file=None)
     cors: CorsSettings
     logging: LoggingSettings = LoggingSettings(_env_file=None)
 
@@ -28,6 +30,7 @@ def load_settings() -> Settings:
         app=AppSettings(),
         database=DatabaseSettings(),
         cache=CacheSettings(),
+        http=HttpSettings(),
         cors=CorsSettings(),
         logging=LoggingSettings(),
     )

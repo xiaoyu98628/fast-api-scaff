@@ -1,9 +1,12 @@
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
+from anyio import CancelScope
+
 from app.contexts.user.composition import UserContext
 from app.infrastructure.cache.manager import CacheManager
 from app.infrastructure.database.manager import DatabaseManager
+from app.infrastructure.http.manager import HttpClientManager
 
 type AsyncCallback = Callable[[], Awaitable[None]]
 type Callback = Callable[[], None]
@@ -15,6 +18,7 @@ class ApplicationContainer:
 
     databases: DatabaseManager
     caches: CacheManager
+    http: HttpClientManager
     users: UserContext
     startup_callbacks: tuple[AsyncCallback, ...] = ()
     async_shutdown_callbacks: tuple[AsyncCallback, ...] = ()
@@ -25,30 +29,33 @@ class ApplicationContainer:
             await callback()
 
     async def aclose(self) -> None:
-        errors: list[Exception] = []
+        errors: list[BaseException] = []
 
-        for callback in reversed(self.async_shutdown_callbacks):
-            try:
-                await callback()
-            except Exception as error:
-                errors.append(error)
+        with CancelScope(shield=True):
+            for callback in reversed(self.async_shutdown_callbacks):
+                try:
+                    await callback()
+                except BaseException as error:
+                    errors.append(error)
 
         try:
             self.close()
-        except ExceptionGroup as error:
-            errors.extend(exception for exception in error.exceptions if isinstance(exception, Exception))
+        except BaseExceptionGroup as error:
+            errors.extend(error.exceptions)
+        except BaseException as error:
+            errors.append(error)
 
         if errors:
-            raise ExceptionGroup("Application shutdown callbacks failed", errors)
+            raise BaseExceptionGroup("Application shutdown callbacks failed", errors)
 
     def close(self) -> None:
-        errors: list[Exception] = []
+        errors: list[BaseException] = []
 
         for callback in reversed(self.shutdown_callbacks):
             try:
                 callback()
-            except Exception as error:
+            except BaseException as error:
                 errors.append(error)
 
         if errors:
-            raise ExceptionGroup("Application shutdown callbacks failed", errors)
+            raise BaseExceptionGroup("Application shutdown callbacks failed", errors)

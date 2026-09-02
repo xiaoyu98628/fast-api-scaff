@@ -69,7 +69,9 @@ class UserApplicationService:
                 now=self.clock(),
             )
             await self._ensure_unique(unit_of_work.users, user)
-            await unit_of_work.users.update(user)
+            if not await unit_of_work.users.update(user):
+                raise UserNotFoundError(command.user_id)
+
             await unit_of_work.commit()
 
         return UserDTO.from_domain(user)
@@ -78,10 +80,9 @@ class UserApplicationService:
         domain_id = UserId(user_id)
 
         async with self.unit_of_work_factory() as unit_of_work:
-            if await unit_of_work.users.find(domain_id) is None:
+            if not await unit_of_work.users.remove(domain_id):
                 raise UserNotFoundError(user_id)
 
-            await unit_of_work.users.remove(domain_id)
             await unit_of_work.commit()
 
     @staticmethod

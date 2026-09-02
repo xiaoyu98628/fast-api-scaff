@@ -25,8 +25,15 @@ class ApplicationRuntime:
 
         try:
             await container.start()
-        except BaseException:
-            await self.aclose()
+        except BaseException as startup_error:
+            try:
+                await self.aclose()
+            except BaseException as cleanup_error:
+                raise BaseExceptionGroup(
+                    "Application startup and cleanup failed",
+                    (startup_error, cleanup_error),
+                ) from None
+
             raise
 
         return container

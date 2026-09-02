@@ -15,6 +15,9 @@ COPY --exclude=.venv . .
 
 FROM python:3.14-slim AS runtime
 
+ARG APP_UID=1000
+ARG APP_GID=1000
+
 ENV CONTAINER_PACKAGE_URL=mirrors.aliyun.com
 RUN sed -i "s|deb.debian.org|${CONTAINER_PACKAGE_URL}|g" /etc/apt/sources.list.d/debian.sources
 
@@ -27,6 +30,9 @@ RUN apt-get update \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+RUN groupadd --gid "${APP_GID}" app \
+    && useradd --uid "${APP_UID}" --gid app --create-home --home-dir /home/app --shell /usr/sbin/nologin app
+
 # 设置环境变量：
 # 确保 Python 输出直接打印到标准输出，方便查看容器日志
 # 禁止生成 .pyc 字节码文件
@@ -37,6 +43,11 @@ ENV PATH="/app/.venv/bin:$PATH" \
 WORKDIR /app
 
 COPY --from=builder /app /app
+
+RUN mkdir -p /app/storage/data /app/storage/logs \
+    && chown -R app:app /app/storage/data /app/storage/logs
+
+USER app
 
 EXPOSE 8000
 

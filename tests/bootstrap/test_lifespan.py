@@ -9,10 +9,12 @@ from app.config.app import AppSettings
 from app.config.cache import CacheSettings
 from app.config.cors import CorsSettings
 from app.config.database import DatabaseSettings
+from app.config.http import HttpSettings
 from app.config.settings import Settings
 from app.contexts.user.composition import build_user_context
 from app.infrastructure.cache.manager import CacheManager
 from app.infrastructure.database.manager import DatabaseManager
+from app.infrastructure.http.manager import HttpClientManager
 
 
 def build_settings() -> Settings:
@@ -52,6 +54,7 @@ async def test_application_startup_failure_is_logged(caplog: pytest.LogCaptureFi
     container = ApplicationContainer(
         databases=databases,
         caches=CacheManager(settings.cache),
+        http=HttpClientManager(HttpSettings(_env_file=None)),
         users=build_user_context(databases),
         startup_callbacks=(fail_startup,),
     )

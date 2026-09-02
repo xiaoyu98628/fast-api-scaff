@@ -42,8 +42,40 @@ async def test_close_only_closes_initialized_resource() -> None:
     await resource.aclose()
     assert closed == []
 
-    initialized = await resource.get()
-    await resource.aclose()
+    initialized_resource = AsyncLazy(factory=create, closer=close)
+    initialized = await initialized_resource.get()
+    await initialized_resource.aclose()
 
     assert closed == [initialized]
-    assert resource.initialized is False
+    assert initialized_resource.initialized is False
+
+
+@pytest.mark.asyncio
+async def test_get_waiting_for_close_is_rejected_and_resource_cannot_reopen() -> None:
+    close_started = asyncio.Event()
+    allow_close = asyncio.Event()
+
+    async def create() -> object:
+        return object()
+
+    async def close(_resource: object) -> None:
+        close_started.set()
+        await allow_close.wait()
+
+    resource = AsyncLazy(factory=create, closer=close)
+    await resource.get()
+    close_task = asyncio.create_task(resource.aclose())
+    await close_started.wait()
+    get_task = asyncio.create_task(resource.get())
+    await asyncio.sleep(0)
+
+    assert get_task.done() is False
+
+    allow_close.set()
+    await close_task
+
+    with pytest.raises(RuntimeError, match="已经关闭"):
+        await get_task
+
+    with pytest.raises(RuntimeError, match="已经关闭"):
+        await resource.get()
