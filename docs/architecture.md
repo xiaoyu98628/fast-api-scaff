@@ -184,7 +184,7 @@ HTTP lifespan 和 Console 都复用 runtime。这样资源的初始化、失败�
 - HTTP 与 Console 复用 `app.interfaces.shared` 中框架无关的分页输入/输出规则；
 - 二者都不实现业务规则，不直接操作 ORM。
 
-外部接口统一使用 `page/limit`，宿主适配器在调用应用服务前换算为 `offset/limit`。`app.interfaces.shared` 中的分页对象只记录已校验的值并计算 offset，不定义默认值和取值范围；HTTP 使用 Pydantic、Console 使用 Typer 分别声明自己的输入策略。因此两个宿主可以独立调整限制，同时不会把展示层页码语义下沉到 Application、Repository 或数据库实现。
+外部接口统一使用 `page/limit`，分页输出使用 `items + meta`，其中 `meta` 集中记录页码、每页数量、总数和总页数。宿主适配器在调用应用服务前把页码换算为 `offset/limit`。`app.interfaces.shared` 中的分页对象只记录已校验的值和执行派生计算，不定义默认值和取值范围；HTTP 使用 Pydantic、Console 使用 Typer 分别声明自己的输入策略。因此两个宿主可以独立调整限制，同时不会把展示层页码语义下沉到 Application、Repository 或数据库实现。
 
 新增宿主的判断标准不是“能否 import service”，而是是否完整承担自身协议边界、日志、生命周期、取消和错误语义。
 

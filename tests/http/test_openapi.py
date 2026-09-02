@@ -42,6 +42,14 @@ def test_openapi_metadata_and_swagger_settings() -> None:
         "limit",
         "page",
     }
+    user_list_response = schema["paths"]["/api/v1/users"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+    user_list_envelope = schema["components"]["schemas"][user_list_response["$ref"].rsplit("/", maxsplit=1)[-1]]
+    page_reference = next(item["$ref"] for item in user_list_envelope["properties"]["data"]["anyOf"] if "$ref" in item)
+    page_schema = schema["components"]["schemas"][page_reference.rsplit("/", maxsplit=1)[-1]]
+    meta_reference = page_schema["properties"]["meta"]["$ref"]
+    meta_schema = schema["components"]["schemas"][meta_reference.rsplit("/", maxsplit=1)[-1]]
+    assert set(page_schema["properties"]) == {"items", "meta"}
+    assert set(meta_schema["properties"]) == {"page", "limit", "total", "total_pages"}
     assert app.swagger_ui_parameters is not None
     assert app.swagger_ui_parameters["filter"] is True
     assert app.swagger_ui_parameters["displayRequestDuration"] is True

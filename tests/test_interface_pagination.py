@@ -1,4 +1,9 @@
-from app.interfaces.shared.pagination import PageInput, PageOutput
+from app.interfaces.shared.pagination import (
+    PageInput,
+    PageMeta,
+    PageOutput,
+    calculate_total_pages,
+)
 
 
 def test_page_input_records_values_and_converts_to_offset() -> None:
@@ -10,9 +15,14 @@ def test_page_input_records_values_and_converts_to_offset() -> None:
 
 
 def test_page_output_is_a_framework_neutral_immutable_value() -> None:
-    output = PageOutput(items=("alice",), total=1, page=1, limit=20)
+    meta = PageMeta(page=1, limit=20, total=21, total_pages=2)
+    output = PageOutput(items=("alice",), meta=meta)
 
     assert output.items == ("alice",)
-    assert output.total == 1
-    assert output.page == 1
-    assert output.limit == 20
+    assert output.meta == meta
+
+
+def test_total_pages_is_derived_from_total_and_limit() -> None:
+    assert calculate_total_pages(total=0, limit=15) == 0
+    assert calculate_total_pages(total=1, limit=15) == 1
+    assert calculate_total_pages(total=16, limit=15) == 2

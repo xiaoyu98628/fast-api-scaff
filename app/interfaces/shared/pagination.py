@@ -12,8 +12,18 @@ class PageInput:
 
 
 @dataclass(frozen=True, slots=True)
-class PageOutput[T]:
-    items: tuple[T, ...]
-    total: int
+class PageMeta:
     page: int
     limit: int
+    total: int
+    total_pages: int
+
+
+@dataclass(frozen=True, slots=True)
+class PageOutput[T]:
+    items: tuple[T, ...]
+    meta: PageMeta
+
+
+def calculate_total_pages(*, total: int, limit: int) -> int:
+    return (total + limit - 1) // limit

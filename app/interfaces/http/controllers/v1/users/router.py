@@ -13,6 +13,7 @@ from app.interfaces.http.dependencies.response import JsonResponseFactoryDepende
 from app.interfaces.http.shared.pagination import PageParams, PageResponse
 from app.interfaces.http.shared.response.codes.success_code import SuccessCode
 from app.interfaces.http.shared.response.json import JsonResponse
+from app.interfaces.shared.pagination import PageMeta, calculate_total_pages
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -55,9 +56,15 @@ async def list_users(
     return responses.success(
         PageResponse[UserResponse](
             items=[UserResponse.from_dto(user) for user in result.items],
-            total=result.total,
-            page=pagination_input.page,
-            limit=pagination_input.limit,
+            meta=PageMeta(
+                page=pagination_input.page,
+                limit=pagination_input.limit,
+                total=result.total,
+                total_pages=calculate_total_pages(
+                    total=result.total,
+                    limit=pagination_input.limit,
+                ),
+            ),
         )
     )
 

@@ -9,7 +9,12 @@ from app.interfaces.console.command import ConsoleCommand
 from app.interfaces.console.context import ConsoleContext
 from app.interfaces.console.exit_codes import ConsoleExitCode
 from app.interfaces.console.presentation import ConsolePresenter
-from app.interfaces.shared.pagination import PageInput, PageOutput
+from app.interfaces.shared.pagination import (
+    PageInput,
+    PageMeta,
+    PageOutput,
+    calculate_total_pages,
+)
 
 DEFAULT_PAGE = 1
 DEFAULT_LIMIT = 20
@@ -43,9 +48,15 @@ async def list_users(
     )
     return PageOutput(
         items=result.items,
-        total=result.total,
-        page=pagination.page,
-        limit=pagination.limit,
+        meta=PageMeta(
+            page=pagination.page,
+            limit=pagination.limit,
+            total=result.total,
+            total_pages=calculate_total_pages(
+                total=result.total,
+                limit=pagination.limit,
+            ),
+        ),
     )
 
 

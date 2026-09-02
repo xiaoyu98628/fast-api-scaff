@@ -185,9 +185,12 @@ def test_user_commands_call_application_service() -> None:
     assert listed.exit_code == 0
     assert json.loads(listed.stdout) == {
         "items": [json.loads(created.stdout)],
-        "total": 1,
-        "page": 1,
-        "limit": 1000,
+        "meta": {
+            "page": 1,
+            "limit": 1000,
+            "total": 1,
+            "total_pages": 1,
+        },
     }
 
 

@@ -1,6 +1,6 @@
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.interfaces.shared.pagination import PageInput
+from app.interfaces.shared.pagination import PageInput, PageMeta
 
 DEFAULT_PAGE = 1
 DEFAULT_LIMIT = 20
@@ -19,6 +19,4 @@ class PageParams(BaseModel):
 
 class PageResponse[T](BaseModel):
     items: list[T]
-    total: int
-    page: int
-    limit: int
+    meta: PageMeta
