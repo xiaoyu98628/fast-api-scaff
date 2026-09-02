@@ -47,16 +47,15 @@ async def list_users(
     responses: JsonResponseFactoryDependency,
     pagination: Annotated[PageParams, Query()],
 ) -> JsonResponse[PageResponse[UserResponse]]:
-    pagination_input = pagination.to_input()
     result = await service.list(
-        offset=pagination_input.offset,
-        limit=pagination_input.limit,
+        offset=pagination.offset,
+        limit=pagination.limit,
     )
     return responses.success(
         build_page_response(
             items=result.items,
             total=result.total,
-            pagination=pagination_input,
+            pagination=pagination,
             item_mapper=UserResponse.from_dto,
         )
     )

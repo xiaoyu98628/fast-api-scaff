@@ -185,12 +185,9 @@ def test_user_commands_call_application_service() -> None:
     assert listed.exit_code == 0
     assert json.loads(listed.stdout) == {
         "items": [json.loads(created.stdout)],
-        "meta": {
-            "page": 1,
-            "limit": 1000,
-            "total": 1,
-            "total_pages": 1,
-        },
+        "total": 1,
+        "offset": 0,
+        "limit": 1000,
     }
 
 
@@ -210,18 +207,18 @@ def test_user_business_error_and_usage_error_use_distinct_exit_codes() -> None:
             "x",
         ],
     )
-    invalid_page_error = runner.invoke(application, ["users", "list", "--page", "0"])
-    invalid_limit_error = runner.invoke(application, ["users", "list", "--limit", "0"])
-    excessive_limit_error = runner.invoke(application, ["users", "list", "--limit", "1001"])
+    unrestricted_page = runner.invoke(application, ["users", "list", "--page", "0"])
+    unrestricted_limit = runner.invoke(application, ["users", "list", "--limit", "0"])
+    unrestricted_large_limit = runner.invoke(application, ["users", "list", "--limit", "1001"])
     legacy_offset_error = runner.invoke(application, ["users", "list", "--offset", "0"])
     legacy_page_size_error = runner.invoke(application, ["users", "list", "--page-size", "20"])
 
     assert business_error.exit_code == ConsoleExitCode.FAILURE
     assert business_error.stdout == ""
     assert business_error.stderr.strip() == "Error: 测试用户数据不合法"
-    assert invalid_page_error.exit_code == ConsoleExitCode.USAGE
-    assert invalid_limit_error.exit_code == ConsoleExitCode.USAGE
-    assert excessive_limit_error.exit_code == ConsoleExitCode.USAGE
+    assert unrestricted_page.exit_code == ConsoleExitCode.SUCCESS
+    assert unrestricted_limit.exit_code == ConsoleExitCode.SUCCESS
+    assert unrestricted_large_limit.exit_code == ConsoleExitCode.SUCCESS
     assert legacy_offset_error.exit_code == ConsoleExitCode.USAGE
     assert legacy_page_size_error.exit_code == ConsoleExitCode.USAGE
 

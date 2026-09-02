@@ -7,7 +7,6 @@ from app.runtime.paths import PROJECT_ROOT
 
 _CONTEXTS_ROOT = PROJECT_ROOT / "app/contexts"
 _APP_ROOT = PROJECT_ROOT / "app"
-_SHARED_INTERFACES_ROOT = _APP_ROOT / "interfaces/shared"
 
 
 def test_application_modules_use_absolute_imports() -> None:
@@ -121,22 +120,6 @@ def test_interfaces_do_not_depend_on_context_persistence_ports() -> None:
         _APP_ROOT / "interfaces",
         forbidden_prefixes=tuple(forbidden_prefixes),
     )
-
-    assert violations == []
-
-
-def test_shared_interface_contracts_only_depend_on_stdlib_and_themselves() -> None:
-    violations: list[str] = []
-    allowed_prefixes = ("app.interfaces.shared",)
-
-    for source_path in sorted(_SHARED_INTERFACES_ROOT.rglob("*.py")):
-        source = source_path.read_text(encoding="utf-8")
-        for module, line in _iter_imports(ast.parse(source, filename=str(source_path))):
-            if _is_allowed_dependency(module, allowed_prefixes):
-                continue
-
-            relative_path = source_path.relative_to(PROJECT_ROOT)
-            violations.append(f"{relative_path}:{line} imports {module}")
 
     assert violations == []
 

@@ -2,8 +2,7 @@ from dataclasses import dataclass
 
 from pydantic import BaseModel
 
-from app.interfaces.http.shared.pagination import build_page_response
-from app.interfaces.shared.pagination import PageInput
+from app.interfaces.http.shared.pagination import PageParams, build_page_response
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,7 +22,7 @@ def test_build_page_response_maps_items_and_builds_meta() -> None:
     response = build_page_response(
         items=(SourceItem(1), SourceItem(2)),
         total=21,
-        pagination=PageInput(page=2, limit=10),
+        pagination=PageParams(page=2, limit=10),
         item_mapper=map_item,
     )
 
@@ -42,7 +41,7 @@ def test_build_page_response_handles_empty_result() -> None:
     response = build_page_response(
         items=(),
         total=0,
-        pagination=PageInput(page=1, limit=20),
+        pagination=PageParams(page=1, limit=20),
         item_mapper=map_item,
     )
 

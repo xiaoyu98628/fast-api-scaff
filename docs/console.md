@@ -51,7 +51,7 @@ uv run python -m app.interfaces.console users create \
 uv run python -m app.interfaces.console users list --page 1 --limit 20
 ```
 
-约束与 HTTP 一致：`page >= 1`，`1 <= limit <= 1000`；默认值分别为 1 和 20。分页结果包含 `items` 和 `meta`，其中 `meta` 包含 `page`、`limit`、`total` 和 `total_pages`，没有数据时 `total_pages` 为 0。用户资料还会经过领域校验。用户上下文固定使用 `main` 数据库连接，运行前必须完成 Alembic 迁移。
+`page` 和 `limit` 的默认值分别为 1 和 20；该命令只用于演示 Console 调用应用用例，不声明范围约束。结果直接序列化应用 DTO，包含 `items`、`total`、`offset` 和 `limit`。正式后台批处理应根据任务语义使用 `batch_size` 和进度输出。用户上下文固定使用 `main` 数据库连接，运行前必须完成 Alembic 迁移。
 
 ## 4. 输出协议
 
