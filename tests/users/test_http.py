@@ -2,7 +2,7 @@ from datetime import datetime
 from uuid import UUID, uuid7
 
 import pytest
-from httpx import ASGITransport, AsyncClient
+from httpx2 import ASGITransport, AsyncClient
 from sqlalchemy import select
 
 from app.bootstrap.app import create_app

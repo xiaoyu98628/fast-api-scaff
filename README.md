@@ -114,6 +114,6 @@ uv run ty check app tests database
 git diff --check
 ```
 
-GitHub Actions 还会在 MySQL 和 PostgreSQL 上执行迁移往返验证。HTTPX/httpcore 由 `uv.lock` 固定到当前已验证版本；升级时必须运行出站 HTTP 取消测试和全量质量检查。
+GitHub Actions 还会在 MySQL 和 PostgreSQL 上执行迁移往返验证。HTTPX2/httpcore2 由 `uv.lock` 固定到当前已验证版本；升级时必须运行出站 HTTP 取消测试和全量质量检查。
 
 修改公开配置、入口、依赖、目录或调用方式时，必须同步 README、专题文档和 `sample.env`；文档只能描述已经实现并验证的能力。

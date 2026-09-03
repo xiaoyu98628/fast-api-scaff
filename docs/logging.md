@@ -160,12 +160,11 @@ HTTP lifespan 产生：
 - `http.outbound.request.completed/failed/cancelled`；
 - `http.outbound.stream.connected/completed/failed/cancelled`；
 - `http.outbound.pool.pressure/timeout`；
-- `http.outbound.pool.orphan_discarded/orphan_discard_failed/orphan_close_failed/compatibility_failed`；
 - `http.outbound.resource.created/closed`。
 
 请求 details 只记录 method、origin、可选 operation、状态码、耗时、响应大小和错误类型，不记录 URL path、query、header 或 body。operation 必须是调用方定义的稳定低基数字段，不能包含用户 ID、token 或完整 URL。
 
-任务取消保持取消语义，以 `cancelled` INFO 事件记录，不记录为出站 ERROR。进行中请求首次达到 `HTTP_POOL_WARNING_RATIO` 时记录 `pool.pressure`；降到阈值以下后可以再次触发。连接池等待超时先记录 `pool.timeout` WARNING，details 包含池容量、运行计数以及尽力读取的 HTTPX/httpcore 池状态，随后由公共客户端记录对应请求或流的失败事件。流上下文内由调用方业务代码抛出的非 HTTP 异常不会伪装成 `stream.failed`；底层传输和读取错误仍会记录失败事件。连接池孤儿清理是固定 HTTPX/httpcore 版本下的取消兼容行为，维护失败只记录事件而不覆盖原始异常；出现 compatibility 事件时应检查依赖是否被升级。
+任务取消保持取消语义，以 `cancelled` INFO 事件记录，不记录为出站 ERROR。进行中请求首次达到 `HTTP_POOL_WARNING_RATIO` 时记录 `pool.pressure`；降到阈值以下后可以再次触发。连接池等待超时先记录 `pool.timeout` WARNING，details 包含池容量、运行计数和 client ID，随后由公共客户端记录对应请求或流的失败事件。流上下文内由调用方业务代码抛出的非 HTTP 异常不会伪装成 `stream.failed`；底层传输和读取错误仍会记录失败事件。客户端不读取或修改 HTTPX2/httpcore2 私有连接池状态。
 
 ## 10. HTTP 与 Console 的输出差异
 
@@ -233,7 +232,7 @@ uv run python -m app.interfaces.console users list 1>result.json 2>command.log
 | 同一请求有两条访问日志 | 是否又启用了 `uvicorn.access` 或代理重复采集 |
 | 看不到普通 SQL | 默认只记录慢/失败查询；目标连接 `ECHO` 是否开启 |
 | 出站请求没有 path/query | 按脱敏设计只记录 origin 和 operation |
-| 请求取消后出现孤儿清理告警 | 检查取消频率；若出现 compatibility 事件则核对锁定依赖版本 |
+| 请求取消后连接池持续超时 | 检查消费任务能否响应取消，并运行 HTTP/1.1 取消回归测试 |
 | 日志量突然增大 | `LOG_LEVEL`、数据库 ECHO、访问日志排除和重复 handler |
 | 时间 offset 不正确 | 宿主 `TZ` 和进程重启 |
 

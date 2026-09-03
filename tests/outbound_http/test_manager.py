@@ -42,7 +42,7 @@ class FakeDriver:
 @pytest.mark.asyncio
 async def test_manager_lazily_reuses_and_closes_single_global_client(monkeypatch: pytest.MonkeyPatch) -> None:
     driver = FakeDriver()
-    monkeypatch.setattr(manager_module, "create_httpx_resource", lambda _settings: driver)
+    monkeypatch.setattr(manager_module, "create_httpx2_resource", lambda _settings: driver)
     manager = HttpClientManager(HttpSettings(_env_file=None))
 
     assert manager.is_initialized is False

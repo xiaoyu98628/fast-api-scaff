@@ -1,25 +1,25 @@
-import httpx
+import httpx2
 import pytest
 
 from app.infrastructure.http.contracts.request import HttpRequest
-from app.infrastructure.http.drivers.httpx.resource import HttpxResource
+from app.infrastructure.http.drivers.httpx2.resource import Httpx2Resource
 
 
 @pytest.mark.asyncio
 async def test_stream_uses_independent_client_and_returns_chunks() -> None:
     calls: list[str] = []
 
-    async def standard_handler(_request: httpx.Request) -> httpx.Response:
+    async def standard_handler(_request: httpx2.Request) -> httpx2.Response:
         calls.append("standard")
-        return httpx.Response(200, content=b"standard")
+        return httpx2.Response(200, content=b"standard")
 
-    async def stream_handler(_request: httpx.Request) -> httpx.Response:
+    async def stream_handler(_request: httpx2.Request) -> httpx2.Response:
         calls.append("stream")
-        return httpx.Response(200, content=b"first-second")
+        return httpx2.Response(200, content=b"first-second")
 
-    resource = HttpxResource(
-        standard_client=httpx.AsyncClient(transport=httpx.MockTransport(standard_handler)),
-        stream_client=httpx.AsyncClient(transport=httpx.MockTransport(stream_handler)),
+    resource = Httpx2Resource(
+        standard_client=httpx2.AsyncClient(transport=httpx2.MockTransport(standard_handler)),
+        stream_client=httpx2.AsyncClient(transport=httpx2.MockTransport(stream_handler)),
     )
 
     try:
@@ -39,14 +39,14 @@ async def test_stream_uses_independent_client_and_returns_chunks() -> None:
 async def test_stream_distinguishes_missing_json_from_explicit_null() -> None:
     received: list[tuple[bytes, str | None]] = []
 
-    async def handler(request: httpx.Request) -> httpx.Response:
+    async def handler(request: httpx2.Request) -> httpx2.Response:
         received.append((request.content, request.headers.get("content-type")))
-        return httpx.Response(204)
+        return httpx2.Response(204)
 
-    transport = httpx.MockTransport(handler)
-    resource = HttpxResource(
-        standard_client=httpx.AsyncClient(transport=transport),
-        stream_client=httpx.AsyncClient(transport=transport),
+    transport = httpx2.MockTransport(handler)
+    resource = Httpx2Resource(
+        standard_client=httpx2.AsyncClient(transport=transport),
+        stream_client=httpx2.AsyncClient(transport=transport),
     )
 
     try:

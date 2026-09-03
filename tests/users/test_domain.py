@@ -1,10 +1,12 @@
 from datetime import UTC, datetime, timedelta
+from typing import cast
+from uuid import UUID
 
 import pytest
 
 from app.contexts.user.domain.errors import InvalidUserDataError
 from app.contexts.user.domain.user import User
-from app.contexts.user.domain.values import UserStatus
+from app.contexts.user.domain.values import UserId, UserStatus
 
 
 def test_user_creation_normalizes_identity_fields() -> None:
@@ -23,6 +25,11 @@ def test_user_creation_normalizes_identity_fields() -> None:
     assert user.status is UserStatus.ACTIVE
     assert user.created_at == now
     assert user.updated_at == now
+
+
+def test_user_id_rejects_non_uuid_value() -> None:
+    with pytest.raises(InvalidUserDataError, match="用户 ID 必须是 UUID"):
+        UserId(cast(UUID, "not-a-uuid"))
 
 
 def test_user_profile_update_preserves_creation_time() -> None:

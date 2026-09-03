@@ -1,8 +1,8 @@
-import httpx
+import httpx2
 import pytest
 
 from app.config.http import HttpPoolSettings, HttpSettings, HttpTimeoutSettings
-from app.infrastructure.http.drivers.httpx.factory import create_httpx_resource
+from app.infrastructure.http.drivers.httpx2.factory import create_httpx2_resource
 
 
 @pytest.mark.asyncio
@@ -25,14 +25,14 @@ async def test_factory_creates_independent_standard_and_stream_clients() -> None
         _env_file=None,
     )
 
-    resource = create_httpx_resource(settings)
+    resource = create_httpx2_resource(settings)
 
     try:
         standard_client = resource._standard_client
         stream_client = resource._stream_client
 
-        assert isinstance(standard_client, httpx.AsyncClient)
-        assert isinstance(stream_client, httpx.AsyncClient)
+        assert isinstance(standard_client, httpx2.AsyncClient)
+        assert isinstance(stream_client, httpx2.AsyncClient)
         assert standard_client is not stream_client
         assert standard_client.timeout.pool == 4.0
         assert stream_client.timeout.pool == 8.0

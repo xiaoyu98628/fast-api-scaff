@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 import pytest
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from httpx import ASGITransport, AsyncClient
+from httpx2 import ASGITransport, AsyncClient
 
 from app.bootstrap.app import create_app
 from app.config.app import AppSettings

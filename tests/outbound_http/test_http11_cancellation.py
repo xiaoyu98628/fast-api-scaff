@@ -1,10 +1,10 @@
 import asyncio
 
-import httpx
+import httpx2
 import pytest
 
 from app.infrastructure.http.contracts.request import HttpRequest
-from app.infrastructure.http.drivers.httpx.resource import HttpxResource
+from app.infrastructure.http.drivers.httpx2.resource import Httpx2Resource
 
 
 @pytest.mark.asyncio
@@ -16,11 +16,11 @@ async def test_cancelled_http11_stream_does_not_exhaust_single_connection_pool()
         0,
     )
     port = server.sockets[0].getsockname()[1]
-    limits = httpx.Limits(max_connections=1, max_keepalive_connections=1)
-    timeout = httpx.Timeout(connect=1.0, read=None, write=1.0, pool=0.5)
-    resource = HttpxResource(
-        standard_client=httpx.AsyncClient(limits=limits, timeout=timeout, trust_env=False),
-        stream_client=httpx.AsyncClient(limits=limits, timeout=timeout, trust_env=False),
+    limits = httpx2.Limits(max_connections=1, max_keepalive_connections=1)
+    timeout = httpx2.Timeout(connect=1.0, read=None, write=1.0, pool=0.5)
+    resource = Httpx2Resource(
+        standard_client=httpx2.AsyncClient(limits=limits, timeout=timeout, trust_env=False),
+        stream_client=httpx2.AsyncClient(limits=limits, timeout=timeout, trust_env=False),
     )
     request = HttpRequest(method="GET", url=f"http://127.0.0.1:{port}/events")
     received = asyncio.Event()
@@ -90,11 +90,11 @@ async def test_cancelled_buffered_http11_request_does_not_exhaust_single_connect
         0,
     )
     port = server.sockets[0].getsockname()[1]
-    limits = httpx.Limits(max_connections=1, max_keepalive_connections=1)
-    timeout = httpx.Timeout(connect=1.0, read=None, write=1.0, pool=0.5)
-    resource = HttpxResource(
-        standard_client=httpx.AsyncClient(limits=limits, timeout=timeout, trust_env=False),
-        stream_client=httpx.AsyncClient(limits=limits, timeout=timeout, trust_env=False),
+    limits = httpx2.Limits(max_connections=1, max_keepalive_connections=1)
+    timeout = httpx2.Timeout(connect=1.0, read=None, write=1.0, pool=0.5)
+    resource = Httpx2Resource(
+        standard_client=httpx2.AsyncClient(limits=limits, timeout=timeout, trust_env=False),
+        stream_client=httpx2.AsyncClient(limits=limits, timeout=timeout, trust_env=False),
     )
     slow_request = HttpRequest(method="GET", url=f"http://127.0.0.1:{port}/slow")
     fast_request = HttpRequest(method="GET", url=f"http://127.0.0.1:{port}/fast")

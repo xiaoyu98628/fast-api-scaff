@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 
 import pytest
 from fastapi import FastAPI, Request
-from httpx import ASGITransport, AsyncClient
+from httpx2 import ASGITransport, AsyncClient
 from starlette.middleware import Middleware
 from starlette.types import Message, Scope
 

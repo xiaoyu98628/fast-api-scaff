@@ -7,7 +7,7 @@ from app.infrastructure.http.contracts.client import HttpClient
 from app.infrastructure.http.contracts.request import HttpRequest
 from app.infrastructure.http.contracts.response import HttpResponse
 from app.infrastructure.http.contracts.stream import HttpStreamResponse
-from app.infrastructure.http.drivers.httpx.factory import create_httpx_resource
+from app.infrastructure.http.drivers.httpx2.factory import create_httpx2_resource
 from app.infrastructure.http.resource import ManagedHttpResource
 from app.infrastructure.resources.lazy import AsyncLazy
 
@@ -44,7 +44,7 @@ class HttpClientManager:
         await self._resource.aclose()
 
     async def _create(self) -> ManagedHttpResource:
-        driver = create_httpx_resource(self._settings)
+        driver = create_httpx2_resource(self._settings)
         return ManagedHttpResource(
             driver=driver,
             client=ManagedHttpClient(driver),
