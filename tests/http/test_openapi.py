@@ -1,5 +1,5 @@
 import pytest
-from httpx import ASGITransport, AsyncClient
+from httpx2 import ASGITransport, AsyncClient
 
 from app.bootstrap.app import create_app
 from app.config.app import AppSettings
@@ -53,6 +53,40 @@ def test_openapi_metadata_and_swagger_settings() -> None:
     assert app.swagger_ui_parameters is not None
     assert app.swagger_ui_parameters["filter"] is True
     assert app.swagger_ui_parameters["displayRequestDuration"] is True
+
+
+def test_user_error_responses_use_unified_openapi_envelopes() -> None:
+    schema = create_app(build_settings()).openapi()
+    paths = schema["paths"]
+
+    expected_error_statuses = {
+        ("/api/v1/users", "post"): {"409", "422"},
+        ("/api/v1/users", "get"): {"422"},
+        ("/api/v1/users/{user_id}", "get"): {"404", "422"},
+        ("/api/v1/users/{user_id}", "put"): {"404", "409", "422"},
+        ("/api/v1/users/{user_id}", "delete"): {"404", "422"},
+    }
+
+    for (path, method), expected_statuses in expected_error_statuses.items():
+        responses = paths[path][method]["responses"]
+        assert expected_statuses <= responses.keys()
+
+        for status_code in expected_statuses:
+            response_schema = responses[status_code]["content"]["application/json"]["schema"]
+            response_schema_name = response_schema["$ref"].rsplit("/", maxsplit=1)[-1]
+            assert response_schema_name != "HTTPValidationError"
+
+            error_envelope = schema["components"]["schemas"][response_schema_name]
+            assert set(error_envelope["properties"]) == {"code", "success", "message", "data", "request_id"}
+
+    post_validation_schema = paths["/api/v1/users"]["post"]["responses"]["422"]["content"]["application/json"]["schema"]
+    validation_envelope_name = post_validation_schema["$ref"].rsplit("/", maxsplit=1)[-1]
+    validation_envelope = schema["components"]["schemas"][validation_envelope_name]
+    data_variants = validation_envelope["properties"]["data"]["anyOf"]
+    detail_array = next(item for item in data_variants if item.get("type") == "array")
+    detail_schema_name = detail_array["items"]["$ref"].rsplit("/", maxsplit=1)[-1]
+    detail_schema = schema["components"]["schemas"][detail_schema_name]
+    assert set(detail_schema["properties"]) == {"type", "location", "message"}
 
 
 @pytest.mark.asyncio

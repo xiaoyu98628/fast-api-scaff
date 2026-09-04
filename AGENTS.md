@@ -58,12 +58,13 @@
 
 ## 文档同步
 
-- 新增、删除或修改公开配置、环境变量、启动命令、容器资源、公共调用方式、依赖或项目结构时，必须检查并同步更新 `README.md`。
-- 环境变量的名称、层级、默认用途或示例发生变化时，必须同时检查并同步更新 `sample.env`。
+- 新增、删除或修改公开配置、环境变量、启动命令、容器资源、公共调用方式、依赖或项目结构时，必须检查并同步更新 `README.md` 和受影响的 `docs/*.md` 专题文档。
+- 环境变量的名称、层级、默认用途或示例发生变化时，必须同时检查并同步更新 `sample.env`、`docs/configuration.md`，以及包含相关配置示例的 README 或专题文档。
 - `README.md` 只能描述当前已经实现且可以使用的能力，不得将规划中、待实现或尚未验证的功能写成现有功能。
 - 文档中的配置名称、类型签名、导入路径、调用示例和延迟加载行为必须与当前代码保持一致。
-- 业务使用示例应通过项目提供的公共入口，例如 `ApplicationContainer`、`DatabaseManager`、`CacheManager` 和 `CacheClient`；不得引导业务代码直接依赖 Redis、Memcached 等具体驱动实现。
-- 仅修改内部实现且不影响安装、配置、公开 API、调用方式或目录认知时，可以不修改 `README.md`，但仍应在变更完成前检查文档是否受到影响。
+- 面向宿主层或组合根的使用示例，应通过 `ApplicationContainer`、`DatabaseManager`、`CacheManager` 和 `CacheClient` 等项目公共入口，不得直接依赖 Redis、Memcached 等具体驱动实现。
+- Domain 和 Application 层不得依赖 `ApplicationContainer`、具体 Manager 或基础设施驱动。Application 层需要数据库、缓存或外部服务时，应依赖由当前上下文 Domain/Application 层定义的窄协议，并由 composition root 注入实现。
+- 仅修改内部实现且不影响安装、配置、公开 API、调用方式或目录认知时，可以不修改 README 和专题文档，但仍应在变更完成前检查文档是否受到影响。
 - 文档修改属于项目修改，必须遵守协作确认规则；不能以“同步文档”为由跳过用户确认。
 
 ## Python 语法
@@ -140,3 +141,19 @@ from app.config import *
 - 拆分出的私有函数应有清晰职责和名称，不能只是为了满足行数而机械切割连续代码。
 - 优先使用提前返回、提取独立步骤和减少嵌套的方式改善可读性。
 - 80 行是代码审查提示线，不是必须牺牲完整性才能满足的硬性限制；确有必要超过时，应保证职责仍然单一且流程清晰。
+
+## 变更验证
+
+- 验证范围必须与变更风险匹配；应先运行受影响模块的针对性测试，再根据影响范围执行完整质量检查。
+- 代码、配置、测试、依赖或项目结构发生变化时，默认执行：
+
+```bash
+uv run python -m pytest -q
+uv run ruff check app tests database
+uv run ruff format --check app tests database
+uv run ty check app tests database
+git diff --check
+```
+
+- 纯文档修改至少执行 `git diff --check`，并检查相对链接、命令、配置名称、导入路径和示例是否仍然有效。
+- 因环境限制无法执行某项验证时，必须明确说明未执行的项目、原因及残余风险，不得将未运行的检查描述为已通过。

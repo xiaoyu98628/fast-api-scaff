@@ -1,12 +1,12 @@
 from typing import Any
 
-import httpx
+import httpx2
 
 from app.infrastructure.http.contracts.request import HTTP_UNSET, HttpRequest
 
 
-def build_httpx_request_arguments(request: HttpRequest) -> dict[str, Any]:
-    """将公共请求契约转换为普通和流式调用共用的 HTTPX 参数。"""
+def build_httpx2_request_arguments(request: HttpRequest) -> dict[str, Any]:
+    """将公共请求契约转换为普通和流式调用共用的 HTTPX2 参数。"""
     arguments: dict[str, Any] = {
         "method": request.method,
         "url": request.url,
@@ -16,7 +16,7 @@ def build_httpx_request_arguments(request: HttpRequest) -> dict[str, Any]:
     if request.content is not None:
         arguments["content"] = request.content
     if request.json is None:
-        headers = httpx.Headers(request.headers)
+        headers = httpx2.Headers(request.headers)
         if "content-type" not in headers:
             headers["content-type"] = "application/json"
         arguments["headers"] = headers

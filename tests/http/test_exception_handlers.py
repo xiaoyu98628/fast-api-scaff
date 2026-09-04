@@ -3,7 +3,7 @@ from typing import Annotated
 
 import pytest
 from fastapi import HTTPException, Query
-from httpx import ASGITransport, AsyncClient
+from httpx2 import ASGITransport, AsyncClient
 
 from app.bootstrap.app import create_app
 from app.config.app import AppSettings

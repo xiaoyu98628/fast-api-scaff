@@ -8,6 +8,11 @@ from app.contexts.user.application.errors import UserApplicationError
 from app.contexts.user.domain.errors import UserDomainError
 from app.interfaces.http.controllers.v1.users.dependencies import UserServiceDependency
 from app.interfaces.http.controllers.v1.users.errors import user_error_to_http
+from app.interfaces.http.controllers.v1.users.openapi import (
+    USER_CONFLICT_RESPONSE,
+    USER_NOT_FOUND_RESPONSE,
+    USER_VALIDATION_ERROR_RESPONSE,
+)
 from app.interfaces.http.controllers.v1.users.schemas import CreateUserRequest, UpdateUserRequest, UserResponse
 from app.interfaces.http.dependencies.response import JsonResponseFactoryDependency
 from app.interfaces.http.shared.pagination import PageParams, PageResponse, build_page_response
@@ -21,6 +26,10 @@ router = APIRouter(prefix="/users", tags=["users"])
     "",
     status_code=SuccessCode.CREATED.status_code,
     response_model=JsonResponse[UserResponse],
+    responses={
+        409: USER_CONFLICT_RESPONSE,
+        422: USER_VALIDATION_ERROR_RESPONSE,
+    },
 )
 async def create_user(
     payload: CreateUserRequest,
@@ -41,7 +50,11 @@ async def create_user(
     return responses.success(UserResponse.from_dto(user), code=SuccessCode.CREATED)
 
 
-@router.get("", response_model=JsonResponse[PageResponse[UserResponse]])
+@router.get(
+    "",
+    response_model=JsonResponse[PageResponse[UserResponse]],
+    responses={422: USER_VALIDATION_ERROR_RESPONSE},
+)
 async def list_users(
     service: UserServiceDependency,
     responses: JsonResponseFactoryDependency,
@@ -61,7 +74,14 @@ async def list_users(
     )
 
 
-@router.get("/{user_id}", response_model=JsonResponse[UserResponse])
+@router.get(
+    "/{user_id}",
+    response_model=JsonResponse[UserResponse],
+    responses={
+        404: USER_NOT_FOUND_RESPONSE,
+        422: USER_VALIDATION_ERROR_RESPONSE,
+    },
+)
 async def get_user(
     user_id: UUID,
     service: UserServiceDependency,
@@ -75,7 +95,15 @@ async def get_user(
     return responses.success(UserResponse.from_dto(user))
 
 
-@router.put("/{user_id}", response_model=JsonResponse[UserResponse])
+@router.put(
+    "/{user_id}",
+    response_model=JsonResponse[UserResponse],
+    responses={
+        404: USER_NOT_FOUND_RESPONSE,
+        409: USER_CONFLICT_RESPONSE,
+        422: USER_VALIDATION_ERROR_RESPONSE,
+    },
+)
 async def update_user(
     user_id: UUID,
     payload: UpdateUserRequest,
@@ -102,6 +130,10 @@ async def update_user(
     "/{user_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     response_class=Response,
+    responses={
+        404: USER_NOT_FOUND_RESPONSE,
+        422: USER_VALIDATION_ERROR_RESPONSE,
+    },
 )
 async def delete_user(user_id: UUID, service: UserServiceDependency) -> Response:
     try:

@@ -187,11 +187,11 @@ uv run alembic -c database/main/alembic.ini current
 
 若只有流式请求耗尽容量，确认每次都使用 `async with container.http.stream(...)`，并检查消费任务是否能够响应取消。普通与流式请求使用不同连接池，调整时不要只改 `HTTP_POOL__*`。
 
-### TLS、代理与版本兼容
+### TLS、代理与依赖升级
 
 生产应保持 `HTTP_VERIFY=true` 并修复证书链。`HTTP_TRUST_ENV=false` 时不会读取进程代理变量；启用后同时检查 `HTTP_PROXY`、`HTTPS_PROXY` 和 `NO_PROXY`，避免内部地址误走代理。
 
-若出现 `http.outbound.pool.compatibility_failed`，检查 `httpx` 与 `httpcore` 是否仍是项目锁定版本。请求取消清理依赖固定版本的私有连接池结构，升级后必须运行 `tests/outbound_http/test_http11_cancellation.py` 和全量验证。
+客户端不读取或修改 HTTPX2/httpcore2 私有连接池状态。升级 HTTPX2 或 httpcore2 后仍必须运行 `tests/outbound_http/test_http11_cancellation.py` 和全量验证，确认流式与缓冲请求取消后单连接池可以继续服务后续请求。
 
 日志默认不包含 path、query、header 或 body。用稳定 `operation` 定位调用，再结合已脱敏的上游错误和分布式追踪信息排查；不要为了临时诊断记录 Authorization 或完整响应体。
 

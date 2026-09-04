@@ -3,13 +3,13 @@ import logging
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager, contextmanager
 
-import httpx
+import httpx2
 import pytest
 
 from app.infrastructure.http.clients.managed import ManagedHttpClient
 from app.infrastructure.http.contracts.request import HttpRequest
 from app.infrastructure.http.contracts.response import HttpResponse
-from app.infrastructure.http.drivers.httpx.resource import HttpxResource
+from app.infrastructure.http.drivers.httpx2.resource import Httpx2Resource
 from app.infrastructure.http.errors import HttpTransportError
 from app.infrastructure.http.logging import HttpLogEvent, request_log_details
 
@@ -145,12 +145,12 @@ async def test_transport_error_is_logged_as_stream_failure(caplog: pytest.LogCap
 
 @pytest.mark.asyncio
 async def test_pool_timeout_has_dedicated_event(caplog: pytest.LogCaptureFixture) -> None:
-    async def fail(request: httpx.Request) -> httpx.Response:
-        raise httpx.PoolTimeout("pool exhausted", request=request)
+    async def fail(request: httpx2.Request) -> httpx2.Response:
+        raise httpx2.PoolTimeout("pool exhausted", request=request)
 
-    resource = HttpxResource(
-        standard_client=httpx.AsyncClient(transport=httpx.MockTransport(fail)),
-        stream_client=httpx.AsyncClient(transport=httpx.MockTransport(fail)),
+    resource = Httpx2Resource(
+        standard_client=httpx2.AsyncClient(transport=httpx2.MockTransport(fail)),
+        stream_client=httpx2.AsyncClient(transport=httpx2.MockTransport(fail)),
         standard_pool_limit=1,
         pool_warning_ratio=1.0,
     )
@@ -172,8 +172,8 @@ async def test_pool_timeout_has_dedicated_event(caplog: pytest.LogCaptureFixture
     assert details["limit"] == 1
     assert details["pool_timeout"] == 1
     assert details["client_id"].startswith("0x")
-    assert details["pool_id"] == "-"
-    assert details["pool_state"] == "unavailable:AttributeError"
+    assert "pool_id" not in details
+    assert "pool_state" not in details
 
 
 @contextmanager

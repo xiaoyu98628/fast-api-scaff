@@ -122,6 +122,8 @@ HTTP status 仍是协议层判断成功、失败和重试策略的首要依据�
 
 请求结构校验返回 422，并在 `data` 中提供 `type`、`location`、`message`。未知异常统一返回通用 500 文案，异常细节只进入服务端日志，避免泄露内部实现。
 
+用户路由会在 OpenAPI 中显式声明 404、409 和 422 错误响应；这些响应与运行时一样使用统一 JSON 结构，生成客户端时不应再按 FastAPI 默认的 `HTTPValidationError` 解析 422。
+
 ## 6. Request ID
 
 请求上下文中间件处理 `X-Request-ID`：

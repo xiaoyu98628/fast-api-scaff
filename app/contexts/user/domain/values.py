@@ -13,6 +13,10 @@ _USERNAME_PATTERN = re.compile(r"^[a-z0-9_]{3,32}$")
 class UserId:
     value: UUID
 
+    def __post_init__(self) -> None:
+        if not isinstance(self.value, UUID):
+            raise InvalidUserDataError("用户 ID 必须是 UUID")
+
 
 @dataclass(frozen=True, slots=True)
 class Username:

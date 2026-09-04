@@ -14,7 +14,7 @@ async def test_closing_uninitialized_manager_does_not_create_resource(monkeypatc
         created = True
         return object()
 
-    monkeypatch.setattr(manager_module, "create_httpx_resource", create)
+    monkeypatch.setattr(manager_module, "create_httpx2_resource", create)
     manager = HttpClientManager(HttpSettings(_env_file=None))
 
     await manager.aclose()

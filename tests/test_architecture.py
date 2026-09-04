@@ -36,9 +36,9 @@ def test_application_layers_only_depend_on_their_own_application_and_domain() ->
     assert violations == []
 
 
-def test_httpx_is_confined_to_outbound_http_driver() -> None:
+def test_httpx2_is_confined_to_outbound_http_driver() -> None:
     violations: list[str] = []
-    allowed_root = _APP_ROOT / "infrastructure/http/drivers/httpx"
+    allowed_root = _APP_ROOT / "infrastructure/http/drivers/httpx2"
 
     for source_path in sorted(_APP_ROOT.rglob("*.py")):
         if source_path.is_relative_to(allowed_root):
@@ -46,7 +46,7 @@ def test_httpx_is_confined_to_outbound_http_driver() -> None:
 
         source = source_path.read_text(encoding="utf-8")
         for module, line in _iter_imports(ast.parse(source, filename=str(source_path))):
-            if module == "httpx" or module.startswith("httpx."):
+            if module == "httpx2" or module.startswith("httpx2."):
                 relative_path = source_path.relative_to(PROJECT_ROOT)
                 violations.append(f"{relative_path}:{line} imports {module}")
 
