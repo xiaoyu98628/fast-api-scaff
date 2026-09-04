@@ -49,9 +49,9 @@ async def test_sqlalchemy_user_repository_persists_and_queries_users() -> None:
             username="alice_new",
             email="new@example.com",
             display_name="Alice New",
-            status=UserStatus.DISABLED,
             now=now,
         )
+        found.change_status(status=UserStatus.DISABLED, now=now)
         assert await repository.update(found) is True
         await session.commit()
 

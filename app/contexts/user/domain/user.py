@@ -101,18 +101,22 @@ class User:
         username: str,
         email: str,
         display_name: str,
-        status: UserStatus,
         now: datetime,
     ) -> None:
         resolved_username = Username(username)
         resolved_email = EmailAddress(email)
         resolved_display_name = _validate_display_name(display_name)
-        resolved_status = _validate_user_status(status)
         _validate_local_datetime(now, "更新时间")
 
         self._username = resolved_username
         self._email = resolved_email
         self._display_name = resolved_display_name
+        self._updated_at = now
+
+    def change_status(self, *, status: UserStatus, now: datetime) -> None:
+        resolved_status = _validate_user_status(status)
+        _validate_local_datetime(now, "更新时间")
+
         self._status = resolved_status
         self._updated_at = now
 

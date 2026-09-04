@@ -25,10 +25,11 @@ uv run uvicorn app.main:app --reload
 | `POST` | `/api/v1/users` | 201 | 创建用户 |
 | `GET` | `/api/v1/users` | 200 | 分页查询用户 |
 | `GET` | `/api/v1/users/{user_id}` | 200 | 查询单个用户 |
-| `PUT` | `/api/v1/users/{user_id}` | 200 | 完整更新用户资料和状态 |
+| `PUT` | `/api/v1/users/{user_id}` | 200 | 完整更新用户基本信息 |
+| `PATCH` | `/api/v1/users/{user_id}/status` | 200 | 修改用户状态 |
 | `DELETE` | `/api/v1/users/{user_id}` | 204 | 物理删除用户 |
 
-用户示例不包含登录、密码、权限、软删除或审计历史。`PUT` 是完整更新，必须提供 `username`、`email`、`display_name` 和 `status`，不是部分更新。
+用户示例不包含登录、密码、权限、软删除或审计历史。`PUT` 是用户基本信息的完整更新，必须提供 `username`、`email` 和 `display_name`，不是部分更新。状态修改是独立用例，不接受在 `PUT` 请求中混合修改。
 
 ## 3. 完整调用示例
 
@@ -63,8 +64,13 @@ curl -X PUT http://127.0.0.1:8000/api/v1/users/USER_UUID \
   -d '{
     "username": "alice",
     "email": "alice@example.com",
-    "display_name": "Alice Zhang",
-    "status": "active"
+    "display_name": "Alice Zhang"
+  }'
+
+curl -X PATCH http://127.0.0.1:8000/api/v1/users/USER_UUID/status \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "status": "disabled"
   }'
 
 curl -i -X DELETE http://127.0.0.1:8000/api/v1/users/USER_UUID
@@ -81,7 +87,7 @@ curl -i -X DELETE http://127.0.0.1:8000/api/v1/users/USER_UUID
 | `username` | 3–32 字符，并继续接受领域层格式校验 |
 | `email` | 最长 254 字符，并继续接受领域层格式校验 |
 | `display_name` | 1–80 字符 |
-| `status` | 更新时必填，必须是领域定义的用户状态 |
+| `status` | 仅用于状态修改接口，必须是领域定义的用户状态 |
 
 Pydantic 的结构校验负责 JSON 类型、长度、缺失字段和额外字段；领域对象负责业务不变量。两者不是重复：HTTP schema 是协议边界，领域校验保证 Console 或未来 Scheduler 等其他入口也不能绕过规则。
 

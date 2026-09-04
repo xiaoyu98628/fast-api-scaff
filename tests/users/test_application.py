@@ -4,7 +4,7 @@ from uuid import UUID
 
 import pytest
 
-from app.contexts.user.application.dto import CreateUserCommand, UpdateUserCommand
+from app.contexts.user.application.dto import ChangeUserStatusCommand, CreateUserCommand, UpdateUserCommand
 from app.contexts.user.application.errors import UserConflictError, UserNotFoundError
 from app.contexts.user.application.service import UserApplicationService
 from app.contexts.user.domain.repository import UserRepository
@@ -93,6 +93,11 @@ async def test_user_service_completes_crud_flow() -> None:
             username="alice_new",
             email="new@example.com",
             display_name="Alice New",
+        )
+    )
+    status_changed = await service.change_status(
+        ChangeUserStatusCommand(
+            user_id=created.id,
             status=UserStatus.DISABLED,
         )
     )
@@ -102,7 +107,8 @@ async def test_user_service_completes_crud_flow() -> None:
     assert page.total == 1
     assert page.items == (created,)
     assert updated.username == "alice_new"
-    assert updated.status is UserStatus.DISABLED
+    assert updated.status is UserStatus.ACTIVE
+    assert status_changed.status is UserStatus.DISABLED
 
     with pytest.raises(UserNotFoundError):
         await service.get(created.id)
@@ -138,7 +144,22 @@ async def test_user_service_reports_not_found_when_update_target_disappears() ->
                 username="alice_new",
                 email="new@example.com",
                 display_name="Alice New",
-                status=UserStatus.ACTIVE,
+            )
+        )
+
+
+@pytest.mark.asyncio
+async def test_user_service_reports_not_found_when_status_target_disappears() -> None:
+    repository = FakeUserRepository()
+    service = build_service(repository)
+    created = await service.create(CreateUserCommand(username="alice", email="alice@example.com", display_name="Alice"))
+    repository.remove_before_update = True
+
+    with pytest.raises(UserNotFoundError):
+        await service.change_status(
+            ChangeUserStatusCommand(
+                user_id=created.id,
+                status=UserStatus.DISABLED,
             )
         )
 

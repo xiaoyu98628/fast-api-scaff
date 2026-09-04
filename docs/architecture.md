@@ -69,7 +69,8 @@ infrastructure ┘      ↑
 
 - `User.create()`：生成 ID、设置默认状态和创建/更新时间；
 - `User.rehydrate()`：从数据库恢复，同时重新验证规则；
-- `User.update_profile()`：原子地校验并更新资料与时间。
+- `User.update_profile()`：原子地校验并更新基本信息与时间；
+- `User.change_status()`：独立校验并修改用户状态与时间。
 
 不变量包括用户名格式与归一化、邮箱格式与归一化、显示名称长度、合法状态、值对象类型以及本地无时区 datetime。
 

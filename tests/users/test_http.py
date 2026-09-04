@@ -27,6 +27,40 @@ def build_settings() -> Settings:
     )
 
 
+async def assert_user_status_contract(client: AsyncClient, *, user_id: str, created: dict[str, object]) -> None:
+    update_with_status_response = await client.put(
+        f"/api/v1/users/{user_id}",
+        json={
+            "username": "alice_new",
+            "email": "new@example.com",
+            "display_name": "Alice New",
+            "status": "disabled",
+        },
+    )
+    assert update_with_status_response.status_code == 422
+
+    status_response = await client.patch(
+        f"/api/v1/users/{user_id}/status",
+        json={"status": "disabled"},
+    )
+    assert status_response.status_code == 200
+    assert status_response.json()["data"]["status"] == "disabled"
+    assert status_response.json()["data"]["username"] == "alice_new"
+    assert status_response.json()["data"]["created_at"] == created["created_at"]
+
+    invalid_status_response = await client.patch(
+        f"/api/v1/users/{user_id}/status",
+        json={"status": "unknown"},
+    )
+    assert invalid_status_response.status_code == 422
+
+    missing_status_response = await client.patch(
+        f"/api/v1/users/{uuid7()}/status",
+        json={"status": "active"},
+    )
+    assert missing_status_response.status_code == 404
+
+
 @pytest.mark.asyncio
 async def test_user_http_crud_and_conflict_responses() -> None:
     app = create_app(build_settings())
@@ -112,13 +146,14 @@ async def test_user_http_crud_and_conflict_responses() -> None:
                     "username": "alice_new",
                     "email": "new@example.com",
                     "display_name": "Alice New",
-                    "status": "disabled",
                 },
             )
             assert update_response.status_code == 200
-            assert update_response.json()["data"]["status"] == "disabled"
+            assert update_response.json()["data"]["status"] == "active"
             assert update_response.json()["data"]["created_at"] == created["created_at"]
             assert datetime.fromisoformat(update_response.json()["data"]["updated_at"]).tzinfo is None
+
+            await assert_user_status_contract(client, user_id=user_id, created=created)
 
             delete_response = await client.delete(f"/api/v1/users/{user_id}")
             assert delete_response.status_code == 204

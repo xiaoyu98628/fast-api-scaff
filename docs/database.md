@@ -155,7 +155,7 @@ Repository 的 `update()` 和 `remove()` 使用带主键条件的单条 DML，�
 
 ## 9. 聚合不变量为什么不会交给 ORM
 
-数据库读取通过 `User.rehydrate()` 恢复聚合，创建通过 `User.create()`，更新通过 `user.update_profile()`。聚合状态是私有的，对外提供只读属性。
+数据库读取通过 `User.rehydrate()` 恢复聚合，创建通过 `User.create()`，基本信息更新通过 `user.update_profile()`，状态修改通过 `user.change_status()`。聚合状态是私有的，对外提供只读属性。
 
 “不变量被绕过”是指调用方若能直接写 `user.status = "whatever"`、直接构造半初始化实体、或 controller 直接更新 ORM 字段，就能跳过用户名、邮箱、状态、时间类型与时区等领域规则。当前结构要求外部通过命名行为改变聚合，mapper 只承担持久化转换。
 

@@ -16,6 +16,12 @@ class CreateUserRequest(BaseModel):
 
 
 class UpdateUserRequest(CreateUserRequest):
+    """完整更新用户基本信息。"""
+
+
+class ChangeUserStatusRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     status: UserStatus
 
 

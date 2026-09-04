@@ -41,13 +41,27 @@ def test_user_profile_update_preserves_creation_time() -> None:
         username="alice_new",
         email="new@example.com",
         display_name="Alice New",
-        status=UserStatus.DISABLED,
         now=updated_at,
     )
 
     assert user.username.value == "alice_new"
     assert user.email.value == "new@example.com"
     assert user.display_name == "Alice New"
+    assert user.status is UserStatus.ACTIVE
+    assert user.created_at == created_at
+    assert user.updated_at == updated_at
+
+
+def test_user_status_change_preserves_profile_and_creation_time() -> None:
+    created_at = datetime(2026, 8, 28, 18, 0)
+    updated_at = created_at + timedelta(minutes=1)
+    user = User.create(username="alice", email="alice@example.com", display_name="Alice", now=created_at)
+
+    user.change_status(status=UserStatus.DISABLED, now=updated_at)
+
+    assert user.username.value == "alice"
+    assert user.email.value == "alice@example.com"
+    assert user.display_name == "Alice"
     assert user.status is UserStatus.DISABLED
     assert user.created_at == created_at
     assert user.updated_at == updated_at
@@ -62,7 +76,6 @@ def test_invalid_profile_update_does_not_partially_change_user() -> None:
             username="alice_new",
             email="invalid-email",
             display_name="Alice New",
-            status=UserStatus.DISABLED,
             now=now + timedelta(minutes=1),
         )
 

@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
-from app.contexts.user.application.dto import CreateUserCommand, UpdateUserCommand, UserDTO, UserPageDTO
+from app.contexts.user.application.dto import ChangeUserStatusCommand, CreateUserCommand, UpdateUserCommand, UserDTO, UserPageDTO
 from app.contexts.user.application.errors import UserConflictError, UserNotFoundError
 from app.contexts.user.application.unit_of_work import UserUnitOfWorkFactory
 from app.contexts.user.domain.repository import UserRepository
@@ -65,10 +65,25 @@ class UserApplicationService:
                 username=command.username,
                 email=command.email,
                 display_name=command.display_name,
-                status=command.status,
                 now=self.clock(),
             )
             await self._ensure_unique(unit_of_work.users, user)
+            if not await unit_of_work.users.update(user):
+                raise UserNotFoundError(command.user_id)
+
+            await unit_of_work.commit()
+
+        return UserDTO.from_domain(user)
+
+    async def change_status(self, command: ChangeUserStatusCommand) -> UserDTO:
+        user_id = UserId(command.user_id)
+
+        async with self.unit_of_work_factory() as unit_of_work:
+            user = await unit_of_work.users.find(user_id)
+            if user is None:
+                raise UserNotFoundError(command.user_id)
+
+            user.change_status(status=command.status, now=self.clock())
             if not await unit_of_work.users.update(user):
                 raise UserNotFoundError(command.user_id)
 

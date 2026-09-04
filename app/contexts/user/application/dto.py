@@ -19,6 +19,11 @@ class UpdateUserCommand:
     username: str
     email: str
     display_name: str
+
+
+@dataclass(frozen=True, slots=True)
+class ChangeUserStatusCommand:
+    user_id: UUID
     status: UserStatus
 
 
