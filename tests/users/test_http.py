@@ -3,6 +3,7 @@ from uuid import UUID, uuid7
 
 import pytest
 from httpx2 import ASGITransport, AsyncClient
+from pwdlib import PasswordHash as PwdlibPasswordHash
 from sqlalchemy import select
 
 from app.bootstrap.app import create_app
@@ -92,6 +93,32 @@ async def assert_user_password_contract(
         password_after_update = await session.scalar(select(UserModel.password).where(UserModel.id == UUID(user_id)))
 
     assert password_after_update == stored_password
+
+    invalid_reset_response = await client.put(
+        f"/api/v1/users/{user_id}/password",
+        json={"password": "short"},
+    )
+    assert invalid_reset_response.status_code == 422
+
+    missing_reset_response = await client.put(
+        f"/api/v1/users/{uuid7()}/password",
+        json={"password": "replacement-password"},
+    )
+    assert missing_reset_response.status_code == 404
+
+    reset_response = await client.put(
+        f"/api/v1/users/{user_id}/password",
+        json={"password": "replacement-password"},
+    )
+    assert reset_response.status_code == 204
+    assert reset_response.content == b""
+
+    async with databases.session() as session:
+        password_after_reset = await session.scalar(select(UserModel.password).where(UserModel.id == UUID(user_id)))
+
+    assert password_after_reset is not None
+    assert password_after_reset != stored_password
+    assert PwdlibPasswordHash.recommended().verify("replacement-password", password_after_reset) is True
 
 
 async def assert_user_list_contract(client: AsyncClient, *, created: dict[str, object]) -> None:

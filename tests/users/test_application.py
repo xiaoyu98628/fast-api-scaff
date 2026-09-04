@@ -4,7 +4,7 @@ from uuid import UUID
 
 import pytest
 
-from app.contexts.user.application.dto import ChangeUserStatusCommand, CreateUserCommand, UpdateUserCommand
+from app.contexts.user.application.dto import ChangeUserStatusCommand, CreateUserCommand, ResetUserPasswordCommand, UpdateUserCommand
 from app.contexts.user.application.errors import UserConflictError, UserNotFoundError
 from app.contexts.user.application.service import UserApplicationService
 from app.contexts.user.domain.repository import UserRepository
@@ -118,6 +118,22 @@ async def test_user_service_rejects_invalid_password_before_hashing() -> None:
 
 
 @pytest.mark.asyncio
+async def test_user_service_resets_password_with_a_new_hash() -> None:
+    repository = FakeUserRepository()
+    password_hasher = FakePasswordHasher()
+    service = build_service(repository, password_hasher)
+    created = await service.create(CreateUserCommand(username="alice", email="alice@example.com", password="password123"))
+    original_password_hash = repository.items[created.id].password_hash
+
+    await service.reset_password(ResetUserPasswordCommand(user_id=created.id, password="replacement-password"))
+
+    reset_password_hash = repository.items[created.id].password_hash
+    assert password_hasher.passwords == ["password123", "replacement-password"]
+    assert reset_password_hash == PasswordHash("hashed::replacement-password")
+    assert reset_password_hash != original_password_hash
+
+
+@pytest.mark.asyncio
 async def test_user_service_completes_crud_flow() -> None:
     repository = FakeUserRepository()
     service = build_service(repository)
@@ -199,6 +215,17 @@ async def test_user_service_reports_not_found_when_status_target_disappears() ->
                 status=UserStatus.DISABLED,
             )
         )
+
+
+@pytest.mark.asyncio
+async def test_user_service_reports_not_found_when_password_target_disappears() -> None:
+    repository = FakeUserRepository()
+    service = build_service(repository)
+    created = await service.create(CreateUserCommand(username="alice", email="alice@example.com", password="password123"))
+    repository.remove_before_update = True
+
+    with pytest.raises(UserNotFoundError):
+        await service.reset_password(ResetUserPasswordCommand(user_id=created.id, password="replacement-password"))
 
 
 @pytest.mark.asyncio

@@ -116,6 +116,14 @@ class User:
         self._status = resolved_status
         self._updated_at = now
 
+    def reset_password(self, *, password_hash: PasswordHash, now: datetime) -> None:
+        if not isinstance(password_hash, PasswordHash):
+            raise InvalidUserDataError("密码哈希类型不正确")
+
+        _validate_local_datetime(now, "更新时间")
+        self._password_hash = password_hash
+        self._updated_at = now
+
 
 def _validate_value_types(
     user_id: UserId,

@@ -27,6 +27,12 @@ class ChangeUserStatusCommand:
 
 
 @dataclass(frozen=True, slots=True)
+class ResetUserPasswordCommand:
+    user_id: UUID
+    password: str = field(repr=False)
+
+
+@dataclass(frozen=True, slots=True)
 class UserDTO:
     id: UUID
     username: str

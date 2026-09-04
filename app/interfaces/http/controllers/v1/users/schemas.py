@@ -30,6 +30,12 @@ class ChangeUserStatusRequest(BaseModel):
     status: UserStatus
 
 
+class ResetUserPasswordRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    password: str = Field(min_length=8, max_length=128, repr=False)
+
+
 class UserResponse(BaseModel):
     id: UUID
     username: str

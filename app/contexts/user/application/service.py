@@ -3,7 +3,14 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
-from app.contexts.user.application.dto import ChangeUserStatusCommand, CreateUserCommand, UpdateUserCommand, UserDTO, UserPageDTO
+from app.contexts.user.application.dto import (
+    ChangeUserStatusCommand,
+    CreateUserCommand,
+    ResetUserPasswordCommand,
+    UpdateUserCommand,
+    UserDTO,
+    UserPageDTO,
+)
 from app.contexts.user.application.errors import UserConflictError, UserNotFoundError
 from app.contexts.user.application.password_hasher import PasswordHasher
 from app.contexts.user.application.unit_of_work import UserUnitOfWorkFactory
@@ -92,6 +99,21 @@ class UserApplicationService:
             await unit_of_work.commit()
 
         return UserDTO.from_domain(user)
+
+    async def reset_password(self, command: ResetUserPasswordCommand) -> None:
+        user_id = UserId(command.user_id)
+        password_hash = self.password_hasher.hash(Password(command.password))
+
+        async with self.unit_of_work_factory() as unit_of_work:
+            user = await unit_of_work.users.find(user_id)
+            if user is None:
+                raise UserNotFoundError(command.user_id)
+
+            user.reset_password(password_hash=password_hash, now=self.clock())
+            if not await unit_of_work.users.update(user):
+                raise UserNotFoundError(command.user_id)
+
+            await unit_of_work.commit()
 
     async def delete(self, user_id: UUID) -> None:
         domain_id = UserId(user_id)

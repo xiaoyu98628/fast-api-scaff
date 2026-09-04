@@ -81,6 +81,36 @@ def test_user_status_change_preserves_profile_password_and_creation_time() -> No
     assert user.updated_at == updated_at
 
 
+def test_user_password_reset_preserves_profile_status_and_creation_time() -> None:
+    created_at = datetime(2026, 8, 28, 18, 0)
+    updated_at = created_at + timedelta(minutes=1)
+    new_password_hash = PasswordHash("new-password-hash")
+    user = User.create(username="alice", email="alice@example.com", password_hash=_PASSWORD_HASH, now=created_at)
+
+    user.reset_password(password_hash=new_password_hash, now=updated_at)
+
+    assert user.username.value == "alice"
+    assert user.email.value == "alice@example.com"
+    assert user.password_hash == new_password_hash
+    assert user.status is UserStatus.ACTIVE
+    assert user.created_at == created_at
+    assert user.updated_at == updated_at
+
+
+def test_invalid_password_reset_does_not_partially_change_user() -> None:
+    now = datetime(2026, 8, 28, 18, 0)
+    user = User.create(username="alice", email="alice@example.com", password_hash=_PASSWORD_HASH, now=now)
+
+    with pytest.raises(InvalidUserDataError, match="密码哈希类型"):
+        user.reset_password(
+            password_hash=cast(PasswordHash, "not-a-password-hash"),
+            now=now + timedelta(minutes=1),
+        )
+
+    assert user.password_hash == _PASSWORD_HASH
+    assert user.updated_at == now
+
+
 def test_invalid_profile_update_does_not_partially_change_user() -> None:
     now = datetime(2026, 8, 28, 18, 0)
     user = User.create(username="alice", email="alice@example.com", password_hash=_PASSWORD_HASH, now=now)
