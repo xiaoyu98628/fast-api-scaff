@@ -5,7 +5,7 @@ from sqlalchemy import select
 
 from app.config.database import DatabaseSettings
 from app.contexts.user.domain.user import User
-from app.contexts.user.domain.values import EmailAddress, UserId, Username, UserStatus
+from app.contexts.user.domain.values import EmailAddress, PasswordHash, UserId, Username, UserStatus
 from app.contexts.user.infrastructure.persistence.models.user import UserModel
 from app.contexts.user.infrastructure.persistence.repository import SqlAlchemyUserRepository
 from app.infrastructure.database.manager import DatabaseManager
@@ -25,7 +25,8 @@ async def test_sqlalchemy_user_repository_persists_and_queries_users() -> None:
         await connection.run_sync(UserModel.metadata.create_all)
 
     now = datetime(2026, 8, 28, 18, 30)
-    user = User.create(username="alice", email="alice@example.com", display_name="Alice", now=now)
+    password_hash = PasswordHash("test-password-hash")
+    user = User.create(username="alice", email="alice@example.com", password_hash=password_hash, now=now)
 
     async with manager.session() as session:
         repository = SqlAlchemyUserRepository(session)
@@ -41,6 +42,7 @@ async def test_sqlalchemy_user_repository_persists_and_queries_users() -> None:
         assert stored_created_at == datetime(2026, 8, 28, 18, 30)
         assert found.created_at == now
         assert found.username == Username("alice")
+        assert found.password_hash == password_hash
         assert users == [found]
         assert total == 1
         assert await repository.exists_by_email(EmailAddress("alice@example.com")) is True
@@ -48,7 +50,6 @@ async def test_sqlalchemy_user_repository_persists_and_queries_users() -> None:
         found.update_profile(
             username="alice_new",
             email="new@example.com",
-            display_name="Alice New",
             now=now,
         )
         found.change_status(status=UserStatus.DISABLED, now=now)

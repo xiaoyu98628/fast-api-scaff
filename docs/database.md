@@ -114,7 +114,7 @@ HTTP / Console
 
 - `UserRepository` 是领域层所需的持久化契约，使用聚合和值对象；
 - `SqlAlchemyUserRepository` 实现查询和持久化，不决定用例何时提交；
-- Mapper 显式完成 Domain ↔ ORM 转换；
+- Mapper 显式完成 Domain ↔ ORM 转换，包括把领域 `PasswordHash` 映射到数据库 `password` 列；
 - `UserUnitOfWork` 定义一个用例的事务边界；
 - Application Service 编排读取、领域行为、唯一性预检查与 commit。
 
@@ -225,6 +225,8 @@ uv run alembic -c database/main/alembic.ini downgrade -1
 - 索引、默认值、时区和字符串长度的方言差异；
 - downgrade 是否真实可逆；
 - 约束名是否仍能被异常映射识别。
+
+用户表的 `password` 列保存密码哈希而不是明文。它是非空字段，因此从已有用户表演进时必须明确历史数据回填或重置策略；不能在生产数据上直接生成一个无法审计的占位密码。
 
 ## 13. 方言差异
 

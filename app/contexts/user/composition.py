@@ -3,6 +3,7 @@ from functools import partial
 
 from app.contexts.user.application.service import UserApplicationService
 from app.contexts.user.infrastructure.persistence.unit_of_work import SqlAlchemyUserUnitOfWork
+from app.contexts.user.infrastructure.security.password_hasher import PwdlibPasswordHasher
 from app.infrastructure.database.manager import DatabaseManager
 
 _USER_DATABASE_CONNECTION_NAME = "main"
@@ -24,5 +25,6 @@ def build_user_context(databases: DatabaseManager) -> UserContext:
                 databases,
                 connection_name=_USER_DATABASE_CONNECTION_NAME,
             ),
+            password_hasher=PwdlibPasswordHasher(),
         )
     )

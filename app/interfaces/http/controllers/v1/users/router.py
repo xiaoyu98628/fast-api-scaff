@@ -41,7 +41,7 @@ async def create_user(
             CreateUserCommand(
                 username=payload.username,
                 email=payload.email,
-                display_name=payload.display_name,
+                password=payload.password,
             )
         )
     except (UserApplicationError, UserDomainError) as error:
@@ -116,7 +116,6 @@ async def update_user(
                 user_id=user_id,
                 username=payload.username,
                 email=payload.email,
-                display_name=payload.display_name,
             )
         )
     except (UserApplicationError, UserDomainError) as error:

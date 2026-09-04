@@ -1,9 +1,9 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from uuid import UUID, uuid7
 
 from app.contexts.user.domain.errors import InvalidUserDataError
-from app.contexts.user.domain.values import EmailAddress, UserId, Username, UserStatus
+from app.contexts.user.domain.values import EmailAddress, PasswordHash, UserId, Username, UserStatus
 
 
 @dataclass(slots=True)
@@ -13,14 +13,13 @@ class User:
     _id: UserId
     _username: Username
     _email: EmailAddress
-    _display_name: str
+    _password_hash: PasswordHash = field(repr=False)
     _status: UserStatus
     _created_at: datetime
     _updated_at: datetime
 
     def __post_init__(self) -> None:
-        _validate_value_types(self._id, self._username, self._email, self._status)
-        self._display_name = _validate_display_name(self._display_name)
+        _validate_value_types(self._id, self._username, self._email, self._password_hash, self._status)
         _validate_local_datetime(self._created_at, "创建时间")
         _validate_local_datetime(self._updated_at, "更新时间")
 
@@ -37,8 +36,8 @@ class User:
         return self._email
 
     @property
-    def display_name(self) -> str:
-        return self._display_name
+    def password_hash(self) -> PasswordHash:
+        return self._password_hash
 
     @property
     def status(self) -> UserStatus:
@@ -58,7 +57,7 @@ class User:
         *,
         username: str,
         email: str,
-        display_name: str,
+        password_hash: PasswordHash,
         now: datetime,
         user_id: UUID | None = None,
     ) -> User:
@@ -66,7 +65,7 @@ class User:
             _id=UserId(user_id if user_id is not None else uuid7()),
             _username=Username(username),
             _email=EmailAddress(email),
-            _display_name=display_name,
+            _password_hash=password_hash,
             _status=UserStatus.ACTIVE,
             _created_at=now,
             _updated_at=now,
@@ -79,7 +78,7 @@ class User:
         user_id: UserId,
         username: Username,
         email: EmailAddress,
-        display_name: str,
+        password_hash: PasswordHash,
         status: UserStatus,
         created_at: datetime,
         updated_at: datetime,
@@ -89,7 +88,7 @@ class User:
             _id=user_id,
             _username=username,
             _email=email,
-            _display_name=display_name,
+            _password_hash=password_hash,
             _status=status,
             _created_at=created_at,
             _updated_at=updated_at,
@@ -100,17 +99,14 @@ class User:
         *,
         username: str,
         email: str,
-        display_name: str,
         now: datetime,
     ) -> None:
         resolved_username = Username(username)
         resolved_email = EmailAddress(email)
-        resolved_display_name = _validate_display_name(display_name)
         _validate_local_datetime(now, "更新时间")
 
         self._username = resolved_username
         self._email = resolved_email
-        self._display_name = resolved_display_name
         self._updated_at = now
 
     def change_status(self, *, status: UserStatus, now: datetime) -> None:
@@ -121,19 +117,13 @@ class User:
         self._updated_at = now
 
 
-def _validate_display_name(value: str) -> str:
-    if not isinstance(value, str):
-        raise InvalidUserDataError("显示名称必须是字符串")
-
-    normalized = value.strip()
-
-    if not 1 <= len(normalized) <= 80:
-        raise InvalidUserDataError("显示名称长度必须在 1 到 80 个字符之间")
-
-    return normalized
-
-
-def _validate_value_types(user_id: UserId, username: Username, email: EmailAddress, status: UserStatus) -> None:
+def _validate_value_types(
+    user_id: UserId,
+    username: Username,
+    email: EmailAddress,
+    password_hash: PasswordHash,
+    status: UserStatus,
+) -> None:
     if not isinstance(user_id, UserId):
         raise InvalidUserDataError("用户 ID 类型不正确")
 
@@ -142,6 +132,9 @@ def _validate_value_types(user_id: UserId, username: Username, email: EmailAddre
 
     if not isinstance(email, EmailAddress):
         raise InvalidUserDataError("邮箱地址类型不正确")
+
+    if not isinstance(password_hash, PasswordHash):
+        raise InvalidUserDataError("密码哈希类型不正确")
 
     _validate_user_status(status)
 

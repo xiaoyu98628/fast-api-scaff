@@ -29,7 +29,7 @@ uv run uvicorn app.main:app --reload
 | `PATCH` | `/api/v1/users/{user_id}/status` | 200 | 修改用户状态 |
 | `DELETE` | `/api/v1/users/{user_id}` | 204 | 物理删除用户 |
 
-用户示例不包含登录、密码、权限、软删除或审计历史。`PUT` 是用户基本信息的完整更新，必须提供 `username`、`email` 和 `display_name`，不是部分更新。状态修改是独立用例，不接受在 `PUT` 请求中混合修改。
+创建用户时必须提供密码，应用只持久化密码哈希，任何响应都不返回密码或哈希。用户示例尚不包含登录、密码修改、权限、软删除或审计历史。`PUT` 是可编辑用户基本信息的完整更新，必须提供 `username` 和 `email`，不是部分更新，也不接受密码或状态。状态修改是独立用例。
 
 ## 3. 完整调用示例
 
@@ -42,7 +42,7 @@ curl -i -X POST http://127.0.0.1:8000/api/v1/users \
   -d '{
     "username": "alice",
     "email": "alice@example.com",
-    "display_name": "Alice"
+    "password": "password123"
   }'
 ```
 
@@ -63,8 +63,7 @@ curl -X PUT http://127.0.0.1:8000/api/v1/users/USER_UUID \
   -H 'Content-Type: application/json' \
   -d '{
     "username": "alice",
-    "email": "alice@example.com",
-    "display_name": "Alice Zhang"
+    "email": "alice@example.com"
   }'
 
 curl -X PATCH http://127.0.0.1:8000/api/v1/users/USER_UUID/status \
@@ -86,10 +85,10 @@ curl -i -X DELETE http://127.0.0.1:8000/api/v1/users/USER_UUID
 | --- | --- |
 | `username` | 3–32 字符，并继续接受领域层格式校验 |
 | `email` | 最长 254 字符，并继续接受领域层格式校验 |
-| `display_name` | 1–80 字符 |
+| `password` | 仅用于创建，8–128 字符；按原值哈希，不进行 trim 或大小写转换 |
 | `status` | 仅用于状态修改接口，必须是领域定义的用户状态 |
 
-Pydantic 的结构校验负责 JSON 类型、长度、缺失字段和额外字段；领域对象负责业务不变量。两者不是重复：HTTP schema 是协议边界，领域校验保证 Console 或未来 Scheduler 等其他入口也不能绕过规则。
+Pydantic 的结构校验负责 JSON 类型、长度、缺失字段和额外字段；领域对象负责业务不变量。两者不是重复：HTTP schema 是协议边界，领域校验保证 Console 或未来 Scheduler 等其他入口也不能绕过规则。明文密码只在请求和创建命令中短暂存在，进入聚合前由应用层端口调用基础设施哈希实现；DTO、响应和日志不应携带明文或哈希。
 
 ## 5. 统一 JSON 响应
 

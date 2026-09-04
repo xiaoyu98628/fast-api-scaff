@@ -9,7 +9,16 @@ from app.contexts.user.application.errors import UserConflictError, UserNotFound
 from app.contexts.user.application.service import UserApplicationService
 from app.contexts.user.domain.repository import UserRepository
 from app.contexts.user.domain.user import User
-from app.contexts.user.domain.values import EmailAddress, UserId, Username, UserStatus
+from app.contexts.user.domain.values import EmailAddress, Password, PasswordHash, UserId, Username, UserStatus
+
+
+class FakePasswordHasher:
+    def __init__(self) -> None:
+        self.passwords: list[str] = []
+
+    def hash(self, password: Password) -> PasswordHash:
+        self.passwords.append(password.value)
+        return PasswordHash(f"hashed::{password.value}")
 
 
 class FakeUserRepository:
@@ -72,11 +81,40 @@ class FakeUserUnitOfWork:
         self.commit_count += 1
 
 
-def build_service(repository: FakeUserRepository) -> UserApplicationService:
+def build_service(repository: FakeUserRepository, password_hasher: FakePasswordHasher | None = None) -> UserApplicationService:
     return UserApplicationService(
         unit_of_work_factory=lambda: FakeUserUnitOfWork(repository),
+        password_hasher=password_hasher or FakePasswordHasher(),
         clock=lambda: datetime(2026, 8, 28, 18, 0),
     )
+
+
+@pytest.mark.asyncio
+async def test_user_service_hashes_password_before_persisting_user() -> None:
+    repository = FakeUserRepository()
+    password_hasher = FakePasswordHasher()
+    service = build_service(repository, password_hasher)
+
+    created = await service.create(CreateUserCommand(username="alice", email="alice@example.com", password="password123"))
+
+    stored = repository.items[created.id]
+    assert password_hasher.passwords == ["password123"]
+    assert stored.password_hash == PasswordHash("hashed::password123")
+    assert not hasattr(created, "password")
+    assert not hasattr(created, "password_hash")
+
+
+@pytest.mark.asyncio
+async def test_user_service_rejects_invalid_password_before_hashing() -> None:
+    repository = FakeUserRepository()
+    password_hasher = FakePasswordHasher()
+    service = build_service(repository, password_hasher)
+
+    with pytest.raises(ValueError, match="密码长度"):
+        await service.create(CreateUserCommand(username="alice", email="alice@example.com", password="short"))
+
+    assert password_hasher.passwords == []
+    assert repository.items == {}
 
 
 @pytest.mark.asyncio
@@ -84,7 +122,7 @@ async def test_user_service_completes_crud_flow() -> None:
     repository = FakeUserRepository()
     service = build_service(repository)
 
-    created = await service.create(CreateUserCommand(username="alice", email="alice@example.com", display_name="Alice"))
+    created = await service.create(CreateUserCommand(username="alice", email="alice@example.com", password="password123"))
     fetched = await service.get(created.id)
     page = await service.list(offset=0, limit=20)
     updated = await service.update(
@@ -92,7 +130,6 @@ async def test_user_service_completes_crud_flow() -> None:
             user_id=created.id,
             username="alice_new",
             email="new@example.com",
-            display_name="Alice New",
         )
     )
     status_changed = await service.change_status(
@@ -109,6 +146,7 @@ async def test_user_service_completes_crud_flow() -> None:
     assert updated.username == "alice_new"
     assert updated.status is UserStatus.ACTIVE
     assert status_changed.status is UserStatus.DISABLED
+    assert repository.items == {}
 
     with pytest.raises(UserNotFoundError):
         await service.get(created.id)
@@ -118,13 +156,13 @@ async def test_user_service_completes_crud_flow() -> None:
 async def test_user_service_rejects_duplicate_username_and_email() -> None:
     repository = FakeUserRepository()
     service = build_service(repository)
-    await service.create(CreateUserCommand(username="alice", email="alice@example.com", display_name="Alice"))
+    await service.create(CreateUserCommand(username="alice", email="alice@example.com", password="password123"))
 
     with pytest.raises(UserConflictError) as username_error:
-        await service.create(CreateUserCommand(username="alice", email="other@example.com", display_name="Other"))
+        await service.create(CreateUserCommand(username="alice", email="other@example.com", password="password123"))
 
     with pytest.raises(UserConflictError) as email_error:
-        await service.create(CreateUserCommand(username="other", email="alice@example.com", display_name="Other"))
+        await service.create(CreateUserCommand(username="other", email="alice@example.com", password="password123"))
 
     assert username_error.value.field == "username"
     assert email_error.value.field == "email"
@@ -134,7 +172,7 @@ async def test_user_service_rejects_duplicate_username_and_email() -> None:
 async def test_user_service_reports_not_found_when_update_target_disappears() -> None:
     repository = FakeUserRepository()
     service = build_service(repository)
-    created = await service.create(CreateUserCommand(username="alice", email="alice@example.com", display_name="Alice"))
+    created = await service.create(CreateUserCommand(username="alice", email="alice@example.com", password="password123"))
     repository.remove_before_update = True
 
     with pytest.raises(UserNotFoundError):
@@ -143,7 +181,6 @@ async def test_user_service_reports_not_found_when_update_target_disappears() ->
                 user_id=created.id,
                 username="alice_new",
                 email="new@example.com",
-                display_name="Alice New",
             )
         )
 
@@ -152,7 +189,7 @@ async def test_user_service_reports_not_found_when_update_target_disappears() ->
 async def test_user_service_reports_not_found_when_status_target_disappears() -> None:
     repository = FakeUserRepository()
     service = build_service(repository)
-    created = await service.create(CreateUserCommand(username="alice", email="alice@example.com", display_name="Alice"))
+    created = await service.create(CreateUserCommand(username="alice", email="alice@example.com", password="password123"))
     repository.remove_before_update = True
 
     with pytest.raises(UserNotFoundError):

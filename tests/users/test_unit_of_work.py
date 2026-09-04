@@ -34,7 +34,7 @@ async def test_user_context_binds_unit_of_work_to_main_connection() -> None:
         CreateUserCommand(
             username="alice",
             email="alice@example.com",
-            display_name="Alice",
+            password="password123",
         )
     )
 

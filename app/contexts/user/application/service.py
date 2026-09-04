@@ -5,10 +5,11 @@ from uuid import UUID
 
 from app.contexts.user.application.dto import ChangeUserStatusCommand, CreateUserCommand, UpdateUserCommand, UserDTO, UserPageDTO
 from app.contexts.user.application.errors import UserConflictError, UserNotFoundError
+from app.contexts.user.application.password_hasher import PasswordHasher
 from app.contexts.user.application.unit_of_work import UserUnitOfWorkFactory
 from app.contexts.user.domain.repository import UserRepository
 from app.contexts.user.domain.user import User
-from app.contexts.user.domain.values import UserId
+from app.contexts.user.domain.values import Password, UserId
 
 
 @dataclass(frozen=True, slots=True)
@@ -16,13 +17,15 @@ class UserApplicationService:
     """编排用户管理用例，不依赖 HTTP 或 SQLAlchemy。"""
 
     unit_of_work_factory: UserUnitOfWorkFactory
+    password_hasher: PasswordHasher
     clock: Callable[[], datetime] = datetime.now
 
     async def create(self, command: CreateUserCommand) -> UserDTO:
+        password_hash = self.password_hasher.hash(Password(command.password))
         user = User.create(
             username=command.username,
             email=command.email,
-            display_name=command.display_name,
+            password_hash=password_hash,
             now=self.clock(),
         )
 
@@ -64,7 +67,6 @@ class UserApplicationService:
             user.update_profile(
                 username=command.username,
                 email=command.email,
-                display_name=command.display_name,
                 now=self.clock(),
             )
             await self._ensure_unique(unit_of_work.users, user)

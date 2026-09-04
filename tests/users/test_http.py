@@ -12,6 +12,7 @@ from app.config.cors import CorsSettings
 from app.config.database import DatabaseSettings
 from app.config.settings import Settings
 from app.contexts.user.infrastructure.persistence.models.user import UserModel
+from app.infrastructure.database.manager import DatabaseManager
 
 
 def build_settings() -> Settings:
@@ -33,7 +34,6 @@ async def assert_user_status_contract(client: AsyncClient, *, user_id: str, crea
         json={
             "username": "alice_new",
             "email": "new@example.com",
-            "display_name": "Alice New",
             "status": "disabled",
         },
     )
@@ -61,6 +61,74 @@ async def assert_user_status_contract(client: AsyncClient, *, user_id: str, crea
     assert missing_status_response.status_code == 404
 
 
+async def assert_user_password_contract(
+    client: AsyncClient,
+    databases: DatabaseManager,
+    *,
+    user_id: str,
+    stored_password: str,
+) -> None:
+    invalid_password_response = await client.post(
+        "/api/v1/users",
+        json={
+            "username": "short_password",
+            "email": "short@example.com",
+            "password": "short",
+        },
+    )
+    assert invalid_password_response.status_code == 422
+
+    update_with_password_response = await client.put(
+        f"/api/v1/users/{user_id}",
+        json={
+            "username": "alice_new",
+            "email": "new@example.com",
+            "password": "replacement-password",
+        },
+    )
+    assert update_with_password_response.status_code == 422
+
+    async with databases.session() as session:
+        password_after_update = await session.scalar(select(UserModel.password).where(UserModel.id == UUID(user_id)))
+
+    assert password_after_update == stored_password
+
+
+async def assert_user_list_contract(client: AsyncClient, *, created: dict[str, object]) -> None:
+    list_response = await client.get("/api/v1/users", params={"page": 1, "limit": 1000})
+    assert list_response.status_code == 200
+    list_data = list_response.json()["data"]
+    assert list_data["meta"] == {
+        "page": 1,
+        "limit": 1000,
+        "total": 1,
+        "total_pages": 1,
+    }
+    assert "total" not in list_data
+    assert "page" not in list_data
+    assert "limit" not in list_data
+    assert "offset" not in list_data
+    assert "page_size" not in list_data
+    assert list_data["items"][0]["created_at"] == created["created_at"]
+
+    legacy_list_response = await client.get(
+        "/api/v1/users",
+        params={"page": 1, "page_size": 20},
+    )
+    assert legacy_list_response.status_code == 422
+
+    for invalid_params in (
+        {"page": 0, "limit": 20},
+        {"page": 1, "limit": 0},
+        {"page": 1, "limit": 1001},
+    ):
+        invalid_list_response = await client.get(
+            "/api/v1/users",
+            params=invalid_params,
+        )
+        assert invalid_list_response.status_code == 422
+
+
 @pytest.mark.asyncio
 async def test_user_http_crud_and_conflict_responses() -> None:
     app = create_app(build_settings())
@@ -76,27 +144,33 @@ async def test_user_http_crud_and_conflict_responses() -> None:
                 json={
                     "username": "Alice_01",
                     "email": "Alice@Example.com",
-                    "display_name": "Alice",
+                    "password": "correct-horse-battery-staple",
                 },
             )
             assert create_response.status_code == 201
             created = create_response.json()["data"]
             assert created["username"] == "alice_01"
             assert created["email"] == "alice@example.com"
+            assert "password" not in created
+            assert "password_hash" not in created
             assert datetime.fromisoformat(created["created_at"]).tzinfo is None
             assert datetime.fromisoformat(created["updated_at"]).tzinfo is None
 
             async with app.state.container.databases.session() as session:
-                stored_created_at = await session.scalar(select(UserModel.created_at).where(UserModel.id == UUID(created["id"])))
+                stored_created_at, stored_password = (
+                    await session.execute(select(UserModel.created_at, UserModel.password).where(UserModel.id == UUID(created["id"])))
+                ).one()
 
             assert stored_created_at == datetime.fromisoformat(created["created_at"])
+            assert stored_password != "correct-horse-battery-staple"
+            assert stored_password.startswith("$argon2")
 
             duplicate_response = await client.post(
                 "/api/v1/users",
                 json={
                     "username": "alice_01",
                     "email": "other@example.com",
-                    "display_name": "Other",
+                    "password": "another-password",
                 },
             )
             assert duplicate_response.status_code == 409
@@ -107,51 +181,26 @@ async def test_user_http_crud_and_conflict_responses() -> None:
             assert get_response.status_code == 200
             assert get_response.json()["data"] == created
 
-            list_response = await client.get("/api/v1/users", params={"page": 1, "limit": 1000})
-            assert list_response.status_code == 200
-            list_data = list_response.json()["data"]
-            assert list_data["meta"] == {
-                "page": 1,
-                "limit": 1000,
-                "total": 1,
-                "total_pages": 1,
-            }
-            assert "total" not in list_data
-            assert "page" not in list_data
-            assert "limit" not in list_data
-            assert "offset" not in list_data
-            assert "page_size" not in list_data
-            assert list_data["items"][0]["created_at"] == created["created_at"]
-
-            legacy_list_response = await client.get(
-                "/api/v1/users",
-                params={"page": 1, "page_size": 20},
-            )
-            assert legacy_list_response.status_code == 422
-
-            for invalid_params in (
-                {"page": 0, "limit": 20},
-                {"page": 1, "limit": 0},
-                {"page": 1, "limit": 1001},
-            ):
-                invalid_list_response = await client.get(
-                    "/api/v1/users",
-                    params=invalid_params,
-                )
-                assert invalid_list_response.status_code == 422
+            await assert_user_list_contract(client, created=created)
 
             update_response = await client.put(
                 f"/api/v1/users/{user_id}",
                 json={
                     "username": "alice_new",
                     "email": "new@example.com",
-                    "display_name": "Alice New",
                 },
             )
             assert update_response.status_code == 200
             assert update_response.json()["data"]["status"] == "active"
             assert update_response.json()["data"]["created_at"] == created["created_at"]
             assert datetime.fromisoformat(update_response.json()["data"]["updated_at"]).tzinfo is None
+
+            await assert_user_password_contract(
+                client,
+                app.state.container.databases,
+                user_id=user_id,
+                stored_password=stored_password,
+            )
 
             await assert_user_status_contract(client, user_id=user_id, created=created)
 

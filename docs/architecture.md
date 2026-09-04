@@ -54,14 +54,14 @@ infrastructure ┘      ↑
 用户上下文是教学型业务样例，包含：
 
 - 聚合根 `User`；
-- 值对象 `UserId`、`Username`、`EmailAddress`；
+- 值对象 `UserId`、`Username`、`EmailAddress`、`Password`、`PasswordHash`；
 - 状态枚举 `UserStatus`；
 - Repository 与 Unit of Work 协议；
 - `UserApplicationService` 用例；
-- SQLAlchemy mapper/repository/UoW/model；
+- SQLAlchemy mapper/repository/UoW/model 与 pwdlib 密码哈希适配器；
 - HTTP 与 Console 入口。
 
-它不包含认证、密码、token、角色和权限。不要因为目录名叫 user 就推断它已经是完整 IAM 上下文；真实系统可能需要把身份、账户、资料、组织成员关系拆成不同边界。
+它只覆盖创建用户时的密码规则和安全哈希持久化，不包含登录认证、密码修改、token、角色和权限。不要因为目录名叫 user 就推断它已经是完整 IAM 上下文；真实系统可能需要把身份、账户、资料、组织成员关系拆成不同边界。
 
 ## 4. 聚合与不变量
 
@@ -72,7 +72,7 @@ infrastructure ┘      ↑
 - `User.update_profile()`：原子地校验并更新基本信息与时间；
 - `User.change_status()`：独立校验并修改用户状态与时间。
 
-不变量包括用户名格式与归一化、邮箱格式与归一化、显示名称长度、合法状态、值对象类型以及本地无时区 datetime。
+不变量包括用户名格式与归一化、邮箱格式与归一化、密码长度、密码哈希有效性、合法状态、值对象类型以及本地无时区 datetime。
 
 “聚合不变量容易被绕过”具体指以下坏路径：
 
@@ -89,7 +89,7 @@ Python 无法提供绝对私有性；下划线是协作契约。真正的保证�
 
 ## 5. 值对象
 
-`Username` 和 `EmailAddress` 在构造时 trim 并转小写，使比较和唯一性使用规范化值。值对象不可变，避免同一个字符串在不同入口拥有不同规则。
+`Username` 和 `EmailAddress` 在构造时 trim 并转小写，使比较和唯一性使用规范化值。`Password` 只检查长度，不 trim 或改变大小写；`PasswordHash` 是聚合持有和持久化的形式。两个密码值对象都隐藏 repr，应用 DTO 和接口响应也不包含密码字段。值对象不可变，避免同一个原始值在不同入口拥有不同规则。
 
 值对象适合：
 
@@ -113,7 +113,7 @@ Python 无法提供绝对私有性；下划线是协作契约。真正的保证�
   → 返回 DTO
 ```
 
-Application 不知道 FastAPI、Typer、SQLAlchemy 或具体数据库。时钟以 callable 注入，测试可提供固定本地时间。
+Application 不知道 FastAPI、Typer、SQLAlchemy、pwdlib 或具体数据库。时钟和 `PasswordHasher` 窄端口由组合根注入，测试可提供固定时间和确定性的假哈希实现。当前基础设施通过 pwdlib 推荐的 Argon2 算法实现该端口，聚合不会接触明文密码。
 
 Application Service 可以做跨聚合的流程编排和权限决策，但不应承载实体自身的核心规则。反过来，Domain 也不应执行数据库/缓存/网络 I/O。
 

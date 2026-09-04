@@ -6,7 +6,7 @@
 
 - FastAPI HTTP API、OpenAPI 与统一 JSON 响应；
 - Typer Console，一次性命令共享应用容器；
-- 用户限界上下文 CRUD 示例；
+- 用户限界上下文 CRUD 与密码安全哈希示例；
 - MySQL、PostgreSQL、SQLite 异步 SQLAlchemy；
 - Repository、Mapper、Unit of Work 与 Alembic migration；
 - Redis、Memcached、Memory 字节级 KV 缓存；
@@ -57,7 +57,7 @@ uv run uvicorn app.main:app --reload
 curl http://127.0.0.1:8000/health
 curl -X POST http://127.0.0.1:8000/api/v1/users \
   -H 'Content-Type: application/json' \
-  -d '{"username":"alice","email":"alice@example.com","display_name":"Alice"}'
+  -d '{"username":"alice","email":"alice@example.com","password":"password123"}'
 curl 'http://127.0.0.1:8000/api/v1/users?page=1&limit=20'
 ```
 
@@ -70,12 +70,11 @@ uv run python -m app.interfaces.console --help
 uv run python -m app.interfaces.console app info
 uv run python -m app.interfaces.console users create \
   --username alice \
-  --email alice@example.com \
-  --display-name Alice
+  --email alice@example.com
 uv run python -m app.interfaces.console users list --page 1 --limit 20
 ```
 
-命令结果写 stdout，日志和错误写 stderr；退出码 0/1/2 分别表示成功、运行失败和用法错误。
+`users create` 会交互式读取并确认密码，输入不回显。命令结果写 stdout，日志和错误写 stderr；退出码 0/1/2 分别表示成功、运行失败和用法错误。
 
 ## Docker
 

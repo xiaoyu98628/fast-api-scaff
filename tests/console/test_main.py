@@ -37,13 +37,14 @@ _NOW = datetime(2026, 8, 30, 20, 0)
 class FakeUserService:
     def __init__(self) -> None:
         self.users: list[UserDTO] = []
+        self.passwords: list[str] = []
 
     async def create(self, command: CreateUserCommand) -> UserDTO:
+        self.passwords.append(command.password)
         user = UserDTO(
             id=_USER_ID,
             username=command.username,
             email=command.email,
-            display_name=command.display_name,
             status=UserStatus.ACTIVE,
             created_at=_NOW,
             updated_at=_NOW,
@@ -167,8 +168,8 @@ def test_user_commands_call_application_service() -> None:
             "alice",
             "--email",
             "alice@example.com",
-            "--display-name",
-            "Alice",
+            "--password",
+            "password123",
         ],
     )
     listed = runner.invoke(application, ["users", "list", "--page", "1", "--limit", "1000"])
@@ -180,11 +181,11 @@ def test_user_commands_call_application_service() -> None:
         "id": str(_USER_ID),
         "username": "alice",
         "email": "alice@example.com",
-        "display_name": "Alice",
         "status": "active",
         "created_at": expected_time,
         "updated_at": expected_time,
     }
+    assert service.passwords == ["password123"]
     assert listed.exit_code == 0
     assert json.loads(listed.stdout) == {
         "items": [json.loads(created.stdout)],
@@ -206,8 +207,8 @@ def test_user_business_error_and_usage_error_use_distinct_exit_codes() -> None:
             "x",
             "--email",
             "bad",
-            "--display-name",
-            "x",
+            "--password",
+            "password123",
         ],
     )
     invalid_page = runner.invoke(application, ["users", "list", "--page", "0"])

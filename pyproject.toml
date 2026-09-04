@@ -13,6 +13,8 @@ dependencies = [
     "pydantic-settings>=2.15.0",
     "starlette-context>=0.5.1",
 
+    "pwdlib[argon2]>=0.3.0",
+
     "anyio>=4.15.0",
     "httpx2>=2.12.0",
 

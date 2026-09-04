@@ -12,11 +12,16 @@ class CreateUserRequest(BaseModel):
 
     username: str = Field(min_length=3, max_length=32)
     email: str = Field(max_length=254)
-    display_name: str = Field(min_length=1, max_length=80)
+    password: str = Field(min_length=8, max_length=128, repr=False)
 
 
-class UpdateUserRequest(CreateUserRequest):
-    """完整更新用户基本信息。"""
+class UpdateUserRequest(BaseModel):
+    """完整更新可编辑的用户基本信息，不包含密码和状态。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    username: str = Field(min_length=3, max_length=32)
+    email: str = Field(max_length=254)
 
 
 class ChangeUserStatusRequest(BaseModel):
@@ -29,7 +34,6 @@ class UserResponse(BaseModel):
     id: UUID
     username: str
     email: str
-    display_name: str
     status: UserStatus
     created_at: datetime
     updated_at: datetime
@@ -40,7 +44,6 @@ class UserResponse(BaseModel):
             id=user.id,
             username=user.username,
             email=user.email,
-            display_name=user.display_name,
             status=user.status,
             created_at=user.created_at,
             updated_at=user.updated_at,

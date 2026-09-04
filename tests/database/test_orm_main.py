@@ -22,7 +22,7 @@ def test_main_database_model_registry_loads_user_model() -> None:
         "id": "用户 ID",
         "username": "用户名",
         "email": "邮箱地址",
-        "display_name": "显示名称",
+        "password": "密码哈希",
         "status": "用户状态",
         "created_at": "创建时间",
         "updated_at": "更新时间",

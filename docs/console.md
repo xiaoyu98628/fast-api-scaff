@@ -41,9 +41,10 @@ uv run python -m app.interfaces.console app info
 ```bash
 uv run python -m app.interfaces.console users create \
   --username alice \
-  --email alice@example.com \
-  --display-name Alice
+  --email alice@example.com
 ```
+
+命令会交互式读取并再次确认密码，输入内容不回显。密码不会出现在成功结果中；自动化调用虽然可以显式传递 `--password`，但这可能把明文留在 shell 历史或进程参数中，应优先从受控输入通道提供。
 
 分页查询：
 
@@ -51,7 +52,7 @@ uv run python -m app.interfaces.console users create \
 uv run python -m app.interfaces.console users list --page 1 --limit 20
 ```
 
-`page` 从 1 开始，默认值为 1；`limit` 范围为 1–1000，默认值为 20。非法范围由 Typer 作为用法错误拒绝并返回退出码 2。结果直接序列化应用 DTO，包含 `items`、`total`、`offset` 和 `limit`。正式后台批处理应根据任务语义使用 `batch_size` 和进度输出。用户上下文固定使用 `main` 数据库连接，运行前必须完成 Alembic 迁移。
+`page` 从 1 开始，默认值为 1；`limit` 范围为 1–1000，默认值为 20。非法范围由 Typer 作为用法错误拒绝并返回退出码 2。结果直接序列化应用 DTO，包含 `items`、`total`、`offset` 和 `limit`，其中不包含密码或密码哈希。正式后台批处理应根据任务语义使用 `batch_size` 和进度输出。用户上下文固定使用 `main` 数据库连接，运行前必须完成 Alembic 迁移。
 
 ## 4. 输出协议
 
