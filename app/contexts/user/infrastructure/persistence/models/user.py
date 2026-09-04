@@ -1,7 +1,6 @@
 from datetime import datetime
-from uuid import UUID
 
-from sqlalchemy import CheckConstraint, DateTime, String, UniqueConstraint, Uuid
+from sqlalchemy import CheckConstraint, DateTime, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infrastructure.database.orm.main import MainBase
@@ -18,7 +17,7 @@ class UserModel(MainBase):
         {"comment": "用户信息"},
     )
 
-    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, comment="用户 ID")
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, comment="用户 ID")
     username: Mapped[str] = mapped_column(String(32), nullable=False, comment="用户名")
     email: Mapped[str] = mapped_column(String(254), nullable=False, comment="邮箱地址")
     password: Mapped[str] = mapped_column(String(255), nullable=False, comment="密码哈希")

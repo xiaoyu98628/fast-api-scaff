@@ -120,6 +120,8 @@ HTTP / Console
 
 Repository 的 `update()` 和 `remove()` 使用带主键条件的单条 DML，并返回是否匹配记录。Application Service 将零匹配转换为 `UserNotFoundError`，避免目标在并发期间已经删除时仍返回成功。这个返回值属于领域持久化协议，不向上层暴露 SQLAlchemy result。
 
+用户 ID 在 Domain/Application 中使用 `UUID`，在数据库中统一保存为带连字符的小写 `String(36)`，例如 `019cba13-c9eb-7d22-845e-123456789abc`。Mapper 和 Repository 负责两种类型之间的转换，因此 MySQL、PostgreSQL、SQLite 的物理值与 HTTP 返回值保持一致。这个约定以跨数据库可见格式一致为优先级，PostgreSQL 不使用原生 UUID 列。
+
 不要让领域对象继承 ORM Model，也不要把 SQLAlchemy Session 传进领域方法。显式 mapper 看起来多一层代码，但能避免 ORM 状态、懒加载和数据库字段成为领域模型的隐性 API。
 
 ## 7. 事务行为

@@ -1,4 +1,4 @@
-from sqlalchemy import DateTime
+from sqlalchemy import DateTime, String
 
 from app.contexts.user.infrastructure.persistence.models.user import UserModel
 from app.infrastructure.database.orm.main import MainBase
@@ -14,6 +14,8 @@ def test_main_database_model_registry_loads_user_model() -> None:
     assert users_table is metadata.tables["users"]
     assert users_table.primary_key.name == "pk_users"
     assert users_table.comment == "用户信息"
+    assert isinstance(users_table.c.id.type, String)
+    assert users_table.c.id.type.length == 36
     assert isinstance(users_table.c.created_at.type, DateTime)
     assert isinstance(users_table.c.updated_at.type, DateTime)
     assert users_table.c.created_at.type.timezone is False

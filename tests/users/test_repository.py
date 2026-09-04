@@ -33,12 +33,15 @@ async def test_sqlalchemy_user_repository_persists_and_queries_users() -> None:
         await repository.add(user)
         await session.commit()
 
-        stored_created_at = await session.scalar(select(UserModel.created_at).where(UserModel.id == user.id.value))
+        database_user_id = str(user.id.value)
+        stored_id = await session.scalar(select(UserModel.id).where(UserModel.id == database_user_id))
+        stored_created_at = await session.scalar(select(UserModel.created_at).where(UserModel.id == database_user_id))
 
         found = await repository.find(user.id)
         users, total = await repository.find_page(offset=0, limit=20)
 
         assert found is not None
+        assert stored_id == str(found.id.value)
         assert stored_created_at == datetime(2026, 8, 28, 18, 30)
         assert found.created_at == now
         assert found.username == Username("alice")

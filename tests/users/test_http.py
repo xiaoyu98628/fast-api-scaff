@@ -1,5 +1,5 @@
 from datetime import datetime
-from uuid import UUID, uuid7
+from uuid import uuid7
 
 import pytest
 from httpx2 import ASGITransport, AsyncClient
@@ -90,7 +90,7 @@ async def assert_user_password_contract(
     assert update_with_password_response.status_code == 422
 
     async with databases.session() as session:
-        password_after_update = await session.scalar(select(UserModel.password).where(UserModel.id == UUID(user_id)))
+        password_after_update = await session.scalar(select(UserModel.password).where(UserModel.id == user_id))
 
     assert password_after_update == stored_password
 
@@ -114,7 +114,7 @@ async def assert_user_password_contract(
     assert reset_response.content == b""
 
     async with databases.session() as session:
-        password_after_reset = await session.scalar(select(UserModel.password).where(UserModel.id == UUID(user_id)))
+        password_after_reset = await session.scalar(select(UserModel.password).where(UserModel.id == user_id))
 
     assert password_after_reset is not None
     assert password_after_reset != stored_password
@@ -185,7 +185,7 @@ async def test_user_http_crud_and_conflict_responses() -> None:
 
             async with app.state.container.databases.session() as session:
                 stored_created_at, stored_password = (
-                    await session.execute(select(UserModel.created_at, UserModel.password).where(UserModel.id == UUID(created["id"])))
+                    await session.execute(select(UserModel.created_at, UserModel.password).where(UserModel.id == str(created["id"])))
                 ).one()
 
             assert stored_created_at == datetime.fromisoformat(created["created_at"])
