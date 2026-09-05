@@ -23,6 +23,7 @@ class DatabaseManager:
         providers: DatabaseProviderRegistry = DEFAULT_DATABASE_PROVIDERS,
     ) -> None:
         self._default = settings.default
+        self._closed = False
         self._providers = providers
         self._resources = {
             name: AsyncLazy(
@@ -45,6 +46,9 @@ class DatabaseManager:
         return resource.initialized if resource is not None else False
 
     async def get(self, name: str | None = None) -> DatabaseResource:
+        if self._closed:
+            raise RuntimeError("数据库管理器已经关闭")
+
         resolved_name = self._resolve_name(name)
         resource = self._resources.get(resolved_name)
 
@@ -64,6 +68,10 @@ class DatabaseManager:
             yield session
 
     async def aclose(self) -> None:
+        self._closed = True
+        for resource in self._resources.values():
+            resource.begin_close()
+
         errors: list[BaseException] = []
 
         with CancelScope(shield=True):

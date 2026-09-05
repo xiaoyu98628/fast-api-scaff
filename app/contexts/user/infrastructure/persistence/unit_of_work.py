@@ -69,6 +69,11 @@ class SqlAlchemyUserUnitOfWork:
             errors = ([exception] if exception is not None else []) + cleanup_errors
             raise BaseExceptionGroup("用户事务退出和清理失败", errors) from None
 
+        if isinstance(exception, IntegrityError):
+            field = _resolve_user_conflict_field(exception)
+            if field is not None:
+                raise UserConflictError(field) from exception
+
     async def commit(self) -> None:
         if self._session is None:
             raise RuntimeError("UserUnitOfWork 尚未进入事务上下文")
@@ -76,7 +81,11 @@ class SqlAlchemyUserUnitOfWork:
         try:
             await self._session.commit()
         except IntegrityError as error:
-            await self._session.rollback()
+            try:
+                with CancelScope(shield=True):
+                    await self._session.rollback()
+            except BaseException as cleanup_error:
+                raise BaseExceptionGroup("用户事务提交和回滚失败", (error, cleanup_error)) from None
             field = _resolve_user_conflict_field(error)
             if field is None:
                 raise

@@ -13,6 +13,7 @@ from app.config.cors import CorsSettings
 from app.config.database import DatabaseSettings
 from app.config.settings import Settings
 from app.contexts.user.infrastructure.persistence.models.user import UserModel
+from app.contexts.user.infrastructure.persistence.repository import SqlAlchemyUserRepository
 from app.infrastructure.database.manager import DatabaseManager
 
 
@@ -238,3 +239,33 @@ async def test_user_http_crud_and_conflict_responses() -> None:
             missing_response = await client.get(f"/api/v1/users/{uuid7()}")
             assert missing_response.status_code == 404
             assert missing_response.json()["code"] == "4043211001"
+
+
+@pytest.mark.parametrize(("field", "expected_code"), [("username", "4093211002"), ("email", "4093211003")])
+@pytest.mark.asyncio
+async def test_update_constraint_conflict_after_precheck_returns_409(monkeypatch: pytest.MonkeyPatch, field: str, expected_code: str) -> None:
+    app = create_app(build_settings())
+    async with app.router.lifespan_context(app):
+        engine = await app.state.container.databases.get_engine()
+        async with engine.begin() as connection:
+            await connection.run_sync(UserModel.metadata.create_all)
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            user_id = ""
+            for name in ("alice", "bobby"):
+                response = await client.post("/api/v1/users", json={"username": name, "email": f"{name}@example.com", "password": "password123"})
+                assert response.status_code == 201
+                user_id = response.json()["data"]["id"]
+
+            async def stale_precheck(*_args: object, **_kwargs: object) -> bool:
+                return False
+
+            # 模拟预检查未看到竞争写入；真正的 UPDATE 仍由 SQLite 执行和校验。
+            monkeypatch.setattr(SqlAlchemyUserRepository, f"exists_by_{field}", stale_precheck)
+            payload = {"username": "bobby", "email": "bobby@example.com"}
+            payload[field] = "alice" if field == "username" else "alice@example.com"
+            response = await client.put(f"/api/v1/users/{user_id}", json=payload)
+            assert response.status_code == 409
+            assert response.json()["code"] == expected_code
+            stored = (await client.get(f"/api/v1/users/{user_id}")).json()["data"]
+            assert stored["username"] == "bobby"
+            assert stored["email"] == "bobby@example.com"

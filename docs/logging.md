@@ -114,7 +114,7 @@ except Exception:
 
 `LOG_ACCESS_EXCLUDE_ROUTES` 默认排除成功的 `/health`，降低探针噪声。但被排除路由一旦失败，仍会记录，避免静默丢失故障。
 
-route 记录模板如 `/api/v1/users/{user_id}`，降低指标基数。未匹配路由可能没有 route 值。
+route 记录模板如 `/api/v1/users/{user_id}`，降低指标基数。未匹配路由可能没有 route 值。合法 `f` 编码查询参数不会改变路由模板的记录或排除规则；解码中间件会在正常返回、异常和取消时向外层传递路由结果，不把解码后的查询内容写入访问日志。
 
 ## 6. Request ID
 

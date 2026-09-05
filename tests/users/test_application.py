@@ -16,7 +16,7 @@ class FakePasswordHasher:
     def __init__(self) -> None:
         self.passwords: list[str] = []
 
-    def hash(self, password: Password) -> PasswordHash:
+    async def hash(self, password: Password) -> PasswordHash:
         self.passwords.append(password.value)
         return PasswordHash(f"hashed::{password.value}")
 

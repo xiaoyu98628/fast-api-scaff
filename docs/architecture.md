@@ -114,7 +114,7 @@ Python 无法提供绝对私有性；下划线是协作契约。真正的保证�
   → 返回 DTO
 ```
 
-Application 不知道 FastAPI、Typer、SQLAlchemy、pwdlib 或具体数据库。时钟和 `PasswordHasher` 窄端口由组合根注入，测试可提供固定时间和确定性的假哈希实现。当前基础设施通过 pwdlib 推荐的 Argon2 算法实现该端口，聚合不会接触明文密码。
+Application 不知道 FastAPI、Typer、SQLAlchemy、pwdlib 或具体数据库。时钟和 `PasswordHasher` 窄端口由组合根注入，测试可提供固定时间和确定性的假哈希实现。端口签名为 `async def hash(self, password: Password) -> PasswordHash`，创建和重置用例通过 `await` 调用。基础设施适配器在线程中执行 pwdlib 推荐的 Argon2 算法，独立限制器默认允许每个适配器实例同时执行 2 次哈希；全局组合根复用该实例。取消调用时会等待本次哈希任务结束，再传播取消，避免仍在计算时提前释放额度。聚合不会接触明文密码。
 
 Application Service 可以做跨聚合的流程编排和权限决策，但不应承载实体自身的核心规则。反过来，Domain 也不应执行数据库/缓存/网络 I/O。
 
@@ -129,7 +129,7 @@ Application Service 可以做跨聚合的流程编排和权限决策，但不应
 | Mapper | Domain 与 ORM 的显式转换 | 不编排用例 |
 | Provider | 把驱动配置转为资源定义 | 不暴露给业务层 |
 
-用户 UoW 还在数据库唯一约束冲突时做精确异常翻译。未知 `IntegrityError` 原样保留，因为错误映射是语义承诺，过宽映射会把真实数据缺陷伪装成普通冲突。
+用户 UoW 在 commit 阶段和事务体退出阶段处理唯一约束异常，覆盖 INSERT 提交和 UPDATE 立即执行两条路径；执行阶段的异常在回滚、关闭成功后转换。未知 `IntegrityError` 原样保留，因为错误映射是语义承诺，过宽映射会把真实数据缺陷伪装成普通冲突。
 
 ## 8. Container 与 Composition Root
 
@@ -157,7 +157,7 @@ Application Service 可以做跨聚合的流程编排和权限决策，但不应
 - 关闭时先清空当前引用，再聚合资源关闭错误；
 - 支持 `async with`。
 
-HTTP lifespan 和 Console 都复用 runtime。这样资源的初始化、失败清理和关闭顺序不会在不同入口重复实现。数据库、缓存和 HTTP 出站资源都由管理器延迟创建，并由容器 callback 逆序关闭；未初始化资源不会在关闭阶段被创建。关闭进入不可取消清理区间，单个 callback 失败或收到取消后仍会尝试剩余 callback，最后通过异常组保留全部根因。Manager/延迟资源是一次性生命周期对象，关闭开始后拒绝新获取，也不能通过再次调用 `get()` 隐式重建。
+HTTP lifespan 和 Console 都复用 runtime。这样资源的初始化、失败清理和关闭顺序不会在不同入口重复实现。数据库、缓存和 HTTP 出站资源都由管理器延迟创建，并由容器 callback 逆序关闭；未初始化资源不会在关闭阶段被创建。关闭进入不可取消清理区间，单个 callback 失败或收到取消后仍会尝试剩余 callback，最后通过异常组保留全部根因。Manager/延迟资源是一次性生命周期对象，关闭开始后拒绝新获取，也不能通过再次调用 `get()` 隐式重建。数据库和缓存 Manager 在第一次等待前统一禁止所有资源获取，再逐个释放；已经开始的初始化允许完成，但结果只交给关闭流程，不再返回调用方。宿主必须先停止使用已经借出的资源，再关闭 Manager。
 
 顶层 HTTP 出站能力只负责驱动无关请求、连接池、超时、传输错误和日志，不知道具体上游协议。上下文若需要调用外部服务，应在自己的 application 层定义业务窄端口，在 infrastructure 层使用公共 HTTP 客户端实现，并由 composition 注入；application service 不应持有整个容器，也不应直接导入 HTTPX2。
 

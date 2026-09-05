@@ -74,7 +74,7 @@ Provider 负责把严格校验后的配置转换为与 SQLAlchemy 有关的 Engi
 - `/health` 不访问数据库；
 - 宿主关闭时只 dispose 已初始化的 Engine。
 
-Manager 进入关闭后是终态：不会创建尚未初始化的 Engine，也不允许再次 `get/session`。需要重新启动时必须由新的应用 Runtime 构建新容器，不能复用已经关闭的 Manager。
+Manager 进入关闭后是终态：在第一次等待前统一禁止所有连接的新获取，不会启动新的 Engine 初始化，也不允许再次 `get/session`。关闭前已经开始的初始化可以完成，但结果会被释放，不会返回调用方；等待初始化锁的获取也会被拒绝。关闭失败后仍保持禁止获取，后续 `aclose()` 可以重试未完成的清理。宿主应先停止使用已经借出的 Engine/Session，再关闭 Manager。需要重新启动时必须由新的应用 Runtime 构建新容器，不能复用已经关闭的 Manager。
 
 如果需要数据库就绪探针，应显式定义就绪语义和超时，并与仅表示进程存活的健康检查区分。
 
@@ -129,8 +129,8 @@ Repository 的 `update()` 和 `remove()` 使用带主键条件的单条 DML，�
 用户写用例只有显式调用 `unit_of_work.commit()` 才会提交。出现异常时：
 
 - commit 遇到 `IntegrityError` 会先 rollback；
-- 事务上下文内其他异常退出时会 rollback；
-- Session 最终关闭；
+- 事务体执行时的异常在退出时 rollback；已知唯一约束异常在清理成功后转换为应用冲突；
+- Session 最终关闭；回滚或关闭也失败时，用异常组保留原始异常和清理异常；
 - 只读用例不 commit。
 
 一个应用用例应尽量对应一个明确事务。不要在 Repository 中偷偷 commit，否则多个聚合操作无法被同一个 UoW 原子包裹，错误处理也会碎片化。
@@ -141,7 +141,7 @@ Repository 的 `update()` 和 `remove()` 使用带主键条件的单条 DML，�
 
 应用服务会先查询用户名和邮箱是否存在，以提供快速、可读的冲突结果。但“先查再写”不能替代数据库唯一约束：两个并发事务都可能通过预检查。
 
-最终一致性保护来自数据库约束。commit 捕获 `IntegrityError` 后，仅当驱动错误详情包含已知标记时才映射：
+唯一性最终由数据库约束保证。UoW 在 commit 和事务体退出两个阶段识别 `IntegrityError`，因此 UPDATE 在 `session.execute()` 时抛出的冲突也会转换，HTTP 返回对应的 409。两条路径复用同一约束识别函数，仅当驱动错误详情包含已知标记时才映射：
 
 - 用户名：`uq_users_username`、`users_username_key`、`users.username`；
 - 邮箱：`uq_users_email`、`users_email_key`、`users.email`。

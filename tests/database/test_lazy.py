@@ -69,7 +69,7 @@ async def test_get_waiting_for_close_is_rejected_and_resource_cannot_reopen() ->
     get_task = asyncio.create_task(resource.get())
     await asyncio.sleep(0)
 
-    assert get_task.done() is False
+    assert get_task.done() is True
 
     allow_close.set()
     await close_task
@@ -79,3 +79,40 @@ async def test_get_waiting_for_close_is_rejected_and_resource_cannot_reopen() ->
 
     with pytest.raises(RuntimeError, match="已经关闭"):
         await resource.get()
+
+
+@pytest.mark.asyncio
+async def test_close_during_initialization_rejects_active_and_queued_gets() -> None:
+    initializing = asyncio.Event()
+    release = asyncio.Event()
+    value = object()
+    closed: list[object] = []
+    create_count = 0
+
+    async def create() -> object:
+        nonlocal create_count
+        create_count += 1
+        initializing.set()
+        await release.wait()
+        return value
+
+    async def close(resource: object) -> None:
+        closed.append(resource)
+
+    resource = AsyncLazy(create, close)
+    first = asyncio.create_task(resource.get())
+    await initializing.wait()
+    queued = asyncio.create_task(resource.get())
+    await asyncio.sleep(0)
+    closing = asyncio.create_task(resource.aclose())
+    await asyncio.sleep(0)
+    release.set()
+    results = await asyncio.gather(first, queued, closing, return_exceptions=True)
+    assert isinstance(results[0], RuntimeError)
+    assert isinstance(results[1], RuntimeError)
+    assert results[2] is None
+    assert create_count == 1
+    assert closed == [value]
+    assert not resource.initialized
+    await resource.aclose()
+    assert closed == [value]

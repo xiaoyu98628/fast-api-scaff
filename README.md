@@ -6,7 +6,7 @@
 
 - FastAPI HTTP API、OpenAPI 与统一 JSON 响应；
 - Typer Console，一次性命令共享应用容器；
-- 用户限界上下文 CRUD、状态修改与管理员密码重置示例；
+- 用户限界上下文 CRUD、状态修改与管理员密码重置示例，密码哈希在线程中执行并限制并发；
 - MySQL、PostgreSQL、SQLite 异步 SQLAlchemy；
 - Repository、Mapper、Unit of Work 与 Alembic migration；
 - Redis、Memcached、Memory 字节级 KV 缓存；

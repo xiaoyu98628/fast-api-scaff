@@ -23,6 +23,7 @@ class CacheManager:
         providers: CacheProviderRegistry = DEFAULT_CACHE_PROVIDERS,
     ) -> None:
         self._default = settings.default
+        self._closed = False
         self._namespace = settings.namespace
         self._default_ttl = settings.default_ttl
         self._providers = providers
@@ -54,6 +55,9 @@ class CacheManager:
         return await (await self._get_resource(name)).ping()
 
     async def _get_resource(self, name: str | None = None) -> ManagedCacheResource:
+        if self._closed:
+            raise RuntimeError("缓存管理器已经关闭")
+
         resolved_name = self._resolve_name(name)
         resource = self._resources.get(resolved_name)
 
@@ -63,6 +67,10 @@ class CacheManager:
         return await resource.get()
 
     async def aclose(self) -> None:
+        self._closed = True
+        for resource in self._resources.values():
+            resource.begin_close()
+
         errors: list[BaseException] = []
 
         with CancelScope(shield=True):

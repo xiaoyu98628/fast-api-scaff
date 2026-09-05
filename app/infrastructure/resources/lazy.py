@@ -20,7 +20,14 @@ class AsyncLazy[T]:
     def initialized(self) -> bool:
         return self._value is not None
 
+    def begin_close(self) -> None:
+        """在等待初始化或释放资源前，同步阻止新的获取。"""
+        self._closed = True
+
     async def get(self) -> T:
+        if self._closed:
+            raise RuntimeError("异步资源已经关闭")
+
         async with self._lock:
             if self._closed:
                 raise RuntimeError("异步资源已经关闭")
@@ -28,12 +35,14 @@ class AsyncLazy[T]:
             if self._value is None:
                 self._value = await self._factory()
 
+            if self._closed:
+                raise RuntimeError("异步资源已经关闭")
+
             return self._value
 
     async def aclose(self) -> None:
+        self.begin_close()
         async with self._lock:
-            self._closed = True
-
             if self._value is None:
                 return
 

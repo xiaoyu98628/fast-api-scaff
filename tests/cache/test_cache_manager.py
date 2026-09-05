@@ -106,3 +106,63 @@ async def test_missing_default_is_reported_when_implicit_connection_is_requested
 
     with pytest.raises(CacheConfigurationError, match="默认缓存连接"):
         await manager.get()
+
+
+@pytest.mark.parametrize("initialize_first", [False, True])
+@pytest.mark.asyncio
+async def test_manager_rejects_gets_as_soon_as_close_starts(monkeypatch: pytest.MonkeyPatch, initialize_first: bool) -> None:
+    manager = CacheManager(CacheSettings(_env_file=None, namespace="test", connections={name: {"driver": "memory"} for name in ("first", "second")}))
+    if initialize_first:
+        await manager.get("first")
+    await manager.get("second")
+    closing_started = asyncio.Event()
+    release = asyncio.Event()
+    second_resource = manager._resources["second"]
+    original_close = second_resource._closer
+
+    async def delayed_close(resource):
+        closing_started.set()
+        await release.wait()
+        await original_close(resource)
+
+    monkeypatch.setattr(second_resource, "_closer", delayed_close)
+    closing = asyncio.create_task(manager.aclose())
+    try:
+        await closing_started.wait()
+        with pytest.raises(RuntimeError, match="已经关闭"):
+            await manager.get("first")
+        with pytest.raises(RuntimeError, match="已经关闭"):
+            await manager.get("second")
+        assert manager.is_initialized("first") is initialize_first
+    finally:
+        release.set()
+        await closing
+    await manager.aclose()
+    assert not manager.is_initialized("first")
+    assert not manager.is_initialized("second")
+
+
+@pytest.mark.asyncio
+async def test_failed_close_keeps_manager_closed_and_cleans_other_resources(monkeypatch: pytest.MonkeyPatch) -> None:
+    manager = CacheManager(CacheSettings(_env_file=None, namespace="test", connections={name: {"driver": "memory"} for name in ("first", "second")}))
+    await manager.get("first")
+    await manager.get("second")
+    second_resource = manager._resources["second"]
+    original_close = second_resource._closer
+    original_error = RuntimeError("close failed")
+
+    async def failing_close(_resource):
+        raise original_error
+
+    monkeypatch.setattr(second_resource, "_closer", failing_close)
+    try:
+        with pytest.raises(ExceptionGroup) as captured:
+            await manager.aclose()
+        assert captured.value.exceptions == (original_error,)
+        assert not manager.is_initialized("first")
+        for name in ("first", "second"):
+            with pytest.raises(RuntimeError, match="已经关闭"):
+                await manager.get(name)
+    finally:
+        monkeypatch.setattr(second_resource, "_closer", original_close)
+        await manager.aclose()

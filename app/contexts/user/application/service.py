@@ -28,7 +28,7 @@ class UserApplicationService:
     clock: Callable[[], datetime] = datetime.now
 
     async def create(self, command: CreateUserCommand) -> UserDTO:
-        password_hash = self.password_hasher.hash(Password(command.password))
+        password_hash = await self.password_hasher.hash(Password(command.password))
         user = User.create(
             username=command.username,
             email=command.email,
@@ -102,7 +102,7 @@ class UserApplicationService:
 
     async def reset_password(self, command: ResetUserPasswordCommand) -> None:
         user_id = UserId(command.user_id)
-        password_hash = self.password_hasher.hash(Password(command.password))
+        password_hash = await self.password_hasher.hash(Password(command.password))
 
         async with self.unit_of_work_factory() as unit_of_work:
             user = await unit_of_work.users.find(user_id)
