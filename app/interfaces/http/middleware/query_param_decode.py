@@ -75,4 +75,9 @@ class QueryParamDecodeMiddleware:
         state[DECODED_F_STATE_KEY] = decoded_params
         decoded_scope["state"] = state
 
-        await self.app(decoded_scope, receive, send)
+        try:
+            await self.app(decoded_scope, receive, send)
+        finally:
+            # 外层访问日志需要下游匹配的路由模板，查询和 state 仍保持隔离。
+            if "route" in decoded_scope:
+                scope["route"] = decoded_scope["route"]

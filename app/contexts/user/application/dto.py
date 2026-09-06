@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from uuid import UUID
 
@@ -10,7 +10,7 @@ from app.contexts.user.domain.values import UserStatus
 class CreateUserCommand:
     username: str
     email: str
-    display_name: str
+    password: str = field(repr=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,8 +18,18 @@ class UpdateUserCommand:
     user_id: UUID
     username: str
     email: str
-    display_name: str
+
+
+@dataclass(frozen=True, slots=True)
+class ChangeUserStatusCommand:
+    user_id: UUID
     status: UserStatus
+
+
+@dataclass(frozen=True, slots=True)
+class ResetUserPasswordCommand:
+    user_id: UUID
+    password: str = field(repr=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,7 +37,6 @@ class UserDTO:
     id: UUID
     username: str
     email: str
-    display_name: str
     status: UserStatus
     created_at: datetime
     updated_at: datetime
@@ -38,7 +47,6 @@ class UserDTO:
             id=user.id.value,
             username=user.username.value,
             email=user.email.value,
-            display_name=user.display_name,
             status=user.status,
             created_at=user.created_at,
             updated_at=user.updated_at,

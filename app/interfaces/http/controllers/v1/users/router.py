@@ -3,7 +3,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Query, Response, status
 
-from app.contexts.user.application.dto import CreateUserCommand, UpdateUserCommand
+from app.contexts.user.application.dto import ChangeUserStatusCommand, CreateUserCommand, ResetUserPasswordCommand, UpdateUserCommand
 from app.contexts.user.application.errors import UserApplicationError
 from app.contexts.user.domain.errors import UserDomainError
 from app.interfaces.http.controllers.v1.users.dependencies import UserServiceDependency
@@ -13,7 +13,13 @@ from app.interfaces.http.controllers.v1.users.openapi import (
     USER_NOT_FOUND_RESPONSE,
     USER_VALIDATION_ERROR_RESPONSE,
 )
-from app.interfaces.http.controllers.v1.users.schemas import CreateUserRequest, UpdateUserRequest, UserResponse
+from app.interfaces.http.controllers.v1.users.schemas import (
+    ChangeUserStatusRequest,
+    CreateUserRequest,
+    ResetUserPasswordRequest,
+    UpdateUserRequest,
+    UserResponse,
+)
 from app.interfaces.http.dependencies.response import JsonResponseFactoryDependency
 from app.interfaces.http.shared.pagination import PageParams, PageResponse, build_page_response
 from app.interfaces.http.shared.response.codes.success_code import SuccessCode
@@ -41,7 +47,7 @@ async def create_user(
             CreateUserCommand(
                 username=payload.username,
                 email=payload.email,
-                display_name=payload.display_name,
+                password=payload.password,
             )
         )
     except (UserApplicationError, UserDomainError) as error:
@@ -116,7 +122,32 @@ async def update_user(
                 user_id=user_id,
                 username=payload.username,
                 email=payload.email,
-                display_name=payload.display_name,
+            )
+        )
+    except (UserApplicationError, UserDomainError) as error:
+        raise user_error_to_http(error) from error
+
+    return responses.success(UserResponse.from_dto(user))
+
+
+@router.patch(
+    "/{user_id}/status",
+    response_model=JsonResponse[UserResponse],
+    responses={
+        404: USER_NOT_FOUND_RESPONSE,
+        422: USER_VALIDATION_ERROR_RESPONSE,
+    },
+)
+async def change_user_status(
+    user_id: UUID,
+    payload: ChangeUserStatusRequest,
+    service: UserServiceDependency,
+    responses: JsonResponseFactoryDependency,
+) -> JsonResponse[UserResponse]:
+    try:
+        user = await service.change_status(
+            ChangeUserStatusCommand(
+                user_id=user_id,
                 status=payload.status,
             )
         )
@@ -124,6 +155,33 @@ async def update_user(
         raise user_error_to_http(error) from error
 
     return responses.success(UserResponse.from_dto(user))
+
+
+@router.put(
+    "/{user_id}/password",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+    responses={
+        404: USER_NOT_FOUND_RESPONSE,
+        422: USER_VALIDATION_ERROR_RESPONSE,
+    },
+)
+async def reset_user_password(
+    user_id: UUID,
+    payload: ResetUserPasswordRequest,
+    service: UserServiceDependency,
+) -> Response:
+    try:
+        await service.reset_password(
+            ResetUserPasswordCommand(
+                user_id=user_id,
+                password=payload.password,
+            )
+        )
+    except (UserApplicationError, UserDomainError) as error:
+        raise user_error_to_http(error) from error
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.delete(

@@ -96,7 +96,7 @@ except Exception:
 
 ## 5. HTTP 访问日志
 
-开启 `LOG_ACCESS_ENABLED` 后，每个完成或失败的 HTTP 请求记录事件 `http.request.completed`，details 包含：
+开启 `LOG_ACCESS_ENABLED` 后，进入访问日志中间件且未被成功路由排除规则过滤的 HTTP 请求记录事件 `http.request.completed`，details 包含：
 
 - `method`；
 - 匹配后的 route 模板，而不是包含具体 ID 的 URL；
@@ -114,7 +114,9 @@ except Exception:
 
 `LOG_ACCESS_EXCLUDE_ROUTES` 默认排除成功的 `/health`，降低探针噪声。但被排除路由一旦失败，仍会记录，避免静默丢失故障。
 
-route 记录模板如 `/api/v1/users/{user_id}`，降低指标基数。未匹配路由可能没有 route 值。
+route 记录模板如 `/api/v1/users/{user_id}`，降低指标基数。未匹配路由可能没有 route 值。合法 `f` 编码查询参数不会改变路由模板的记录或排除规则；解码中间件会在正常返回、异常和取消时向外层传递路由结果，不把解码后的查询内容写入访问日志。
+
+CORS 预检在最外层直接返回，不生成应用访问日志或 Request ID。非法 Request ID 的普通请求在建立上下文前被拒绝，只记录专门的拒绝警告，不产生普通访问日志；其响应仍会经过外层 CORS。
 
 ## 6. Request ID
 

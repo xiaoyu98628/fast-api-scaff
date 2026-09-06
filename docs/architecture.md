@@ -54,14 +54,14 @@ infrastructure ┘      ↑
 用户上下文是教学型业务样例，包含：
 
 - 聚合根 `User`；
-- 值对象 `UserId`、`Username`、`EmailAddress`；
+- 值对象 `UserId`、`Username`、`EmailAddress`、`Password`、`PasswordHash`；
 - 状态枚举 `UserStatus`；
 - Repository 与 Unit of Work 协议；
 - `UserApplicationService` 用例；
-- SQLAlchemy mapper/repository/UoW/model；
+- SQLAlchemy mapper/repository/UoW/model 与 pwdlib 密码哈希适配器；
 - HTTP 与 Console 入口。
 
-它不包含认证、密码、token、角色和权限。不要因为目录名叫 user 就推断它已经是完整 IAM 上下文；真实系统可能需要把身份、账户、资料、组织成员关系拆成不同边界。
+它覆盖创建用户和管理员重置密码时的密码规则与安全哈希持久化，但不包含登录认证、用户自行修改密码、token、角色和权限。当前管理员语义没有认证授权保护，不能直接视为生产权限边界。不要因为目录名叫 user 就推断它已经是完整 IAM 上下文；真实系统可能需要把身份、账户、资料、组织成员关系拆成不同边界。
 
 ## 4. 聚合与不变量
 
@@ -69,9 +69,11 @@ infrastructure ┘      ↑
 
 - `User.create()`：生成 ID、设置默认状态和创建/更新时间；
 - `User.rehydrate()`：从数据库恢复，同时重新验证规则；
-- `User.update_profile()`：原子地校验并更新资料与时间。
+- `User.update_profile()`：原子地校验并更新基本信息与时间；
+- `User.change_status()`：独立校验并修改用户状态与时间。
+- `User.reset_password()`：用新的密码哈希替换旧哈希并更新时间。
 
-不变量包括用户名格式与归一化、邮箱格式与归一化、显示名称长度、合法状态、值对象类型以及本地无时区 datetime。
+不变量包括用户名格式与归一化、邮箱格式与归一化、密码长度、密码哈希有效性、合法状态、值对象类型以及本地无时区 datetime。
 
 “聚合不变量容易被绕过”具体指以下坏路径：
 
@@ -88,7 +90,7 @@ Python 无法提供绝对私有性；下划线是协作契约。真正的保证�
 
 ## 5. 值对象
 
-`Username` 和 `EmailAddress` 在构造时 trim 并转小写，使比较和唯一性使用规范化值。值对象不可变，避免同一个字符串在不同入口拥有不同规则。
+`UserId` 在领域中封装标准 `UUID`，基础设施将它映射为数据库中的带连字符 `String(36)`，使数据库物理值和 HTTP 表达一致。`Username` 和 `EmailAddress` 在构造时 trim 并转小写，使比较和唯一性使用规范化值。`Password` 只检查长度，不 trim 或改变大小写；`PasswordHash` 是聚合持有和持久化的形式。两个密码值对象都隐藏 repr，应用 DTO 和接口响应也不包含密码字段。值对象不可变，避免同一个原始值在不同入口拥有不同规则。
 
 值对象适合：
 
@@ -112,7 +114,7 @@ Python 无法提供绝对私有性；下划线是协作契约。真正的保证�
   → 返回 DTO
 ```
 
-Application 不知道 FastAPI、Typer、SQLAlchemy 或具体数据库。时钟以 callable 注入，测试可提供固定本地时间。
+Application 不知道 FastAPI、Typer、SQLAlchemy、pwdlib 或具体数据库。时钟和 `PasswordHasher` 窄端口由组合根注入，测试可提供固定时间和确定性的假哈希实现。端口签名为 `async def hash(self, password: Password) -> PasswordHash`，创建和重置用例通过 `await` 调用。基础设施适配器在线程中执行 pwdlib 推荐的 Argon2 算法，独立限制器默认允许每个适配器实例同时执行 2 次哈希；全局组合根复用该实例。取消调用时会等待本次哈希任务结束，再传播取消，避免仍在计算时提前释放额度。聚合不会接触明文密码。
 
 Application Service 可以做跨聚合的流程编排和权限决策，但不应承载实体自身的核心规则。反过来，Domain 也不应执行数据库/缓存/网络 I/O。
 
@@ -127,7 +129,7 @@ Application Service 可以做跨聚合的流程编排和权限决策，但不应
 | Mapper | Domain 与 ORM 的显式转换 | 不编排用例 |
 | Provider | 把驱动配置转为资源定义 | 不暴露给业务层 |
 
-用户 UoW 还在数据库唯一约束冲突时做精确异常翻译。未知 `IntegrityError` 原样保留，因为错误映射是语义承诺，过宽映射会把真实数据缺陷伪装成普通冲突。
+用户 UoW 在 commit 阶段和事务体退出阶段处理唯一约束异常，覆盖 INSERT 提交和 UPDATE 立即执行两条路径；执行阶段的异常在回滚、关闭成功后转换。未知 `IntegrityError` 原样保留，因为错误映射是语义承诺，过宽映射会把真实数据缺陷伪装成普通冲突。
 
 ## 8. Container 与 Composition Root
 
@@ -155,7 +157,7 @@ Application Service 可以做跨聚合的流程编排和权限决策，但不应
 - 关闭时先清空当前引用，再聚合资源关闭错误；
 - 支持 `async with`。
 
-HTTP lifespan 和 Console 都复用 runtime。这样资源的初始化、失败清理和关闭顺序不会在不同入口重复实现。数据库、缓存和 HTTP 出站资源都由管理器延迟创建，并由容器 callback 逆序关闭；未初始化资源不会在关闭阶段被创建。关闭进入不可取消清理区间，单个 callback 失败或收到取消后仍会尝试剩余 callback，最后通过异常组保留全部根因。Manager/延迟资源是一次性生命周期对象，关闭开始后拒绝新获取，也不能通过再次调用 `get()` 隐式重建。
+HTTP lifespan 和 Console 都复用 runtime。这样资源的初始化、失败清理和关闭顺序不会在不同入口重复实现。数据库、缓存和 HTTP 出站资源都由管理器延迟创建，并由容器 callback 逆序关闭；未初始化资源不会在关闭阶段被创建。关闭进入不可取消清理区间，单个 callback 失败或收到取消后仍会尝试剩余 callback，最后通过异常组保留全部根因。Manager/延迟资源是一次性生命周期对象，关闭开始后拒绝新获取，也不能通过再次调用 `get()` 隐式重建。数据库和缓存 Manager 在第一次等待前统一禁止所有资源获取，再逐个释放；已经开始的初始化允许完成，但结果只交给关闭流程，不再返回调用方。宿主必须先停止使用已经借出的资源，再关闭 Manager。
 
 顶层 HTTP 出站能力只负责驱动无关请求、连接池、超时、传输错误和日志，不知道具体上游协议。上下文若需要调用外部服务，应在自己的 application 层定义业务窄端口，在 infrastructure 层使用公共 HTTP 客户端实现，并由 composition 注入；application service 不应持有整个容器，也不应直接导入 HTTPX2。
 

@@ -3,12 +3,20 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
-from app.contexts.user.application.dto import CreateUserCommand, UpdateUserCommand, UserDTO, UserPageDTO
+from app.contexts.user.application.dto import (
+    ChangeUserStatusCommand,
+    CreateUserCommand,
+    ResetUserPasswordCommand,
+    UpdateUserCommand,
+    UserDTO,
+    UserPageDTO,
+)
 from app.contexts.user.application.errors import UserConflictError, UserNotFoundError
+from app.contexts.user.application.password_hasher import PasswordHasher
 from app.contexts.user.application.unit_of_work import UserUnitOfWorkFactory
 from app.contexts.user.domain.repository import UserRepository
 from app.contexts.user.domain.user import User
-from app.contexts.user.domain.values import UserId
+from app.contexts.user.domain.values import Password, UserId
 
 
 @dataclass(frozen=True, slots=True)
@@ -16,13 +24,15 @@ class UserApplicationService:
     """编排用户管理用例，不依赖 HTTP 或 SQLAlchemy。"""
 
     unit_of_work_factory: UserUnitOfWorkFactory
+    password_hasher: PasswordHasher
     clock: Callable[[], datetime] = datetime.now
 
     async def create(self, command: CreateUserCommand) -> UserDTO:
+        password_hash = await self.password_hasher.hash(Password(command.password))
         user = User.create(
             username=command.username,
             email=command.email,
-            display_name=command.display_name,
+            password_hash=password_hash,
             now=self.clock(),
         )
 
@@ -64,8 +74,6 @@ class UserApplicationService:
             user.update_profile(
                 username=command.username,
                 email=command.email,
-                display_name=command.display_name,
-                status=command.status,
                 now=self.clock(),
             )
             await self._ensure_unique(unit_of_work.users, user)
@@ -75,6 +83,37 @@ class UserApplicationService:
             await unit_of_work.commit()
 
         return UserDTO.from_domain(user)
+
+    async def change_status(self, command: ChangeUserStatusCommand) -> UserDTO:
+        user_id = UserId(command.user_id)
+
+        async with self.unit_of_work_factory() as unit_of_work:
+            user = await unit_of_work.users.find(user_id)
+            if user is None:
+                raise UserNotFoundError(command.user_id)
+
+            user.change_status(status=command.status, now=self.clock())
+            if not await unit_of_work.users.update(user):
+                raise UserNotFoundError(command.user_id)
+
+            await unit_of_work.commit()
+
+        return UserDTO.from_domain(user)
+
+    async def reset_password(self, command: ResetUserPasswordCommand) -> None:
+        user_id = UserId(command.user_id)
+        password_hash = await self.password_hasher.hash(Password(command.password))
+
+        async with self.unit_of_work_factory() as unit_of_work:
+            user = await unit_of_work.users.find(user_id)
+            if user is None:
+                raise UserNotFoundError(command.user_id)
+
+            user.reset_password(password_hash=password_hash, now=self.clock())
+            if not await unit_of_work.users.update(user):
+                raise UserNotFoundError(command.user_id)
+
+            await unit_of_work.commit()
 
     async def delete(self, user_id: UUID) -> None:
         domain_id = UserId(user_id)

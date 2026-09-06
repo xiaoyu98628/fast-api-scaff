@@ -74,7 +74,7 @@ Provider 负责把严格校验后的配置转换为与 SQLAlchemy 有关的 Engi
 - `/health` 不访问数据库；
 - 宿主关闭时只 dispose 已初始化的 Engine。
 
-Manager 进入关闭后是终态：不会创建尚未初始化的 Engine，也不允许再次 `get/session`。需要重新启动时必须由新的应用 Runtime 构建新容器，不能复用已经关闭的 Manager。
+Manager 进入关闭后是终态：在第一次等待前统一禁止所有连接的新获取，不会启动新的 Engine 初始化，也不允许再次 `get/session`。关闭前已经开始的初始化可以完成，但结果会被释放，不会返回调用方；等待初始化锁的获取也会被拒绝。关闭失败后仍保持禁止获取，后续 `aclose()` 可以重试未完成的清理。宿主应先停止使用已经借出的 Engine/Session，再关闭 Manager。需要重新启动时必须由新的应用 Runtime 构建新容器，不能复用已经关闭的 Manager。
 
 如果需要数据库就绪探针，应显式定义就绪语义和超时，并与仅表示进程存活的健康检查区分。
 
@@ -114,11 +114,13 @@ HTTP / Console
 
 - `UserRepository` 是领域层所需的持久化契约，使用聚合和值对象；
 - `SqlAlchemyUserRepository` 实现查询和持久化，不决定用例何时提交；
-- Mapper 显式完成 Domain ↔ ORM 转换；
+- Mapper 显式完成 Domain ↔ ORM 转换，包括把领域 `PasswordHash` 映射到数据库 `password` 列；
 - `UserUnitOfWork` 定义一个用例的事务边界；
 - Application Service 编排读取、领域行为、唯一性预检查与 commit。
 
 Repository 的 `update()` 和 `remove()` 使用带主键条件的单条 DML，并返回是否匹配记录。Application Service 将零匹配转换为 `UserNotFoundError`，避免目标在并发期间已经删除时仍返回成功。这个返回值属于领域持久化协议，不向上层暴露 SQLAlchemy result。
+
+用户 ID 在 Domain/Application 中使用 `UUID`，在数据库中统一保存为带连字符的小写 `String(36)`，例如 `019cba13-c9eb-7d22-845e-123456789abc`。Mapper 和 Repository 负责两种类型之间的转换，因此 MySQL、PostgreSQL、SQLite 的物理值与 HTTP 返回值保持一致。这个约定以跨数据库可见格式一致为优先级，PostgreSQL 不使用原生 UUID 列。
 
 不要让领域对象继承 ORM Model，也不要把 SQLAlchemy Session 传进领域方法。显式 mapper 看起来多一层代码，但能避免 ORM 状态、懒加载和数据库字段成为领域模型的隐性 API。
 
@@ -127,8 +129,8 @@ Repository 的 `update()` 和 `remove()` 使用带主键条件的单条 DML，�
 用户写用例只有显式调用 `unit_of_work.commit()` 才会提交。出现异常时：
 
 - commit 遇到 `IntegrityError` 会先 rollback；
-- 事务上下文内其他异常退出时会 rollback；
-- Session 最终关闭；
+- 事务体执行时的异常在退出时 rollback；已知唯一约束异常在清理成功后转换为应用冲突；
+- Session 最终关闭；回滚或关闭也失败时，用异常组保留原始异常和清理异常；
 - 只读用例不 commit。
 
 一个应用用例应尽量对应一个明确事务。不要在 Repository 中偷偷 commit，否则多个聚合操作无法被同一个 UoW 原子包裹，错误处理也会碎片化。
@@ -139,10 +141,13 @@ Repository 的 `update()` 和 `remove()` 使用带主键条件的单条 DML，�
 
 应用服务会先查询用户名和邮箱是否存在，以提供快速、可读的冲突结果。但“先查再写”不能替代数据库唯一约束：两个并发事务都可能通过预检查。
 
-最终一致性保护来自数据库约束。commit 捕获 `IntegrityError` 后，仅当驱动错误详情包含已知标记时才映射：
+唯一性最终由数据库约束保证。UoW 在 commit 和事务体退出两个阶段识别 `IntegrityError`，因此 UPDATE 在 `session.execute()` 时抛出的冲突也会转换，HTTP 返回对应的 409。两条路径复用同一约束识别函数，先确认错误类别，再精确匹配约束：
 
-- 用户名：`uq_users_username`、`users_username_key`、`users.username`；
-- 邮箱：`uq_users_email`、`users_email_key`、`users.email`。
+- PostgreSQL：SQLSTATE 必须为 `23505`，从驱动异常、其 cause 或诊断对象读取 `constraint_name`；如果提供表名，必须为 `users`。
+- MySQL：错误码必须为 `1062`，从完整重复键错误消息末尾提取键名，允许 `users.` 表名前缀。
+- SQLite：扩展错误码必须为 `SQLITE_CONSTRAINT_UNIQUE`，消息必须精确对应 `users.username` 或 `users.email` 的单列唯一约束。
+
+已知约束名为 `uq_users_username`、`users_username_key`、`uq_users_email`、`users_email_key`。不会在包含用户输入的整段错误文本中搜索这些名字；缺少类别或约束信息、主键冲突及未知格式均保留原始错误。
 
 无法识别的完整性错误原样抛出，最终按内部错误处理。这样做很重要：外键失败、非空约束、check constraint 或未知唯一约束都不应该被谎报为“用户名已存在”。
 
@@ -150,12 +155,12 @@ Repository 的 `update()` 和 `remove()` 使用带主键条件的单条 DML，�
 
 1. SQLAlchemy naming convention 和生成后的物理约束名；
 2. MySQL/PostgreSQL/SQLite 的实际错误文本或结构化字段；
-3. `_USER_UNIQUE_CONSTRAINT_MARKERS`；
+3. `_USER_UNIQUE_CONSTRAINTS`、`_SQLITE_UNIQUE_COLUMNS` 和驱动分类逻辑；
 4. UoW 和 HTTP/Console 错误映射测试。
 
 ## 9. 聚合不变量为什么不会交给 ORM
 
-数据库读取通过 `User.rehydrate()` 恢复聚合，创建通过 `User.create()`，更新通过 `user.update_profile()`。聚合状态是私有的，对外提供只读属性。
+数据库读取通过 `User.rehydrate()` 恢复聚合，创建通过 `User.create()`，基本信息更新通过 `user.update_profile()`，状态修改通过 `user.change_status()`。聚合状态是私有的，对外提供只读属性。
 
 “不变量被绕过”是指调用方若能直接写 `user.status = "whatever"`、直接构造半初始化实体、或 controller 直接更新 ORM 字段，就能跳过用户名、邮箱、状态、时间类型与时区等领域规则。当前结构要求外部通过命名行为改变聚合，mapper 只承担持久化转换。
 
@@ -225,6 +230,8 @@ uv run alembic -c database/main/alembic.ini downgrade -1
 - 索引、默认值、时区和字符串长度的方言差异；
 - downgrade 是否真实可逆；
 - 约束名是否仍能被异常映射识别。
+
+用户表的 `password` 列保存密码哈希而不是明文。它是非空字段，因此从已有用户表演进时必须明确历史数据回填或重置策略；不能在生产数据上直接生成一个无法审计的占位密码。
 
 ## 13. 方言差异
 

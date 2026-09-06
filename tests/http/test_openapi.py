@@ -64,6 +64,7 @@ def test_user_error_responses_use_unified_openapi_envelopes() -> None:
         ("/api/v1/users", "get"): {"422"},
         ("/api/v1/users/{user_id}", "get"): {"404", "422"},
         ("/api/v1/users/{user_id}", "put"): {"404", "409", "422"},
+        ("/api/v1/users/{user_id}/status", "patch"): {"404", "422"},
         ("/api/v1/users/{user_id}", "delete"): {"404", "422"},
     }
 

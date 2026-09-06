@@ -6,7 +6,7 @@
 
 - FastAPI HTTP API、OpenAPI 与统一 JSON 响应；
 - Typer Console，一次性命令共享应用容器；
-- 用户限界上下文 CRUD 示例；
+- 用户限界上下文 CRUD、状态修改与管理员密码重置示例，密码哈希在线程中执行并限制并发；
 - MySQL、PostgreSQL、SQLite 异步 SQLAlchemy；
 - Repository、Mapper、Unit of Work 与 Alembic migration；
 - Redis、Memcached、Memory 字节级 KV 缓存；
@@ -57,9 +57,11 @@ uv run uvicorn app.main:app --reload
 curl http://127.0.0.1:8000/health
 curl -X POST http://127.0.0.1:8000/api/v1/users \
   -H 'Content-Type: application/json' \
-  -d '{"username":"alice","email":"alice@example.com","display_name":"Alice"}'
+  -d '{"username":"alice","email":"alice@example.com","password":"password123"}'
 curl 'http://127.0.0.1:8000/api/v1/users?page=1&limit=20'
 ```
+
+CORS 预检由跨域中间件直接处理，不生成 Request ID 或应用访问日志；普通请求的错误响应同样按来源执行 CORS 规则。
 
 `/health` 不主动访问数据库或远程缓存。用户接口成功才表示 `main` 数据库配置、迁移和实际查询链路可用。
 
@@ -70,12 +72,11 @@ uv run python -m app.interfaces.console --help
 uv run python -m app.interfaces.console app info
 uv run python -m app.interfaces.console users create \
   --username alice \
-  --email alice@example.com \
-  --display-name Alice
+  --email alice@example.com
 uv run python -m app.interfaces.console users list --page 1 --limit 20
 ```
 
-命令结果写 stdout，日志和错误写 stderr；退出码 0/1/2 分别表示成功、运行失败和用法错误。
+`users create` 会交互式读取并确认密码，输入不回显。命令结果写 stdout，日志和错误写 stderr；退出码 0/1/2 分别表示成功、运行失败和用法错误。
 
 ## Docker
 

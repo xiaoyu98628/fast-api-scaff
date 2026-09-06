@@ -1,15 +1,16 @@
 import json
+import logging
+import os
 import shutil
 import sqlite3
+import subprocess
+import sys
 from pathlib import Path
-from typing import cast
 
-import pytest
 from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 
-from app.config.database import DatabaseSettings
 from app.runtime.paths import PROJECT_ROOT
 
 
@@ -36,22 +37,19 @@ def test_main_migration_template_generates_standalone_revision(tmp_path: Path) -
 
 def test_main_migration_environment_creates_version_table(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     database_path = tmp_path / "migration.sqlite"
-    connections = {
-        "main": {
-            "driver": "sqlite",
-            "database": str(database_path),
-        }
-    }
-    model_config = cast(dict[str, object], DatabaseSettings.model_config)
-    monkeypatch.setitem(model_config, "env_file", None)
-    monkeypatch.setenv("DB_CONNECTIONS", json.dumps(connections))
+    root_logger = logging.getLogger()
+    application_logger = logging.getLogger("app.bootstrap.lifecycle")
+    handlers = tuple(root_logger.handlers)
+    level = root_logger.level
+    disabled = application_logger.disabled
 
-    alembic_config = Config(str(PROJECT_ROOT / "database/main/alembic.ini"))
+    run_migration(database_path, "ensure_version")
 
-    command.ensure_version(alembic_config)
+    assert tuple(root_logger.handlers) == handlers
+    assert root_logger.level == level
+    assert application_logger.disabled is disabled
 
     with sqlite3.connect(database_path) as connection:
         table_names = {
@@ -66,21 +64,10 @@ def test_main_migration_environment_creates_version_table(
 
 def test_main_migration_upgrade_creates_users_table(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     database_path = tmp_path / "users-migration.sqlite"
-    connections = {
-        "main": {
-            "driver": "sqlite",
-            "database": str(database_path),
-        }
-    }
-    model_config = cast(dict[str, object], DatabaseSettings.model_config)
-    monkeypatch.setitem(model_config, "env_file", None)
-    monkeypatch.setenv("DB_CONNECTIONS", json.dumps(connections))
-
     alembic_config = Config(str(PROJECT_ROOT / "database/main/alembic.ini"))
-    command.upgrade(alembic_config, "head")
+    run_migration(database_path, "upgrade", "head")
     expected_revision = ScriptDirectory.from_config(alembic_config).get_current_head()
 
     with sqlite3.connect(database_path) as connection:
@@ -95,7 +82,7 @@ def test_main_migration_upgrade_creates_users_table(
     assert expected_revision is not None
     assert revision == (expected_revision,)
 
-    command.downgrade(alembic_config, "base")
+    run_migration(database_path, "downgrade", "base")
 
     with sqlite3.connect(database_path) as connection:
         users_table = connection.execute(
@@ -104,3 +91,26 @@ def test_main_migration_upgrade_creates_users_table(
         ).fetchone()
 
     assert users_table is None
+
+
+def run_migration(database_path: Path, operation: str, *arguments: str) -> None:
+    environment = {key: value for key, value in os.environ.items() if not key.startswith("DB_")}
+    environment["DB_CONNECTIONS"] = json.dumps({"main": {"driver": "sqlite", "database": str(database_path)}})
+    script = """
+import sys
+from alembic import command
+from alembic.config import Config
+from app.config.database import DatabaseSettings
+DatabaseSettings.model_config["env_file"] = None
+config = Config(sys.argv[1])
+getattr(command, sys.argv[2])(config, *sys.argv[3:])
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script, str(PROJECT_ROOT / "database/main/alembic.ini"), operation, *arguments],
+        cwd=PROJECT_ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, f"Migration {operation} failed:\n{result.stdout}\n{result.stderr}"

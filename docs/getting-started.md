@@ -61,7 +61,7 @@ uv run uvicorn app.main:app --reload
 curl http://127.0.0.1:8000/health
 curl -X POST http://127.0.0.1:8000/api/v1/users \
   -H 'Content-Type: application/json' \
-  -d '{"username":"alice","email":"alice@example.com","display_name":"Alice"}'
+  -d '{"username":"alice","email":"alice@example.com","password":"password123"}'
 curl 'http://127.0.0.1:8000/api/v1/users?page=1&limit=20'
 ```
 

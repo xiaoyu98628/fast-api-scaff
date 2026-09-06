@@ -25,10 +25,12 @@ uv run uvicorn app.main:app --reload
 | `POST` | `/api/v1/users` | 201 | 创建用户 |
 | `GET` | `/api/v1/users` | 200 | 分页查询用户 |
 | `GET` | `/api/v1/users/{user_id}` | 200 | 查询单个用户 |
-| `PUT` | `/api/v1/users/{user_id}` | 200 | 完整更新用户资料和状态 |
+| `PUT` | `/api/v1/users/{user_id}` | 200 | 完整更新用户基本信息 |
+| `PATCH` | `/api/v1/users/{user_id}/status` | 200 | 修改用户状态 |
+| `PUT` | `/api/v1/users/{user_id}/password` | 204 | 管理员重置用户密码 |
 | `DELETE` | `/api/v1/users/{user_id}` | 204 | 物理删除用户 |
 
-用户示例不包含登录、密码、权限、软删除或审计历史。`PUT` 是完整更新，必须提供 `username`、`email`、`display_name` 和 `status`，不是部分更新。
+创建用户和管理员重置密码时必须提供密码，应用只持久化密码哈希，任何响应都不返回密码或哈希。用户示例尚不包含登录、用户自行修改密码、权限、软删除或审计历史。`PUT /users/{user_id}` 是可编辑用户基本信息的完整更新，必须提供 `username` 和 `email`，不是部分更新，也不接受密码或状态。状态修改与管理员密码重置是独立用例。当前尚未实现认证授权，因此管理员语义还没有技术层面的权限保护，不能直接作为生产权限边界。
 
 ## 3. 完整调用示例
 
@@ -41,7 +43,7 @@ curl -i -X POST http://127.0.0.1:8000/api/v1/users \
   -d '{
     "username": "alice",
     "email": "alice@example.com",
-    "display_name": "Alice"
+    "password": "password123"
   }'
 ```
 
@@ -62,15 +64,25 @@ curl -X PUT http://127.0.0.1:8000/api/v1/users/USER_UUID \
   -H 'Content-Type: application/json' \
   -d '{
     "username": "alice",
-    "email": "alice@example.com",
-    "display_name": "Alice Zhang",
-    "status": "active"
+    "email": "alice@example.com"
+  }'
+
+curl -X PATCH http://127.0.0.1:8000/api/v1/users/USER_UUID/status \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "status": "disabled"
+  }'
+
+curl -i -X PUT http://127.0.0.1:8000/api/v1/users/USER_UUID/password \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "password": "replacement-password"
   }'
 
 curl -i -X DELETE http://127.0.0.1:8000/api/v1/users/USER_UUID
 ```
 
-删除成功返回 204 且没有响应体。不要尝试按普通统一 JSON 响应解析 204。
+管理员重置密码和删除用户成功时返回 204 且没有响应体。不要尝试按普通统一 JSON 响应解析 204。
 
 ## 4. 输入约束
 
@@ -80,10 +92,10 @@ curl -i -X DELETE http://127.0.0.1:8000/api/v1/users/USER_UUID
 | --- | --- |
 | `username` | 3–32 字符，并继续接受领域层格式校验 |
 | `email` | 最长 254 字符，并继续接受领域层格式校验 |
-| `display_name` | 1–80 字符 |
-| `status` | 更新时必填，必须是领域定义的用户状态 |
+| `password` | 用于创建和管理员重置密码，8–128 字符；按原值哈希，不进行 trim 或大小写转换 |
+| `status` | 仅用于状态修改接口，必须是领域定义的用户状态 |
 
-Pydantic 的结构校验负责 JSON 类型、长度、缺失字段和额外字段；领域对象负责业务不变量。两者不是重复：HTTP schema 是协议边界，领域校验保证 Console 或未来 Scheduler 等其他入口也不能绕过规则。
+Pydantic 的结构校验负责 JSON 类型、长度、缺失字段和额外字段；领域对象负责业务不变量。两者不是重复：HTTP schema 是协议边界，领域校验保证 Console 或未来 Scheduler 等其他入口也不能绕过规则。明文密码只在请求和创建/重置命令中短暂存在，进入聚合前由应用层端口调用基础设施哈希实现；DTO、响应和日志不应携带明文或哈希。
 
 ## 5. 统一 JSON 响应
 
@@ -126,7 +138,7 @@ HTTP status 仍是协议层判断成功、失败和重试策略的首要依据�
 
 ## 6. Request ID
 
-请求上下文中间件处理 `X-Request-ID`：
+除 CORS 预检外，请求上下文中间件处理 `X-Request-ID`：
 
 - 调用方可提供合法 ID；没有时由插件生成；
 - ID 出现在统一响应和结构化日志中；
@@ -154,7 +166,7 @@ print(encoded)
 curl "http://127.0.0.1:8000/api/v1/users?f=ENCODED_VALUE"
 ```
 
-解码成功时，原查询字符串会被解码结果替换，而不是与普通参数合并。解码失败时中间件保持原查询不变，下游通常会因缺少或非法参数按自身规则处理。`f` 只是传输兼容能力，不是加密，也不能用于隐藏敏感信息。
+解码成功时，原查询字符串会被解码结果替换，而不是与普通参数合并。解码失败时中间件保持原查询不变，下游通常会因缺少或非法参数按自身规则处理。解码使用独立的请求 scope，并在下游结束时向外层传递匹配的路由模板，保证正常、异常和取消请求的访问日志及路由排除规则保持一致。`f` 只是传输兼容能力，不是加密，也不能用于隐藏敏感信息。
 
 ## 8. CORS
 
@@ -170,6 +182,8 @@ CORS_ALLOW_CREDENTIALS=true
 CORS_EXPOSE_HEADERS=["X-Request-ID"]
 CORS_MAX_AGE=600
 ```
+
+应用中间件从外到内依次为 CORS、Request ID、访问日志（启用时）、异常捕获、查询解码。非法 Request ID 的 400 和业务链路的错误响应也会经过 CORS；只有允许的来源才能读取跨域响应。带有 `Origin` 和 `Access-Control-Request-Method` 的 OPTIONS 预检由 CORS 直接处理，不进入请求上下文或应用访问日志，也不生成 Request ID。
 
 允许凭据时来源不能包含 `*`。即使 CORS 配置正确，非浏览器调用方仍能访问接口，所以真正的访问控制必须由认证与授权实现；当前脚手架未实现它们。
 

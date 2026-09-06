@@ -20,13 +20,13 @@ async def create_user(
     *,
     username: str,
     email: str,
-    display_name: str,
+    password: str,
 ) -> UserDTO:
     return await context.container.users.service.create(
         CreateUserCommand(
             username=username,
             email=email,
-            display_name=display_name,
+            password=password,
         )
     )
 
@@ -58,10 +58,16 @@ class CreateUserConsoleCommand(ConsoleCommand):
         self,
         username: str = typer.Option(..., help="用户名。"),
         email: str = typer.Option(..., help="邮箱地址。"),
-        display_name: str = typer.Option(..., help="显示名称。"),
+        password: str = typer.Option(
+            ...,
+            prompt=True,
+            hide_input=True,
+            confirmation_prompt=True,
+            help="登录密码，交互输入时不回显。",
+        ),
     ) -> None:
         try:
-            user = self._console.run(partial(create_user, username=username, email=email, display_name=display_name))
+            user = self._console.run(partial(create_user, username=username, email=email, password=password))
         except (UserApplicationError, UserDomainError) as error:
             _exit_for_user_error(self._console.presenter, error)
 
