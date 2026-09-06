@@ -11,6 +11,7 @@ from app.interfaces.http.middleware.request_id import build_request_id_middlewar
 def build_http_middlewares(settings: Settings) -> list[Middleware]:
     """按从外到内的顺序构建应用 HTTP 中间件。"""
     middlewares = [
+        build_cors_middleware(settings.cors),
         build_request_id_middleware(settings.app.service_code),
     ]
 
@@ -23,7 +24,6 @@ def build_http_middlewares(settings: Settings) -> list[Middleware]:
 
     middlewares.extend(
         [
-            build_cors_middleware(settings.cors),
             Middleware(ExceptionCaptureMiddleware, debug=settings.app.debug),
             Middleware(QueryParamDecodeMiddleware),
         ]

@@ -40,7 +40,7 @@ async def create_test_client(app: FastAPI) -> AsyncIterator[AsyncClient]:
 def test_request_id_is_registered_as_outermost_middleware() -> None:
     app = create_app(build_settings())
 
-    assert app.user_middleware[0].cls is RequestIdMiddleware
+    assert app.user_middleware[1].cls is RequestIdMiddleware
 
 
 @pytest.mark.asyncio
@@ -151,7 +151,7 @@ async def test_request_id_is_explicitly_exposed_with_credentials_and_wildcard() 
 
 
 @pytest.mark.asyncio
-async def test_cors_preflight_response_has_request_id() -> None:
+async def test_cors_preflight_response_bypasses_request_id() -> None:
     app = create_app(build_settings())
 
     async with create_test_client(app) as client:
@@ -164,4 +164,4 @@ async def test_cors_preflight_response_has_request_id() -> None:
         )
 
     assert response.status_code == 200
-    assert REQUEST_ID_HEADER in response.headers
+    assert REQUEST_ID_HEADER not in response.headers

@@ -1,3 +1,5 @@
+import re
+import sqlite3
 from contextlib import AbstractAsyncContextManager
 from types import TracebackType
 
@@ -10,10 +12,17 @@ from app.contexts.user.domain.repository import UserRepository
 from app.contexts.user.infrastructure.persistence.repository import SqlAlchemyUserRepository
 from app.infrastructure.database.manager import DatabaseManager
 
-_USER_UNIQUE_CONSTRAINT_MARKERS: dict[UserConflictField, tuple[str, ...]] = {
-    "username": ("uq_users_username", "users_username_key", "users.username"),
-    "email": ("uq_users_email", "users_email_key", "users.email"),
+_USER_UNIQUE_CONSTRAINTS: dict[str, UserConflictField] = {
+    "uq_users_username": "username",
+    "users_username_key": "username",
+    "uq_users_email": "email",
+    "users_email_key": "email",
 }
+_SQLITE_UNIQUE_COLUMNS: dict[str, UserConflictField] = {
+    "UNIQUE constraint failed: users.username": "username",
+    "UNIQUE constraint failed: users.email": "email",
+}
+_MYSQL_DUPLICATE_KEY = re.compile(r"Duplicate entry .* for key ['`](?P<key>[^'`]+)['`]", re.DOTALL)
 
 
 class SqlAlchemyUserUnitOfWork:
@@ -94,31 +103,44 @@ class SqlAlchemyUserUnitOfWork:
 
 
 def _resolve_user_conflict_field(error: IntegrityError) -> UserConflictField | None:
-    details = _integrity_error_details(error)
+    original = error.orig
+    if original is None:
+        return None
 
-    for field, markers in _USER_UNIQUE_CONSTRAINT_MARKERS.items():
-        if any(marker in details for marker in markers):
-            return field
+    if getattr(original, "sqlite_errorcode", None) == sqlite3.SQLITE_CONSTRAINT_UNIQUE:
+        return _SQLITE_UNIQUE_COLUMNS.get(str(original))
+
+    cause = getattr(original, "__cause__", None)
+    sqlstate = getattr(original, "sqlstate", None) or getattr(original, "pgcode", None) or getattr(cause, "sqlstate", None)
+    if sqlstate == "23505":
+        return _postgresql_conflict_field(original, cause)
+
+    if original.args and original.args[0] == 1062:
+        return _mysql_conflict_field(original)
 
     return None
 
 
-def _integrity_error_details(error: IntegrityError) -> str:
-    original = error.orig
-    candidates = (
-        original,
-        getattr(original, "__cause__", None),
-        getattr(original, "diag", None),
-    )
-    details: list[str] = []
-
-    for candidate in candidates:
+def _postgresql_conflict_field(original: BaseException, cause: object) -> UserConflictField | None:
+    for candidate in (cause, getattr(original, "diag", None), original):
         if candidate is None:
             continue
-
-        details.append(str(candidate))
+        table_name = getattr(candidate, "table_name", None)
+        if table_name is not None and table_name != "users":
+            return None
         constraint_name = getattr(candidate, "constraint_name", None)
         if isinstance(constraint_name, str):
-            details.append(constraint_name)
+            return _USER_UNIQUE_CONSTRAINTS.get(constraint_name)
+    return None
 
-    return " ".join(details).lower()
+
+def _mysql_conflict_field(original: BaseException) -> UserConflictField | None:
+    if len(original.args) != 2 or not isinstance(original.args[1], str):
+        return None
+    matched = _MYSQL_DUPLICATE_KEY.fullmatch(original.args[1])
+    if matched is None:
+        return None
+    key = matched.group("key")
+    if key.startswith("users."):
+        key = key.removeprefix("users.")
+    return _USER_UNIQUE_CONSTRAINTS.get(key)

@@ -38,8 +38,8 @@ def build_settings(
 def test_access_log_runs_inside_request_context() -> None:
     app = create_app(build_settings())
 
-    assert app.user_middleware[0].cls is RequestIdMiddleware
-    assert app.user_middleware[1].cls is AccessLogMiddleware
+    assert app.user_middleware[1].cls is RequestIdMiddleware
+    assert app.user_middleware[2].cls is AccessLogMiddleware
 
 
 @pytest.mark.parametrize("query_mode", ["plain", "encoded", "invalid"])

@@ -141,10 +141,13 @@ Repository 的 `update()` 和 `remove()` 使用带主键条件的单条 DML，�
 
 应用服务会先查询用户名和邮箱是否存在，以提供快速、可读的冲突结果。但“先查再写”不能替代数据库唯一约束：两个并发事务都可能通过预检查。
 
-唯一性最终由数据库约束保证。UoW 在 commit 和事务体退出两个阶段识别 `IntegrityError`，因此 UPDATE 在 `session.execute()` 时抛出的冲突也会转换，HTTP 返回对应的 409。两条路径复用同一约束识别函数，仅当驱动错误详情包含已知标记时才映射：
+唯一性最终由数据库约束保证。UoW 在 commit 和事务体退出两个阶段识别 `IntegrityError`，因此 UPDATE 在 `session.execute()` 时抛出的冲突也会转换，HTTP 返回对应的 409。两条路径复用同一约束识别函数，先确认错误类别，再精确匹配约束：
 
-- 用户名：`uq_users_username`、`users_username_key`、`users.username`；
-- 邮箱：`uq_users_email`、`users_email_key`、`users.email`。
+- PostgreSQL：SQLSTATE 必须为 `23505`，从驱动异常、其 cause 或诊断对象读取 `constraint_name`；如果提供表名，必须为 `users`。
+- MySQL：错误码必须为 `1062`，从完整重复键错误消息末尾提取键名，允许 `users.` 表名前缀。
+- SQLite：扩展错误码必须为 `SQLITE_CONSTRAINT_UNIQUE`，消息必须精确对应 `users.username` 或 `users.email` 的单列唯一约束。
+
+已知约束名为 `uq_users_username`、`users_username_key`、`uq_users_email`、`users_email_key`。不会在包含用户输入的整段错误文本中搜索这些名字；缺少类别或约束信息、主键冲突及未知格式均保留原始错误。
 
 无法识别的完整性错误原样抛出，最终按内部错误处理。这样做很重要：外键失败、非空约束、check constraint 或未知唯一约束都不应该被谎报为“用户名已存在”。
 
@@ -152,7 +155,7 @@ Repository 的 `update()` 和 `remove()` 使用带主键条件的单条 DML，�
 
 1. SQLAlchemy naming convention 和生成后的物理约束名；
 2. MySQL/PostgreSQL/SQLite 的实际错误文本或结构化字段；
-3. `_USER_UNIQUE_CONSTRAINT_MARKERS`；
+3. `_USER_UNIQUE_CONSTRAINTS`、`_SQLITE_UNIQUE_COLUMNS` 和驱动分类逻辑；
 4. UoW 和 HTTP/Console 错误映射测试。
 
 ## 9. 聚合不变量为什么不会交给 ORM

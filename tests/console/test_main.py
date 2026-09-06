@@ -1,4 +1,7 @@
 import json
+import os
+import subprocess
+import sys
 from datetime import datetime
 from typing import cast
 from uuid import UUID
@@ -15,6 +18,7 @@ from app.config.cache import CacheSettings
 from app.config.cors import CorsSettings
 from app.config.database import DatabaseSettings
 from app.config.http import HttpSettings
+from app.config.logging import LoggingSettings
 from app.config.settings import Settings
 from app.contexts.user.application.dto import CreateUserCommand, UserDTO, UserPageDTO
 from app.contexts.user.application.service import UserApplicationService
@@ -94,6 +98,7 @@ def build_console(service: FakeUserService) -> tuple[CliRunner, typer.Typer]:
     console = ConsoleApplication(
         settings_loader=lambda: settings,
         container_builder=build_container,
+        logging_configurer=lambda _settings: None,
     )
     return CliRunner(), create_console(console)
 
@@ -263,3 +268,65 @@ def test_run_console_preserves_unexpected_programming_error() -> None:
 
     with pytest.raises(RuntimeError, match="unexpected failure"):
         run_console(fail, ConsolePresenter())
+
+
+@pytest.mark.parametrize(("name", "value"), [("HTTP_POOL__MAX_CONNECTIONS", "0"), ("LOG_LEVEL", "invalid")])
+def test_console_help_does_not_load_invalid_environment(name: str, value: str) -> None:
+    environment = dict(os.environ)
+    environment[name] = value
+    result = subprocess.run(
+        [sys.executable, "-m", "app.interfaces.console", "--help"],
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "--version" in result.stdout
+    assert "Traceback" not in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("name", "value", "location"), [("HTTP_POOL__MAX_CONNECTIONS", "0", "pool.max_connections"), ("LOG_LEVEL", "invalid", "level")]
+)
+def test_console_configuration_failure_is_rendered_in_fresh_process(name: str, value: str, location: str) -> None:
+    prefixes = ("APP_", "DB_", "CACHE_", "HTTP_", "CORS_", "LOG_")
+    environment = {key: item for key, item in os.environ.items() if not key.startswith(prefixes)}
+    environment[name] = value
+    script = """
+from app.config.settings import Settings
+for field in Settings.model_fields.values():
+    field.annotation.model_config["env_file"] = None
+from app.interfaces.console.main import main
+main()
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script, "app", "info"],
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert f"Error: 配置 {location}：" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
+def test_settings_accept_explicit_overrides_in_invalid_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    http = HttpSettings(_env_file=None)
+    logging = LoggingSettings(_env_file=None)
+    monkeypatch.setenv("HTTP_POOL__MAX_CONNECTIONS", "0")
+    monkeypatch.setenv("LOG_LEVEL", "invalid")
+    settings = Settings(
+        app=AppSettings(_env_file=None),
+        database=DatabaseSettings(_env_file=None),
+        cache=CacheSettings(_env_file=None),
+        cors=CorsSettings(_env_file=None),
+        http=http,
+        logging=logging,
+    )
+    assert settings.http is http
+    assert settings.logging is logging
+    with pytest.raises(ValidationError):
+        Settings(app=settings.app, database=settings.database, cache=settings.cache, cors=settings.cors)

@@ -138,7 +138,7 @@ HTTP status 仍是协议层判断成功、失败和重试策略的首要依据�
 
 ## 6. Request ID
 
-请求上下文中间件处理 `X-Request-ID`：
+除 CORS 预检外，请求上下文中间件处理 `X-Request-ID`：
 
 - 调用方可提供合法 ID；没有时由插件生成；
 - ID 出现在统一响应和结构化日志中；
@@ -182,6 +182,8 @@ CORS_ALLOW_CREDENTIALS=true
 CORS_EXPOSE_HEADERS=["X-Request-ID"]
 CORS_MAX_AGE=600
 ```
+
+应用中间件从外到内依次为 CORS、Request ID、访问日志（启用时）、异常捕获、查询解码。非法 Request ID 的 400 和业务链路的错误响应也会经过 CORS；只有允许的来源才能读取跨域响应。带有 `Origin` 和 `Access-Control-Request-Method` 的 OPTIONS 预检由 CORS 直接处理，不进入请求上下文或应用访问日志，也不生成 Request ID。
 
 允许凭据时来源不能包含 `*`。即使 CORS 配置正确，非浏览器调用方仍能访问接口，所以真正的访问控制必须由认证与授权实现；当前脚手架未实现它们。
 

@@ -61,6 +61,8 @@ curl -X POST http://127.0.0.1:8000/api/v1/users \
 curl 'http://127.0.0.1:8000/api/v1/users?page=1&limit=20'
 ```
 
+CORS 预检由跨域中间件直接处理，不生成 Request ID 或应用访问日志；普通请求的错误响应同样按来源执行 CORS 规则。
+
 `/health` 不主动访问数据库或远程缓存。用户接口成功才表示 `main` 数据库配置、迁移和实际查询链路可用。
 
 ## Console

@@ -1,3 +1,4 @@
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -33,7 +34,7 @@ async def create_test_client(app: FastAPI) -> AsyncIterator[AsyncClient]:
 def test_cors_is_always_registered() -> None:
     app = create_app(build_settings(CorsSettings(_env_file=None)))
 
-    assert any(middleware.cls is CORSMiddleware for middleware in app.user_middleware)
+    assert app.user_middleware[0].cls is CORSMiddleware
 
 
 @pytest.mark.asyncio
@@ -47,7 +48,7 @@ async def test_allowed_and_rejected_origins_on_regular_requests() -> None:
         )
     )
 
-    assert any(middleware.cls is CORSMiddleware for middleware in app.user_middleware)
+    assert app.user_middleware[0].cls is CORSMiddleware
 
     async with create_test_client(app) as client:
         allowed = await client.get("/health", headers={"Origin": "https://app.example.com"})
@@ -139,3 +140,41 @@ async def test_credentials_use_an_explicit_origin() -> None:
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == "https://app.example.com"
     assert response.headers["access-control-allow-credentials"] == "true"
+
+
+@pytest.mark.parametrize("origin", ["https://app.example.com", "https://other.example.com"])
+@pytest.mark.parametrize("failure", ["request_id", "internal"])
+@pytest.mark.asyncio
+async def test_cors_wraps_early_rejections_and_internal_errors(origin: str, failure: str) -> None:
+    app = create_app(build_settings(CorsSettings(allow_origins=["https://app.example.com"], _env_file=None)))
+
+    @app.get("/failure")
+    async def fail() -> None:
+        raise RuntimeError("internal failure")
+
+    headers = {"Origin": origin}
+    if failure == "request_id":
+        headers["X-Request-ID"] = "invalid-id"
+    async with create_test_client(app) as client:
+        response = await client.get("/failure", headers=headers)
+    assert response.status_code == (400 if failure == "request_id" else 500)
+    assert response.headers.get("access-control-allow-origin") == (origin if origin == "https://app.example.com" else None)
+    assert "code" in response.json()
+    if failure == "internal":
+        assert response.json()["request_id"] == response.headers["X-Request-ID"]
+
+
+@pytest.mark.parametrize("origin", ["https://app.example.com", "https://other.example.com"])
+@pytest.mark.asyncio
+async def test_preflight_bypasses_request_context_and_access_log(origin: str, caplog: pytest.LogCaptureFixture) -> None:
+    app = create_app(build_settings(CorsSettings(allow_origins=["https://app.example.com"], _env_file=None)))
+    logger = logging.getLogger("app.interfaces.http.access")
+    with caplog.at_level(logging.INFO, logger=logger.name):
+        async with create_test_client(app) as client:
+            response = await client.options(
+                "/preflight",
+                headers={"Origin": origin, "Access-Control-Request-Method": "GET", "X-Request-ID": "invalid-id"},
+            )
+    assert response.status_code == (200 if origin == "https://app.example.com" else 400)
+    assert "X-Request-ID" not in response.headers
+    assert not [record for record in caplog.records if record.name == logger.name]

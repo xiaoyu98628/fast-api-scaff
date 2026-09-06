@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.config.app import AppSettings
 from app.config.cache import CacheSettings
@@ -18,9 +18,9 @@ class Settings(BaseModel):
     app: AppSettings
     database: DatabaseSettings
     cache: CacheSettings
-    http: HttpSettings = HttpSettings(_env_file=None)
+    http: HttpSettings = Field(default_factory=lambda: HttpSettings(_env_file=None))
     cors: CorsSettings
-    logging: LoggingSettings = LoggingSettings(_env_file=None)
+    logging: LoggingSettings = Field(default_factory=lambda: LoggingSettings(_env_file=None))
 
 
 @lru_cache(maxsize=1)

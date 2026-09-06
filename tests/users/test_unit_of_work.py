@@ -1,8 +1,12 @@
+import sqlite3
 from contextlib import AbstractAsyncContextManager
 from datetime import datetime
 from typing import cast
 
 import pytest
+from asyncmy.errors import IntegrityError as MySQLIntegrityError
+from asyncpg.exceptions._base import PostgresError
+from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -48,24 +52,64 @@ async def test_user_context_binds_unit_of_work_to_main_connection() -> None:
     await databases.aclose()
 
 
+def sqlite_error(message: str, code: int) -> sqlite3.IntegrityError:
+    error = sqlite3.IntegrityError(message)
+    error.sqlite_errorcode = code
+    return error
+
+
+def postgresql_error(*, constraint: str, unique: bool = True, table: str = "users", wrapped: bool = False) -> Exception:
+    error = PostgresError.new(
+        {
+            "C": "23505" if unique else "23502",
+            "M": "value contains uq_users_username and uq_users_email",
+            "n": constraint,
+            "t": table,
+        }
+    )
+    if wrapped:
+        wrapper = Exception("SQLAlchemy asyncpg adapter")
+        wrapper.__cause__ = error
+        return wrapper
+    return error
+
+
 @pytest.mark.parametrize(
-    ("details", "expected"),
+    ("original", "expected"),
     [
-        ("UNIQUE constraint failed: users.username", "username"),
-        ('duplicate key value violates unique constraint "uq_users_email"', "email"),
-        ("duplicate entry for key users_username_key", "username"),
+        (sqlite_error("UNIQUE constraint failed: users.username", sqlite3.SQLITE_CONSTRAINT_UNIQUE), "username"),
+        (sqlite_error("UNIQUE constraint failed: users.email", sqlite3.SQLITE_CONSTRAINT_UNIQUE), "email"),
+        (postgresql_error(constraint="uq_users_email", wrapped=True), "email"),
+        (postgresql_error(constraint="users_username_key"), "username"),
+        (MySQLIntegrityError(1062, "Duplicate entry 'alice' for key 'users.uq_users_username'"), "username"),
+        (MySQLIntegrityError(1062, "Duplicate entry 'uq_users_username@example.com' for key 'uq_users_email'"), "email"),
+        (MySQLIntegrityError(1062, "Duplicate entry 'x for key 'uq_users_username'' for key 'users.uq_users_email'"), "email"),
     ],
 )
-def test_user_unit_of_work_recognizes_known_unique_constraints(details: str, expected: str) -> None:
-    error = IntegrityError("INSERT", {}, Exception(details))
-
-    assert _resolve_user_conflict_field(error) == expected
+def test_user_unit_of_work_recognizes_known_unique_constraints(original: Exception, expected: str) -> None:
+    assert _resolve_user_conflict_field(IntegrityError("INSERT", {}, original)) == expected
 
 
-def test_user_unit_of_work_does_not_translate_unknown_integrity_errors() -> None:
-    error = IntegrityError("INSERT", {}, Exception("CHECK constraint failed: ck_users_status"))
-
-    assert _resolve_user_conflict_field(error) is None
+@pytest.mark.parametrize(
+    "original",
+    [
+        sqlite_error("NOT NULL constraint failed: users.username", sqlite3.SQLITE_CONSTRAINT_NOTNULL),
+        sqlite_error("CHECK constraint failed: users.email", sqlite3.SQLITE_CONSTRAINT_CHECK),
+        sqlite_error("FOREIGN KEY constraint failed", sqlite3.SQLITE_CONSTRAINT_FOREIGNKEY),
+        sqlite_error("UNIQUE constraint failed: users.id", sqlite3.SQLITE_CONSTRAINT_PRIMARYKEY),
+        sqlite_error("UNIQUE constraint failed: other.username", sqlite3.SQLITE_CONSTRAINT_UNIQUE),
+        sqlite_error("UNIQUE constraint failed: users.username, users.email", sqlite3.SQLITE_CONSTRAINT_UNIQUE),
+        postgresql_error(constraint="uq_users_username", unique=False),
+        postgresql_error(constraint="unknown_unique"),
+        postgresql_error(constraint="uq_users_username", table="other"),
+        MySQLIntegrityError(1048, "Column 'users.username' cannot be null"),
+        MySQLIntegrityError(1062, "Duplicate entry 'uq_users_username' for key 'unknown_unique'"),
+        MySQLIntegrityError(1062, "Duplicate entry 'alice' for key 'other.uq_users_username'"),
+        Exception("UNIQUE constraint failed: users.username"),
+    ],
+)
+def test_user_unit_of_work_does_not_translate_unknown_integrity_errors(original: Exception) -> None:
+    assert _resolve_user_conflict_field(IntegrityError("INSERT", {}, original)) is None
 
 
 @pytest.mark.parametrize("integrity_failure", [False, True])
@@ -179,3 +223,27 @@ async def test_commit_preserves_integrity_error_when_rollback_fails() -> None:
     with pytest.raises(ExceptionGroup) as captured:
         await unit_of_work.commit()
     assert captured.value.exceptions == (original, cleanup)
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "INSERT INTO users (id) VALUES ('missing-fields')",
+        "INSERT INTO users VALUES ('bad-status', 'alice', 'alice@example.com', 'test-hash', 'invalid', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+    ],
+)
+@pytest.mark.asyncio
+async def test_real_sqlite_internal_constraint_errors_are_not_business_conflicts(statement: str) -> None:
+    databases = DatabaseManager(DatabaseSettings(_env_file=None, connections={"main": {"driver": "sqlite", "database": ":memory:"}}))
+    try:
+        engine = await databases.get_engine("main")
+        async with engine.begin() as connection:
+            await connection.run_sync(UserModel.metadata.create_all)
+        with pytest.raises(IntegrityError) as captured:
+            async with SqlAlchemyUserUnitOfWork(databases, "main") as unit_of_work:
+                assert unit_of_work._session is not None
+                await unit_of_work._session.execute(text(statement))
+        assert isinstance(captured.value.orig, sqlite3.IntegrityError)
+        assert unit_of_work._session is None
+    finally:
+        await databases.aclose()
