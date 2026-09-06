@@ -23,6 +23,8 @@ uv run uvicorn app.main:app --reload
 
 相对数据库路径解析到 `storage/`。`:memory:` 只适合受控测试：不同连接的内存数据库生命周期和可见性容易与预期不一致，不建议作为常规开发配置。
 
+认证模型定义独立的 `user_sessions` 表，保存 `token_digest/user_id/issued_at/expires_at`；后两个字段使用本地无时区 `DateTime()`，`users` 模型保持不变。会话表迁移已由维护者手动生成；检查迁移后执行 `upgrade head`，再使用认证接口。会话外键声明 `ON DELETE CASCADE`，SQLite 是否执行级联取决于连接的 `foreign_keys` 设置；认证用例始终检查用户是否存在，因此残留会话不会让已删除用户通过认证。过期会话不会自动清理，退出会删除指定会话。
+
 ## 2. 命名连接
 
 ```dotenv

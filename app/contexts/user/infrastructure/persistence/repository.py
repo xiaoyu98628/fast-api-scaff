@@ -20,6 +20,10 @@ class SqlAlchemyUserRepository:
         model = await self._session.get(UserModel, str(user_id.value))
         return user_to_domain(model) if model is not None else None
 
+    async def find_by_username(self, username: Username) -> User | None:
+        model = await self._session.scalar(select(UserModel).where(UserModel.username == username.value))
+        return user_to_domain(model) if model is not None else None
+
     async def exists_by_username(self, username: Username, *, excluding: UserId | None = None) -> bool:
         statement = select(UserModel.id).where(UserModel.username == username.value)
         if excluding is not None:

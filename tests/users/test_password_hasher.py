@@ -5,7 +5,7 @@ import pytest
 from anyio import CancelScope
 from pwdlib import PasswordHash as PwdlibPasswordHash
 
-from app.contexts.user.domain.values import Password
+from app.contexts.user.domain.values import Password, PasswordHash
 from app.contexts.user.infrastructure.security.password_hasher import PwdlibPasswordHasher
 
 
@@ -53,8 +53,9 @@ async def test_hash_runs_off_event_loop_and_limits_concurrency(monkeypatch: pyte
 
 
 @pytest.mark.parametrize("cancel_mode", ["asyncio", "anyio"])
+@pytest.mark.parametrize("operation", ["hash", "verify"])
 @pytest.mark.asyncio
-async def test_cancelled_hash_holds_capacity_until_worker_finishes(monkeypatch: pytest.MonkeyPatch, cancel_mode: str) -> None:
+async def test_cancelled_hash_holds_capacity_until_worker_finishes(monkeypatch: pytest.MonkeyPatch, cancel_mode: str, operation: str) -> None:
     hasher = PwdlibPasswordHasher(max_concurrency=1)
     loop = asyncio.get_running_loop()
     started = asyncio.Event()
@@ -72,9 +73,17 @@ async def test_cancelled_hash_holds_capacity_until_worker_finishes(monkeypatch: 
     async def first_hash() -> None:
         with CancelScope() as scope:
             scopes.append(scope)
-            await hasher.hash(Password("password-one"))
+            if operation == "hash":
+                await hasher.hash(Password("password-one"))
+            else:
+                await hasher.verify("password-one", PasswordHash("test-hash"))
+
+    def blocking_verify(password: str, _hash: str) -> bool:
+        blocking_hash(password)
+        return True
 
     monkeypatch.setattr(hasher._hasher, "hash", blocking_hash)
+    monkeypatch.setattr(hasher._hasher, "verify", blocking_verify)
     first = asyncio.create_task(first_hash())
     second: asyncio.Task | None = None
     try:
@@ -100,6 +109,26 @@ async def test_cancelled_hash_holds_capacity_until_worker_finishes(monkeypatch: 
         assert scopes[0].cancelled_caught
     assert second is not None
     assert second.result().value == "test-hash"
+    assert hasher._limiter.borrowed_tokens == 0
+
+
+@pytest.mark.asyncio
+async def test_password_verification_accepts_match_and_rejects_mismatch() -> None:
+    hasher = PwdlibPasswordHasher()
+    hashed = await hasher.hash(Password(" password123 "))
+    assert await hasher.verify(" password123 ", hashed)
+    assert not await hasher.verify("password123", hashed)
+    assert not await hasher.verify("wrong", hashed)
+
+
+@pytest.mark.asyncio
+async def test_unknown_password_hash_error_does_not_expose_hash() -> None:
+    hasher = PwdlibPasswordHasher()
+    with pytest.raises(RuntimeError, match="存储的密码哈希无法识别") as captured:
+        await hasher.verify("secret-password", PasswordHash("private-invalid-hash"))
+    assert "private-invalid-hash" not in str(captured.value)
+    assert "secret-password" not in str(captured.value)
+    assert captured.value.__suppress_context__
     assert hasher._limiter.borrowed_tokens == 0
 
 

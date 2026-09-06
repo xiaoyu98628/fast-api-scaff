@@ -1,9 +1,10 @@
 from sqlalchemy import MetaData
 
+from app.contexts.user.infrastructure.persistence.models.session import UserSessionModel
 from app.contexts.user.infrastructure.persistence.models.user import UserModel
 from app.infrastructure.database.orm.main import MainBase
 
-_MAIN_DATABASE_MODELS: tuple[type[MainBase], ...] = (UserModel,)
+_MAIN_DATABASE_MODELS: tuple[type[MainBase], ...] = (UserModel, UserSessionModel)
 
 
 def load_main_database_metadata() -> MetaData:

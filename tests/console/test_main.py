@@ -2,6 +2,7 @@ import json
 import os
 import subprocess
 import sys
+from dataclasses import replace
 from datetime import datetime
 from typing import cast
 from uuid import UUID
@@ -22,7 +23,7 @@ from app.config.logging import LoggingSettings
 from app.config.settings import Settings
 from app.contexts.user.application.dto import CreateUserCommand, UserDTO, UserPageDTO
 from app.contexts.user.application.service import UserApplicationService
-from app.contexts.user.composition import UserContext
+from app.contexts.user.composition import build_user_context
 from app.contexts.user.domain.errors import InvalidUserDataError
 from app.contexts.user.domain.values import UserStatus
 from app.infrastructure.cache.manager import CacheManager
@@ -91,7 +92,7 @@ def build_console(service: FakeUserService) -> tuple[CliRunner, typer.Typer]:
             databases=databases,
             caches=caches,
             http=http,
-            users=UserContext(service=cast(UserApplicationService, service)),
+            users=replace(build_user_context(databases), service=cast(UserApplicationService, service)),
             async_shutdown_callbacks=(databases.aclose, caches.aclose, http.aclose),
         )
 
@@ -271,8 +272,15 @@ def test_run_console_preserves_unexpected_programming_error() -> None:
 
 
 @pytest.mark.parametrize(("name", "value"), [("HTTP_POOL__MAX_CONNECTIONS", "0"), ("LOG_LEVEL", "invalid")])
-def test_console_help_does_not_load_invalid_environment(name: str, value: str) -> None:
-    environment = dict(os.environ)
+@pytest.mark.parametrize("color", [False, True], ids=["plain", "colored"])
+def test_console_help_does_not_load_invalid_environment(name: str, value: str, color: bool) -> None:
+    color_variables = {"NO_COLOR", "FORCE_COLOR", "PY_COLORS", "GITHUB_ACTIONS", "_TYPER_FORCE_DISABLE_TERMINAL"}
+    environment = {key: item for key, item in os.environ.items() if key not in color_variables}
+    environment["TERM"] = "xterm-256color" if color else "dumb"
+    if color:
+        environment["GITHUB_ACTIONS"] = "true"
+    else:
+        environment["NO_COLOR"] = "1"
     environment[name] = value
     result = subprocess.run(
         [sys.executable, "-m", "app.interfaces.console", "--help"],
@@ -282,7 +290,9 @@ def test_console_help_does_not_load_invalid_environment(name: str, value: str) -
         timeout=10,
     )
     assert result.returncode == 0, result.stderr
-    assert "--version" in result.stdout
+    help_output = unstyle(result.stdout)
+    assert (result.stdout != help_output) is color
+    assert "--version" in help_output
     assert "Traceback" not in result.stderr
 
 

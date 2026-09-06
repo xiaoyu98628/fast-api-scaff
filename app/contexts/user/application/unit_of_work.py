@@ -3,6 +3,7 @@ from types import TracebackType
 from typing import Protocol, Self
 
 from app.contexts.user.domain.repository import UserRepository
+from app.contexts.user.domain.session_repository import SessionRepository
 
 
 class UserUnitOfWork(Protocol):
@@ -10,6 +11,9 @@ class UserUnitOfWork(Protocol):
 
     @property
     def users(self) -> UserRepository: ...
+
+    @property
+    def sessions(self) -> SessionRepository: ...
 
     async def __aenter__(self) -> Self: ...
 

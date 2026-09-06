@@ -3,6 +3,7 @@ from functools import lru_cache
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.config.app import AppSettings
+from app.config.auth import AuthSettings
 from app.config.cache import CacheSettings
 from app.config.cors import CorsSettings
 from app.config.database import DatabaseSettings
@@ -16,6 +17,7 @@ class Settings(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     app: AppSettings
+    auth: AuthSettings = Field(default_factory=lambda: AuthSettings(_env_file=None))
     database: DatabaseSettings
     cache: CacheSettings
     http: HttpSettings = Field(default_factory=lambda: HttpSettings(_env_file=None))
@@ -28,6 +30,7 @@ def load_settings() -> Settings:
     """加载并缓存应用配置。"""
     return Settings(
         app=AppSettings(),
+        auth=AuthSettings(),
         database=DatabaseSettings(),
         cache=CacheSettings(),
         http=HttpSettings(),
