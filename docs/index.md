@@ -9,6 +9,7 @@
 - [快速开始](getting-started.md)：三种启动路径、迁移顺序和首次验证。
 - [配置参考](configuration.md)：环境变量、默认值、校验时机和生效方式。
 - [HTTP 接口](http.md)：路由、统一响应、错误处理、中间件和扩展方法。
+- [认证示例](authentication.md)：数据库会话、Bearer Token、登录、当前用户和退出。
 - [Console 命令](console.md)：命令、输出协议、退出码和新增命令方式。
 
 ## 基础设施
@@ -30,6 +31,7 @@
 
 - FastAPI HTTP 宿主与 Typer Console 宿主；
 - 用户限界上下文的增、查、改、删示例；
+- 简单会话认证，用户表不增加角色或版本字段；
 - MySQL、PostgreSQL、SQLite 异步数据库连接；
 - Redis、Memcached、进程内 Memory 字节级 KV 缓存；
 - 普通与流式 HTTP 出站客户端、独立连接池和统一传输错误；
@@ -39,7 +41,7 @@
 尚未实现：
 
 - 常驻 Scheduler/Worker 宿主；
-- 登录认证、授权、密码修改和令牌；
+- 角色/权限体系、用户自行修改密码、刷新令牌和登录限流；
 - 领域事件、Outbox、Saga 或跨数据库原子事务；
 - Redis Hash/List/Set/ZSet 等数据结构；
 - 缓存故障时的自动降级或透明回退。

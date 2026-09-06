@@ -2,6 +2,7 @@ import json
 import os
 import subprocess
 import sys
+from dataclasses import replace
 from datetime import datetime
 from typing import cast
 from uuid import UUID
@@ -22,7 +23,7 @@ from app.config.logging import LoggingSettings
 from app.config.settings import Settings
 from app.contexts.user.application.dto import CreateUserCommand, UserDTO, UserPageDTO
 from app.contexts.user.application.service import UserApplicationService
-from app.contexts.user.composition import UserContext
+from app.contexts.user.composition import build_user_context
 from app.contexts.user.domain.errors import InvalidUserDataError
 from app.contexts.user.domain.values import UserStatus
 from app.infrastructure.cache.manager import CacheManager
@@ -91,7 +92,7 @@ def build_console(service: FakeUserService) -> tuple[CliRunner, typer.Typer]:
             databases=databases,
             caches=caches,
             http=http,
-            users=UserContext(service=cast(UserApplicationService, service)),
+            users=replace(build_user_context(databases), service=cast(UserApplicationService, service)),
             async_shutdown_callbacks=(databases.aclose, caches.aclose, http.aclose),
         )
 

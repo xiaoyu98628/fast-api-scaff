@@ -6,7 +6,8 @@
 
 - FastAPI HTTP API、OpenAPI 与统一 JSON 响应；
 - Typer Console，一次性命令共享应用容器；
-- 用户限界上下文 CRUD、状态修改与管理员密码重置示例，密码哈希在线程中执行并限制并发；
+- 用户限界上下文 CRUD、状态修改与密码重置示例，密码哈希和验证在线程中执行并共享并发限制；
+- 简单数据库会话认证：登录、当前用户、退出，随机 Bearer Token 只保存摘要；
 - MySQL、PostgreSQL、SQLite 异步 SQLAlchemy；
 - Repository、Mapper、Unit of Work 与 Alembic migration；
 - Redis、Memcached、Memory 字节级 KV 缓存；
@@ -15,7 +16,7 @@
 - 架构依赖测试、pytest、Ruff、ty 与 GitHub Actions 质量检查；
 - CI 使用临时 MySQL/PostgreSQL 服务验证 Alembic upgrade、downgrade 和再次 upgrade。
 
-当前不包含认证/授权、常驻 Scheduler/Worker、领域事件/Outbox/Saga、跨数据库原子事务、Redis 高级数据结构、缓存自动降级或通用 HTTP 自动重试。它们需要按实际业务边界设计，不能把规划项当作现有功能。
+当前不包含角色/权限体系、刷新令牌、常驻 Scheduler/Worker、领域事件/Outbox/Saga、跨数据库原子事务、Redis 高级数据结构、缓存自动降级或通用 HTTP 自动重试。它们需要按实际业务边界设计，不能把规划项当作现有功能。用户 CRUD 仍是公开示例，`GET /api/v1/auth/me` 演示登录校验。
 
 ## 五分钟启动
 
@@ -78,6 +79,22 @@ uv run python -m app.interfaces.console users list --page 1 --limit 20
 
 `users create` 会交互式读取并确认密码，输入不回显。命令结果写 stdout，日志和错误写 stderr；退出码 0/1/2 分别表示成功、运行失败和用法错误。
 
+## 登录示例
+
+会话表迁移已由维护者手动生成。执行迁移、创建用户后，再调用：
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"alice","password":"password123"}'
+```
+
+将响应 `data.access_token` 放入 `Authorization: Bearer <token>`，即可访问 `GET /api/v1/auth/me`；`POST /api/v1/auth/logout` 删除该会话并返回 204。会话默认有效期为 3600 秒，可通过 `AUTH_SESSION_TTL_SECONDS` 配置。
+
+登录用户不存在时直接返回 404 和“用户不存在”，不执行密码验证；密码错误或账户禁用返回 401。
+
+认证使用独立的 `user_sessions` 表，签发时间和过期时间采用与用户资料一致的本地无时区 `datetime`，用户表不增加角色或版本字段。密码重置保留已有会话；禁用期间会话不可用，再启用后未过期会话仍可使用。详细契约见[认证示例](docs/authentication.md)。
+
 ## Docker
 
 ```bash
@@ -94,6 +111,7 @@ docker compose up --build
 - [快速开始](docs/getting-started.md)
 - [配置参考](docs/configuration.md)
 - [HTTP 接口](docs/http.md)
+- [认证示例](docs/authentication.md)
 - [Console 命令](docs/console.md)
 - [数据库](docs/database.md)
 - [缓存](docs/cache.md)

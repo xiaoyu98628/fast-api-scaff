@@ -18,7 +18,7 @@ def build_application_container(
     databases = DatabaseManager(settings.database, providers=database_providers)
     caches = CacheManager(settings.cache, providers=cache_providers)
     http = HttpClientManager(settings.http)
-    users = build_user_context(databases)
+    users = build_user_context(databases, session_ttl_seconds=settings.auth.session_ttl_seconds)
 
     return ApplicationContainer(
         databases=databases,

@@ -9,7 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.contexts.user.application.errors import UserConflictError, UserConflictField
 from app.contexts.user.domain.repository import UserRepository
+from app.contexts.user.domain.session_repository import SessionRepository
 from app.contexts.user.infrastructure.persistence.repository import SqlAlchemyUserRepository
+from app.contexts.user.infrastructure.persistence.session_repository import SqlAlchemySessionRepository
 from app.infrastructure.database.manager import DatabaseManager
 
 _USER_UNIQUE_CONSTRAINTS: dict[str, UserConflictField] = {
@@ -34,6 +36,7 @@ class SqlAlchemyUserUnitOfWork:
         self._session_context: AbstractAsyncContextManager[AsyncSession] | None = None
         self._session: AsyncSession | None = None
         self._users: UserRepository | None = None
+        self._sessions: SessionRepository | None = None
 
     @property
     def users(self) -> UserRepository:
@@ -42,10 +45,17 @@ class SqlAlchemyUserUnitOfWork:
 
         return self._users
 
+    @property
+    def sessions(self) -> SessionRepository:
+        if self._sessions is None:
+            raise RuntimeError("UserUnitOfWork 尚未进入事务上下文")
+        return self._sessions
+
     async def __aenter__(self) -> SqlAlchemyUserUnitOfWork:
         self._session_context = self._databases.session(self._connection_name)
         self._session = await self._session_context.__aenter__()
         self._users = SqlAlchemyUserRepository(self._session)
+        self._sessions = SqlAlchemySessionRepository(self._session)
         return self
 
     async def __aexit__(
@@ -73,6 +83,7 @@ class SqlAlchemyUserUnitOfWork:
             self._session_context = None
             self._session = None
             self._users = None
+            self._sessions = None
 
         if cleanup_errors:
             errors = ([exception] if exception is not None else []) + cleanup_errors

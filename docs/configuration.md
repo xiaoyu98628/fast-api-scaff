@@ -2,7 +2,7 @@
 
 配置由 `pydantic-settings` 从项目根目录 `.env` 和进程环境变量读取。进程环境变量优先于 `.env`；未知字段会被忽略；配置对象创建后不可变，并由 `load_settings()` 在当前进程内缓存。
 
-导入配置模块不会读取或校验环境变量。正常启动由 `load_settings()` 显式创建各组配置；手动构造 `Settings` 时，未提供的 HTTP 和日志配置由默认值工厂在实例化时创建。默认值工厂的 `_env_file=None` 只跳过 `.env`，仍读取进程环境变量；显式注入这两组配置时不会调用对应工厂。Console 的 `--help` 不加载配置，执行需要配置的命令时才校验并输出配置错误。
+导入配置模块不会读取或校验环境变量。正常启动由 `load_settings()` 显式创建各组配置；手动构造 `Settings` 时，未提供的认证、HTTP 和日志配置由默认值工厂在实例化时创建。默认值工厂的 `_env_file=None` 只跳过 `.env`，仍读取进程环境变量；显式注入这些配置时不会调用对应工厂。Console 的 `--help` 不加载配置，执行需要配置的命令时才校验并输出配置错误。
 
 ## 1. 命名和嵌套规则
 
@@ -11,6 +11,7 @@
 | 配置组 | 前缀 | 示例 |
 | --- | --- | --- |
 | 应用 | `APP_` | `APP_NAME` |
+| 认证示例 | `AUTH_` | `AUTH_SESSION_TTL_SECONDS` |
 | 日志 | `LOG_` | `LOG_LEVEL` |
 | CORS | `CORS_` | `CORS_ALLOW_ORIGINS` |
 | HTTP 出站 | `HTTP_` | `HTTP_TIMEOUT__CONNECT` |
@@ -35,6 +36,14 @@ LOG_HANDLERS={"stdout":{"driver":"stream","stream":"stdout"}}
 布尔值建议统一使用 `true`/`false`。密码会进入 `SecretStr`，错误信息隐藏输入值，但这不等于日志和外部工具永远不会泄露秘密；不要打印完整配置对象，也不要提交真实 `.env`。
 
 ## 2. 应用配置
+
+认证配置使用独立的 `AuthSettings`，通过 `settings.auth` 访问：
+
+| 变量 | 类型 | 默认值 | 约束与说明 |
+| --- | --- | --- | --- |
+| `AUTH_SESSION_TTL_SECONDS` | `int` | `3600` | 1–2592000 秒；登录时按本地无时区 datetime 确定过期时间，修改配置只影响新会话 |
+
+会话固定存放在用户上下文的 `main` 数据库，且不使用 `CACHE_DEFAULT_TTL`。详见[认证示例](authentication.md)。
 
 | 变量 | 类型 | 默认值 | 约束与说明 |
 | --- | --- | --- | --- |

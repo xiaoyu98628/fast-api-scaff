@@ -8,6 +8,7 @@ from app.contexts.user.application.dto import ChangeUserStatusCommand, CreateUse
 from app.contexts.user.application.errors import UserConflictError, UserNotFoundError
 from app.contexts.user.application.service import UserApplicationService
 from app.contexts.user.domain.repository import UserRepository
+from app.contexts.user.domain.session_repository import SessionRepository
 from app.contexts.user.domain.user import User
 from app.contexts.user.domain.values import EmailAddress, Password, PasswordHash, UserId, Username, UserStatus
 
@@ -20,6 +21,9 @@ class FakePasswordHasher:
         self.passwords.append(password.value)
         return PasswordHash(f"hashed::{password.value}")
 
+    async def verify(self, password: str, password_hash: PasswordHash) -> bool:
+        return password_hash.value == f"hashed::{password}"
+
 
 class FakeUserRepository:
     def __init__(self) -> None:
@@ -28,6 +32,9 @@ class FakeUserRepository:
 
     async def find(self, user_id: UserId) -> User | None:
         return self.items.get(user_id.value)
+
+    async def find_by_username(self, username: Username) -> User | None:
+        return next((user for user in self.items.values() if user.username == username), None)
 
     async def exists_by_username(self, username: Username, *, excluding: UserId | None = None) -> bool:
         return any(user.username == username and (excluding is None or user.id != excluding) for user in self.items.values())
@@ -64,6 +71,10 @@ class FakeUserUnitOfWork:
     @property
     def users(self) -> UserRepository:
         return self._users
+
+    @property
+    def sessions(self) -> SessionRepository:
+        raise AssertionError("用户 CRUD 不应访问会话仓储")
 
     async def __aenter__(self) -> FakeUserUnitOfWork:
         return self

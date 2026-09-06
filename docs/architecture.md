@@ -61,7 +61,7 @@ infrastructure ┘      ↑
 - SQLAlchemy mapper/repository/UoW/model 与 pwdlib 密码哈希适配器；
 - HTTP 与 Console 入口。
 
-它覆盖创建用户和管理员重置密码时的密码规则与安全哈希持久化，但不包含登录认证、用户自行修改密码、token、角色和权限。当前管理员语义没有认证授权保护，不能直接视为生产权限边界。不要因为目录名叫 user 就推断它已经是完整 IAM 上下文；真实系统可能需要把身份、账户、资料、组织成员关系拆成不同边界。
+它覆盖用户 CRUD、密码重置和简单会话认证。`AuthApplicationService` 提供登录、当前用户和退出，独立的 `UserSession` 记录令牌摘要与有效期，并通过 `UserUnitOfWork.sessions` 与用户仓储共享事务。用户表没有角色、认证版本或数据版本字段；公开 CRUD 不受登录校验保护，也不包含用户自行修改密码和角色权限体系。它是示例上下文，并非完整 IAM。
 
 ## 4. 聚合与不变量
 
@@ -114,7 +114,9 @@ Python 无法提供绝对私有性；下划线是协作契约。真正的保证�
   → 返回 DTO
 ```
 
-Application 不知道 FastAPI、Typer、SQLAlchemy、pwdlib 或具体数据库。时钟和 `PasswordHasher` 窄端口由组合根注入，测试可提供固定时间和确定性的假哈希实现。端口签名为 `async def hash(self, password: Password) -> PasswordHash`，创建和重置用例通过 `await` 调用。基础设施适配器在线程中执行 pwdlib 推荐的 Argon2 算法，独立限制器默认允许每个适配器实例同时执行 2 次哈希；全局组合根复用该实例。取消调用时会等待本次哈希任务结束，再传播取消，避免仍在计算时提前释放额度。聚合不会接触明文密码。
+Application 不知道 FastAPI、Typer、SQLAlchemy、pwdlib 或具体数据库。时钟和 `PasswordHasher` 窄端口由组合根注入，测试可提供固定时间和确定性的假哈希实现。端口提供 `async def hash(self, password: Password) -> PasswordHash` 和 `async def verify(self, password: str, password_hash: PasswordHash) -> bool`。基础设施适配器在线程中执行 Argon2 哈希和验证，两类操作共享同一个默认容量为 2 的限制器；用户服务和认证服务复用该实例。取消调用时会等待本次工作结束再传播取消，避免提前释放仍在计算的额度。聚合不会接触明文密码。
+
+会话令牌通过应用层 `SessionTokenCodec` 窄协议注入，基础设施使用 `secrets.token_urlsafe(32)` 和 SHA-256。用户不存在时立即抛出 `LoginUserNotFoundError`，HTTP 映射为 404 和“用户不存在”，不执行密码验证；用户存在时，慢密码验证在数据库事务外执行，签发前重新读取密码哈希与账户状态。没有版本字段或锁定串行化，重新读取不是并发改密撤销保证；已有会话也不会因密码重置失效。完整契约见[认证示例](authentication.md)。
 
 Application Service 可以做跨聚合的流程编排和权限决策，但不应承载实体自身的核心规则。反过来，Domain 也不应执行数据库/缓存/网络 I/O。
 
@@ -143,6 +145,8 @@ Application Service 可以做跨聚合的流程编排和权限决策，但不应
 
 `build_application_container()` 是全局组合根，`build_user_context()` 是上下文组合点。它们可以依赖具体实现，因为“选择实现并接线”就是它们的职责。
 
+`UserContext.service` 保留用户 CRUD，`UserContext.auth` 提供认证用例。`build_user_context(databases, *, session_ttl_seconds=3600)` 由全局组合根传入认证配置；构建时不连接数据库、不计算密码哈希，也不新增需要关闭的资源。
+
 容器不是业务 Service Locator。若 application service 接收整个容器，它可以在任意地方获取任何数据库、缓存和上下文，真实依赖无法从构造签名看出。这就是“容器抽象诱导边界穿透”：工具本身合理，滥用方式会让边界失效。
 
 规则：入口使用容器选择公开服务；上下文组合根把窄依赖注入具体服务；业务对象不持有容器。
@@ -166,6 +170,8 @@ HTTP lifespan 和 Console 都复用 runtime。这样资源的初始化、失败�
 ## 10. 时间约定
 
 当前项目默认使用本地无时区 datetime：
+
+用户资料和会话的 `issued_at/expires_at` 都遵循下述约定。会话使用 `datetime.now()` 签发，通过 `timedelta(seconds=...)` 计算过期时间，并映射为 `DateTime()`；认证配置和响应中的有效期仍以秒数表示。
 
 - application clock 默认为 `datetime.now`；
 - domain 拒绝带 offset 的 datetime；
