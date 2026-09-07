@@ -114,11 +114,17 @@ class RedisConsumer:
 class RedisBackend:
     def __init__(self, settings: RedisQueueSettings) -> None:
         self._settings = settings
-        self._client = Redis.from_url(
-            settings.url.get_secret_value(),
+        self._client = Redis(
+            host=settings.host,
+            port=settings.port,
+            db=settings.database,
+            username=settings.username,
+            password=settings.password.get_secret_value() if settings.password is not None else None,
+            ssl=settings.ssl,
+            max_connections=settings.max_connections,
             decode_responses=False,
             protocol=2,
-            socket_connect_timeout=settings.publish_timeout,
+            socket_connect_timeout=settings.connect_timeout,
             socket_timeout=settings.command_timeout,
         )
 

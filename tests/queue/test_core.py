@@ -163,9 +163,11 @@ async def test_manager_is_lazy_and_dispatches_typed_job() -> None:
         {"driver": "memory", "host": "localhost"},
         {"driver": "memory", "capacity": 0},
         {"driver": "rabbitmq"},
+        {"driver": "rabbitmq", "url": "amqp://guest:guest@localhost/"},
         {"driver": "kafka", "bootstrap_servers": []},
-        {"driver": "redis", "url": "redis://localhost", "lease_seconds": 0},
-        {"driver": "redis", "url": "redis://localhost", "command_timeout": 1.5},
+        {"driver": "redis", "url": "redis://localhost"},
+        {"driver": "redis", "host": "localhost", "lease_seconds": 0},
+        {"driver": "redis", "host": "localhost", "command_timeout": 1.5},
     ],
 )
 def test_strict_driver_configuration(raw: dict[str, object]) -> None:

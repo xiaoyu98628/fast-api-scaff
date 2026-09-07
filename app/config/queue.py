@@ -1,6 +1,6 @@
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, TypeAdapter, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, TypeAdapter, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.config.base import BASE_SETTINGS_CONFIG
@@ -19,15 +19,14 @@ class MemoryQueueSettings(ConnectionSettings):
 
 class RedisQueueSettings(ConnectionSettings):
     driver: Literal["redis"]
-    url: SecretStr
-
-    @field_validator("url")
-    @classmethod
-    def redis_url(cls, value: SecretStr) -> SecretStr:
-        if not value.get_secret_value().startswith(("redis://", "rediss://")):
-            raise ValueError("需要 redis:// 或 rediss:// URL")
-        return value
-
+    host: str = Field(min_length=1)
+    port: int = Field(default=6379, ge=1, le=65535)
+    database: int = Field(default=0, ge=0)
+    username: str | None = Field(default=None, min_length=1)
+    password: SecretStr | None = Field(default=None, min_length=1)
+    ssl: bool = False
+    max_connections: int = Field(default=10, ge=1)
+    connect_timeout: float = Field(default=5.0, gt=0)
     group: str = Field(default="workers", min_length=1, pattern=r"^\S+$")
     prefix: str = "queue:"
     lease_seconds: float = Field(default=120.0, ge=3)
@@ -53,14 +52,13 @@ class KafkaQueueSettings(ConnectionSettings):
 
 class RabbitMQQueueSettings(ConnectionSettings):
     driver: Literal["rabbitmq"]
-    url: SecretStr
-
-    @field_validator("url")
-    @classmethod
-    def amqp_url(cls, value: SecretStr) -> SecretStr:
-        if not value.get_secret_value().startswith(("amqp://", "amqps://")):
-            raise ValueError("需要 amqp:// 或 amqps:// URL")
-        return value
+    host: str = Field(min_length=1)
+    port: int = Field(default=5672, ge=1, le=65535)
+    virtual_host: str = Field(default="/", min_length=1)
+    username: str = Field(default="guest", min_length=1)
+    password: SecretStr = SecretStr("guest")
+    ssl: bool = False
+    connect_timeout: float = Field(default=5.0, gt=0)
 
 
 type QueueConnection = MemoryQueueSettings | RedisQueueSettings | KafkaQueueSettings | RabbitMQQueueSettings

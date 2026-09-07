@@ -45,7 +45,15 @@ class RabbitBackend:
 
     @classmethod
     async def create(cls, settings: RabbitMQQueueSettings) -> RabbitBackend:
-        connection = await aio_pika.connect(settings.url.get_secret_value(), timeout=settings.publish_timeout)
+        connection = await aio_pika.connect(
+            host=settings.host,
+            port=settings.port,
+            login=settings.username,
+            password=settings.password.get_secret_value(),
+            virtualhost=settings.virtual_host,
+            ssl=settings.ssl,
+            timeout=settings.connect_timeout,
+        )
         try:
             channel = await connection.channel(publisher_confirms=True, on_return_raises=True)
         except BaseException:

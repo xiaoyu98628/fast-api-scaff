@@ -9,7 +9,7 @@ from aiokafka import TopicPartition
 from redis.asyncio import Redis
 from redis.exceptions import ResponseError
 
-from app.config.queue import KafkaQueueSettings, RedisQueueSettings
+from app.config.queue import KafkaQueueSettings, RabbitMQQueueSettings, RedisQueueSettings
 from app.infrastructure.queue.drivers.kafka import KafkaBackend, KafkaConsumer, RebalanceListener
 from app.infrastructure.queue.drivers.rabbitmq import RabbitBackend, RabbitDelivery
 from app.infrastructure.queue.drivers.redis import RedisBackend, RedisConsumer, RedisDelivery
@@ -46,13 +46,45 @@ async def test_rabbit_delivery_does_not_ack_before_execution() -> None:
 
 
 @pytest.mark.asyncio
+async def test_rabbit_uses_structured_connection_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    channel = Mock()
+    connection = Mock(channel=AsyncMock(return_value=channel), close=AsyncMock())
+    connect = AsyncMock(return_value=connection)
+    monkeypatch.setattr("app.infrastructure.queue.drivers.rabbitmq.aio_pika.connect", connect)
+
+    backend = await RabbitBackend.create(
+        RabbitMQQueueSettings(
+            driver="rabbitmq",
+            host="rabbitmq.internal",
+            port=5673,
+            virtual_host="jobs",
+            username="worker",
+            password="secret",
+            ssl=True,
+            connect_timeout=3,
+        )
+    )
+
+    connect.assert_awaited_once_with(
+        host="rabbitmq.internal",
+        port=5673,
+        login="worker",
+        password="secret",
+        virtualhost="jobs",
+        ssl=True,
+        timeout=3,
+    )
+    await backend.aclose()
+
+
+@pytest.mark.asyncio
 async def test_redis_pending_recovery_and_owner_checked_ack() -> None:
     client = Mock()
     client.xgroup_create = AsyncMock(side_effect=ResponseError("BUSYGROUP exists"))
     client.xautoclaim = AsyncMock(return_value=[b"0-0", [(b"1-0", {b"payload": b"old"})], []])
     client.xreadgroup = AsyncMock()
     client.eval = AsyncMock(return_value=1)
-    settings = RedisQueueSettings(driver="redis", url="redis://localhost")
+    settings = RedisQueueSettings(driver="redis", host="localhost")
     consumer = RedisConsumer(cast(Redis, client), "jobs", settings)
     await consumer.start()
     delivery = await consumer.receive()
@@ -68,7 +100,7 @@ async def test_redis_pending_recovery_and_owner_checked_ack() -> None:
 @pytest.mark.asyncio
 async def test_redis_owner_loss_does_not_ack() -> None:
     client = Mock(eval=AsyncMock(return_value=0))
-    consumer = RedisConsumer(cast(Redis, client), "jobs", RedisQueueSettings(driver="redis", url="redis://localhost"))
+    consumer = RedisConsumer(cast(Redis, client), "jobs", RedisQueueSettings(driver="redis", host="localhost"))
     delivery = RedisDelivery(consumer, "1-0", b"message")
     consumer.pending[delivery.identity] = delivery
     with pytest.raises(DeliveryLostError):
@@ -83,7 +115,7 @@ async def test_redis_new_message_uses_manual_group_read() -> None:
     client = Mock()
     client.xautoclaim = AsyncMock(return_value=[b"0-0", [], []])
     client.xreadgroup = AsyncMock(return_value=[(b"jobs", [(b"2-0", {b"payload": b"new"})])])
-    consumer = RedisConsumer(cast(Redis, client), "jobs", RedisQueueSettings(driver="redis", url="redis://localhost"))
+    consumer = RedisConsumer(cast(Redis, client), "jobs", RedisQueueSettings(driver="redis", host="localhost"))
     delivery = await consumer.receive()
     assert delivery.payload == b"new"
     assert client.xreadgroup.call_args.args == ("workers", consumer.name, {"jobs": ">"})
@@ -91,13 +123,37 @@ async def test_redis_new_message_uses_manual_group_read() -> None:
 
 
 def test_redis_uses_separate_connect_and_command_timeouts(monkeypatch: pytest.MonkeyPatch) -> None:
-    from_url = Mock(return_value=Mock())
-    monkeypatch.setattr("app.infrastructure.queue.drivers.redis.Redis.from_url", from_url)
+    constructor = Mock(return_value=Mock())
+    monkeypatch.setattr("app.infrastructure.queue.drivers.redis.Redis", constructor)
 
-    RedisBackend(RedisQueueSettings(driver="redis", url="redis://localhost", publish_timeout=0.5, command_timeout=3))
+    RedisBackend(
+        RedisQueueSettings(
+            driver="redis",
+            host="redis.internal",
+            port=6380,
+            database=2,
+            username="worker",
+            password="secret",
+            ssl=True,
+            max_connections=20,
+            connect_timeout=4,
+            command_timeout=6,
+        )
+    )
 
-    assert from_url.call_args.kwargs["socket_connect_timeout"] == 0.5
-    assert from_url.call_args.kwargs["socket_timeout"] == 3
+    assert constructor.call_args.kwargs == {
+        "host": "redis.internal",
+        "port": 6380,
+        "db": 2,
+        "username": "worker",
+        "password": "secret",
+        "ssl": True,
+        "max_connections": 20,
+        "decode_responses": False,
+        "protocol": 2,
+        "socket_connect_timeout": 4,
+        "socket_timeout": 6,
+    }
 
 
 @pytest.mark.asyncio
