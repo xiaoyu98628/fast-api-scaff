@@ -2,9 +2,8 @@ import logging
 
 import pytest
 
-from app.bootstrap.app import create_app
-from app.bootstrap.container import ApplicationContainer
-from app.bootstrap.logging import ApplicationLogEvent
+from app.bootstrap.http.application import create_app
+from app.bootstrap.http.logging import ApplicationLogEvent
 from app.config.app import AppSettings
 from app.config.cache import CacheSettings
 from app.config.cors import CorsSettings
@@ -17,6 +16,7 @@ from app.infrastructure.cache.manager import CacheManager
 from app.infrastructure.database.manager import DatabaseManager
 from app.infrastructure.http.manager import HttpClientManager
 from app.infrastructure.queue.manager import QueueManager
+from app.runtime.container import ApplicationContainer
 
 
 def build_settings() -> Settings:

@@ -71,12 +71,12 @@ CORS 预检由跨域中间件直接处理，不生成 Request ID 或应用访问
 ## Console
 
 ```bash
-uv run python -m app.interfaces.console --help
-uv run python -m app.interfaces.console app info
-uv run python -m app.interfaces.console users create \
+uv run python -m app.console --help
+uv run python -m app.console app info
+uv run python -m app.console users create \
   --username alice \
   --email alice@example.com
-uv run python -m app.interfaces.console users list --page 1 --limit 20
+uv run python -m app.console users list --page 1 --limit 20
 ```
 
 `users create` 会交互式读取并确认密码，输入不回显。命令结果写 stdout，日志和错误写 stderr；退出码 0/1/2 分别表示成功、运行失败和用法错误。
@@ -147,8 +147,8 @@ GitHub Actions 还会在 MySQL 和 PostgreSQL 上执行迁移往返验证。HTTP
 ## 队列与独立 Worker
 
 ```bash
-uv run python -m app.interfaces.worker --help
-uv run python -m app.interfaces.worker --connection redis --queue reports --concurrency 4
+uv run python -m app.worker --help
+uv run python -m app.worker --connection redis --queue reports --concurrency 4
 docker compose --profile worker up --build
 ```
 

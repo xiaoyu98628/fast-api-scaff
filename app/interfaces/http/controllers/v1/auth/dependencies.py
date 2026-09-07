@@ -3,12 +3,12 @@ from typing import Annotated
 from fastapi import Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from app.bootstrap.container import ApplicationContainer
 from app.contexts.user.application.auth_errors import AuthenticationRequiredError
 from app.contexts.user.application.auth_service import AuthApplicationService
 from app.contexts.user.application.session_token import SessionCredential
 from app.interfaces.http.controllers.v1.auth.errors import auth_error_to_http
 from app.interfaces.http.dependencies.container import provide_application_container
+from app.runtime.container import ApplicationContainer
 
 _bearer = HTTPBearer(auto_error=False, scheme_name="SessionBearer", description="登录接口返回的随机会话令牌")
 

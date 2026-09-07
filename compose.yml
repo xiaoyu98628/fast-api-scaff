@@ -38,7 +38,7 @@ services:
     volumes:
       - .:/app
       - /app/.venv
-    command: ["python", "-m", "app.interfaces.worker"]
+    command: ["python", "-m", "app.worker"]
     restart: no
     networks:
       - fast-api-scaff

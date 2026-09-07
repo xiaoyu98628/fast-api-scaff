@@ -7,7 +7,7 @@
 从项目根目录执行：
 
 ```bash
-uv run python -m app.interfaces.console app info
+uv run python -m app.console app info
 uv run alembic -c database/main/alembic.ini current
 uv run python -m pytest -q tests/test_architecture.py
 git status --short
@@ -102,7 +102,7 @@ uv run uvicorn app.main:app --reload --port 8000
 
 ```bash
 uv run alembic -c database/main/alembic.ini current
-uv run python -m app.interfaces.console users list
+uv run python -m app.console users list
 ```
 
 Console 和 HTTP 都失败，通常是共享数据库/业务层；只 HTTP 失败则检查 HTTP schema、依赖或中间件；只 Console 失败则检查参数、输出和 Console 日志边界。
@@ -208,7 +208,7 @@ uv run alembic -c database/main/alembic.ini current
 stderr 中会有业务、配置或基础设施错误。单独重定向：
 
 ```bash
-uv run python -m app.interfaces.console users list 1>result.json 2>error.log
+uv run python -m app.console users list 1>result.json 2>error.log
 ```
 
 若 stdout 为空是正常失败行为，不要把 stderr 当 JSON 解析。
@@ -252,7 +252,7 @@ uv run python -m app.interfaces.console users list 1>result.json 2>error.log
 - 仅 HTTP 服务把宿主 `${APP_PORT:-8000}` 映射到容器 8000；
 - bind mount 项目源码并使用独立 `/app/.venv` volume；
 - HTTP 服务运行 Uvicorn `--reload`；
-- Worker 运行 `python -m app.interfaces.worker`，不开放端口，也不配置健康检查；
+- Worker 运行 `python -m app.worker`，不开放端口，也不配置健康检查；
 - 镜像本身不声明健康检查，Compose 只为 HTTP 服务检测 `/health`；
 - 不启动数据库、缓存或队列服务。
 

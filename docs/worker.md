@@ -5,8 +5,8 @@ Worker 与 HTTP 是独立进程，共享 Settings、ApplicationRuntime 和应用
 ## 启动
 
 ```bash
-uv run python -m app.interfaces.worker --help
-uv run python -m app.interfaces.worker --connection redis --queue reports --concurrency 4
+uv run python -m app.worker --help
+uv run python -m app.worker --connection redis --queue reports --concurrency 4
 docker compose --profile worker up --build
 ```
 
@@ -14,7 +14,7 @@ docker compose --profile worker up --build
 
 Compose 中的 `worker` 服务复用应用镜像、`.env` 和网络，不暴露端口，也不配置只适用于 HTTP 的健康检查。镜像本身不声明健康检查，Compose 只为 HTTP 服务检测 `/health`。Worker 不会自动创建队列服务；`.env` 必须配置容器可访问的 Redis、Kafka 或 RabbitMQ 地址。容器内的 `127.0.0.1` 是 Worker 容器自身。
 
-脚手架没有虚构业务任务。首次使用需在上下文/全局组合根向 `container.queues.catalog` 注册 JobDefinition，在 `app/interfaces/worker/composition.py` 显式绑定 Handler；空注册表会在连接队列前报错退出。任务定义示例见[队列](queue.md)。
+脚手架没有虚构业务任务。首次使用需在上下文/全局组合根向 `container.queues.catalog` 注册 JobDefinition，在 `app/bootstrap/worker/composition.py` 显式绑定 Handler；空注册表会在连接队列前报错退出。任务定义示例见[队列](queue.md)。
 
 ```python
 from app.infrastructure.queue.policies import JobPolicy

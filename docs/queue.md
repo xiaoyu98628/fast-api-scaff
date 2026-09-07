@@ -9,7 +9,7 @@
 使用 `ApplicationContainer.queues` 获取已绑定连接的 Dispatcher：
 
 ```python
-from app.bootstrap.container import ApplicationContainer
+from app.runtime.container import ApplicationContainer
 
 async def submit(container: ApplicationContainer, job: object):
     dispatcher = await container.queues.get("redis")
@@ -82,9 +82,9 @@ QUEUE_FAILED__DATABASE=main
 
 ```bash
 uv run alembic -c database/main/alembic.ini upgrade head
-uv run python -m app.interfaces.console queue failed --limit 20 --offset 0
-uv run python -m app.interfaces.console queue retry <failure-id>
-uv run python -m app.interfaces.console queue forget <failure-id>
+uv run python -m app.console queue failed --limit 20 --offset 0
+uv run python -m app.console queue retry <failure-id>
+uv run python -m app.console queue forget <failure-id>
 ```
 
 SQL 使用独立短事务，表名为 `queue_failed_jobs`，迁移归 main 管理。若选择其他数据库连接，必须保证该连接具有同一表结构；框架不会启动时自动建表。迁移 downgrade 会删除失败记录。

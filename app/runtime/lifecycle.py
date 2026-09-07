@@ -1,6 +1,6 @@
 from collections.abc import Callable
 
-from app.bootstrap.container import ApplicationContainer
+from app.runtime.container import ApplicationContainer
 
 type ContainerFactory = Callable[[], ApplicationContainer]
 

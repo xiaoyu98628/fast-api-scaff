@@ -87,7 +87,7 @@ Manager 进入关闭后是终态：在第一次等待前统一禁止所有连接
 基础设施用法示例：
 
 ```python
-from app.bootstrap.container import ApplicationContainer
+from app.runtime.container import ApplicationContainer
 
 
 async def inspect_connection(container: ApplicationContainer) -> None:

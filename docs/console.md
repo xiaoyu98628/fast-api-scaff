@@ -5,10 +5,10 @@ Console 是与 HTTP 并列的一次性应用宿主。它通过同一个 `Applica
 ## 1. 查看帮助和版本
 
 ```bash
-uv run python -m app.interfaces.console --help
-uv run python -m app.interfaces.console --version
-uv run python -m app.interfaces.console app --help
-uv run python -m app.interfaces.console users --help
+uv run python -m app.console --help
+uv run python -m app.console --version
+uv run python -m app.console app --help
+uv run python -m app.console users --help
 ```
 
 不带命令时显示帮助。当前命令：
@@ -22,7 +22,7 @@ uv run python -m app.interfaces.console users --help
 ## 2. 应用信息
 
 ```bash
-uv run python -m app.interfaces.console app info
+uv run python -m app.console app info
 ```
 
 输出是单行 JSON，包含：
@@ -39,7 +39,7 @@ uv run python -m app.interfaces.console app info
 创建用户：
 
 ```bash
-uv run python -m app.interfaces.console users create \
+uv run python -m app.console users create \
   --username alice \
   --email alice@example.com
 ```
@@ -49,7 +49,7 @@ uv run python -m app.interfaces.console users create \
 分页查询：
 
 ```bash
-uv run python -m app.interfaces.console users list --page 1 --limit 20
+uv run python -m app.console users list --page 1 --limit 20
 ```
 
 `page` 从 1 开始，默认值为 1；`limit` 范围为 1–1000，默认值为 20。非法范围由 Typer 作为用法错误拒绝并返回退出码 2。结果直接序列化应用 DTO，包含 `items`、`total`、`offset` 和 `limit`，其中不包含密码或密码哈希。正式后台批处理应根据任务语义使用 `batch_size` 和进度输出。用户上下文固定使用 `main` 数据库连接，运行前必须完成 Alembic 迁移。
@@ -59,13 +59,13 @@ uv run python -m app.interfaces.console users list --page 1 --limit 20
 可供脚本消费的结果写到 stdout：
 
 ```bash
-result="$(uv run python -m app.interfaces.console users list)"
+result="$(uv run python -m app.console users list)"
 ```
 
 日志与错误写到 stderr。这样管道和命令替换不会混入结构化日志：
 
 ```bash
-uv run python -m app.interfaces.console users list \
+uv run python -m app.console users list \
   1>users.json \
   2>users.log
 ```
@@ -173,4 +173,4 @@ class ExampleConsoleCommand(ConsoleCommand):
 
 ## 队列失败管理
 
-新增 `queue failed --limit 20 --offset 0`、`queue retry <failure-id>`、`queue forget <failure-id>`，均由现有 ConsoleApplication 管理生命周期。需要 SQL 失败存储；列表不显示 payload，重放保留原记录。详见[队列](queue.md)。
+新增 `queue failed --limit 20 --offset 0`、`queue retry <failure-id>`、`queue forget <failure-id>`，均由 `app.bootstrap.console.application.ConsoleHost` 管理生命周期。需要 SQL 失败存储；列表不显示 payload，重放保留原记录。详见[队列](queue.md)。

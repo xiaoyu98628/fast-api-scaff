@@ -1,6 +1,6 @@
 from fastapi import Request
 
-from app.bootstrap.container import ApplicationContainer
+from app.runtime.container import ApplicationContainer
 
 
 def provide_application_container(request: Request) -> ApplicationContainer:

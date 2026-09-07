@@ -1,5 +1,5 @@
-from app.bootstrap.container import ApplicationContainer
 from app.interfaces.worker.registry import HandlerRegistry
+from app.runtime.container import ApplicationContainer
 
 
 def build_worker_registry(container: ApplicationContainer) -> HandlerRegistry:

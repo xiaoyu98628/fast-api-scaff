@@ -2,9 +2,9 @@ from typing import Annotated
 
 from fastapi import Depends
 
-from app.bootstrap.container import ApplicationContainer
 from app.contexts.user.application.service import UserApplicationService
 from app.interfaces.http.dependencies.container import provide_application_container
+from app.runtime.container import ApplicationContainer
 
 type ApplicationContainerDependency = Annotated[ApplicationContainer, Depends(provide_application_container)]
 

@@ -124,6 +124,15 @@ def test_interfaces_do_not_depend_on_context_persistence_ports() -> None:
     assert violations == []
 
 
+def test_interfaces_do_not_depend_on_bootstrap() -> None:
+    violations = _find_forbidden_dependencies(
+        _APP_ROOT / "interfaces",
+        forbidden_prefixes=("app.bootstrap",),
+    )
+
+    assert violations == []
+
+
 def _find_dependency_violations(layer: str, *, allowed_layers: tuple[str, ...]) -> list[str]:
     violations: list[str] = []
 

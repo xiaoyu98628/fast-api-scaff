@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
-from app.bootstrap.container import ApplicationContainer
 from app.config.settings import Settings
+from app.runtime.container import ApplicationContainer
 
 
 @dataclass(frozen=True, slots=True)

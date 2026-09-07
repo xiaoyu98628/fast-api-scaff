@@ -1,6 +1,6 @@
 import typer
 
-from app.interfaces.console.application import ConsoleApplication
+from app.bootstrap.console.application import ConsoleHost
 from app.interfaces.console.command import ConsoleCommand
 from app.interfaces.console.discovery import discover_console_commands
 from app.interfaces.console.registry import ConsoleCommandRegistry
@@ -26,7 +26,7 @@ class ConflictingGroupHelpCommand(FirstCommand):
 
 
 def test_discovery_finds_concrete_commands_in_stable_order() -> None:
-    commands = discover_console_commands(ConsoleApplication())
+    commands = discover_console_commands(ConsoleHost())
 
     assert [(command.group, command.name) for command in commands] == [
         ("app", "info"),
@@ -40,10 +40,10 @@ def test_discovery_finds_concrete_commands_in_stable_order() -> None:
 
 def test_registry_rejects_duplicate_command() -> None:
     registry = ConsoleCommandRegistry(typer.Typer())
-    registry.register(FirstCommand(ConsoleApplication()))
+    registry.register(FirstCommand(ConsoleHost()))
 
     try:
-        registry.register(DuplicateCommand(ConsoleApplication()))
+        registry.register(DuplicateCommand(ConsoleHost()))
     except RuntimeError as error:
         assert str(error) == "Console 命令重复：testing first"
     else:
@@ -52,10 +52,10 @@ def test_registry_rejects_duplicate_command() -> None:
 
 def test_registry_rejects_conflicting_group_help() -> None:
     registry = ConsoleCommandRegistry(typer.Typer())
-    registry.register(FirstCommand(ConsoleApplication()))
+    registry.register(FirstCommand(ConsoleHost()))
 
     try:
-        registry.register(ConflictingGroupHelpCommand(ConsoleApplication()))
+        registry.register(ConflictingGroupHelpCommand(ConsoleHost()))
     except RuntimeError as error:
         assert str(error) == "Console 命令组 'testing' 的帮助文本不一致"
     else:

@@ -178,7 +178,7 @@ HTTP lifespan 产生：
 因此同一 `sample.env` 可以同时服务两种宿主。Console 重定向示例：
 
 ```bash
-uv run python -m app.interfaces.console users list 1>result.json 2>command.log
+uv run python -m app.console users list 1>result.json 2>command.log
 ```
 
 不要绕过项目配置给 Console 新增直接写 stdout 的日志 handler，否则会破坏这个契约。

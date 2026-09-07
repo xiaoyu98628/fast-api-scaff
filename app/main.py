@@ -1,9 +1,9 @@
-from app.bootstrap.app import create_app
+from app.bootstrap.http.application import create_app
+from app.bootstrap.http.logging import configure_http_logging
 from app.config.settings import load_settings
-from app.infrastructure.logging.configure import configure_logging
 
 settings = load_settings()
-configure_logging(settings)
+configure_http_logging(settings)
 
 app = create_app(settings)
 

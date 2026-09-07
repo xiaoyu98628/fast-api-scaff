@@ -68,8 +68,8 @@ curl 'http://127.0.0.1:8000/api/v1/users?page=1&limit=20'
 验证 Console：
 
 ```bash
-uv run python -m app.interfaces.console app info
-uv run python -m app.interfaces.console users list
+uv run python -m app.console app info
+uv run python -m app.console users list
 ```
 
 `/health` 只证明 HTTP 应用能够响应，并不主动连接数据库或远程缓存。用户接口和 `users` 命令成功，才说明 `main` 数据库配置、迁移和实际查询链路可用。

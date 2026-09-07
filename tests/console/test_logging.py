@@ -1,4 +1,4 @@
-from app.interfaces.console.logging import build_console_stream_handler
+from app.bootstrap.console.logging import build_console_stream_handler
 
 
 def test_console_stream_logging_uses_stderr() -> None:

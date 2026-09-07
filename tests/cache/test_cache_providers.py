@@ -2,8 +2,8 @@ from functools import partial
 
 import pytest
 
-from app.bootstrap.app import create_app
 from app.bootstrap.build import build_application_container
+from app.bootstrap.http.application import create_app
 from app.config.app import AppSettings
 from app.config.cache import CacheSettings
 from app.config.cors import CorsSettings

@@ -13,7 +13,7 @@ from click import unstyle
 from pydantic import ValidationError
 from typer.testing import CliRunner
 
-from app.bootstrap.container import ApplicationContainer
+from app.bootstrap.console.application import ConsoleHost
 from app.config.app import AppSettings
 from app.config.cache import CacheSettings
 from app.config.cors import CorsSettings
@@ -32,10 +32,10 @@ from app.infrastructure.database.manager import DatabaseManager
 from app.infrastructure.http.errors import HttpTransportError
 from app.infrastructure.http.manager import HttpClientManager
 from app.infrastructure.queue.manager import QueueManager
-from app.interfaces.console.application import ConsoleApplication
+from app.interfaces.console.cli import create_console, run_console
 from app.interfaces.console.exit_codes import ConsoleExitCode
-from app.interfaces.console.main import create_console, run_console
 from app.interfaces.console.presentation import ConsolePresenter
+from app.runtime.container import ApplicationContainer
 
 _USER_ID = UUID("00000000-0000-0000-0000-000000000001")
 _NOW = datetime(2026, 8, 30, 20, 0)
@@ -99,7 +99,7 @@ def build_console(service: FakeUserService) -> tuple[CliRunner, typer.Typer]:
             async_shutdown_callbacks=(databases.aclose, caches.aclose, http.aclose),
         )
 
-    console = ConsoleApplication(
+    console = ConsoleHost(
         settings_loader=lambda: settings,
         container_builder=build_container,
         logging_configurer=lambda _settings: None,
@@ -113,7 +113,7 @@ def test_app_info_displays_runtime_configuration() -> None:
     def reject_container_build(_settings: Settings) -> ApplicationContainer:
         raise AssertionError("app info 不应构建应用容器")
 
-    console = ConsoleApplication(
+    console = ConsoleHost(
         settings_loader=lambda: settings,
         container_builder=reject_container_build,
     )
@@ -286,7 +286,7 @@ def test_console_help_does_not_load_invalid_environment(name: str, value: str, c
         environment["NO_COLOR"] = "1"
     environment[name] = value
     result = subprocess.run(
-        [sys.executable, "-m", "app.interfaces.console", "--help"],
+        [sys.executable, "-m", "app.console", "--help"],
         env=environment,
         capture_output=True,
         text=True,
@@ -310,7 +310,7 @@ def test_console_configuration_failure_is_rendered_in_fresh_process(name: str, v
 from app.config.settings import Settings
 for field in Settings.model_fields.values():
     field.annotation.model_config["env_file"] = None
-from app.interfaces.console.main import main
+from app.bootstrap.console.main import main
 main()
 """
     result = subprocess.run(

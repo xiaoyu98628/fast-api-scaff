@@ -1,11 +1,15 @@
 import asyncio
+import subprocess
+import sys
 from dataclasses import replace
 
 import pytest
 from typer.testing import CliRunner
 
-from app.bootstrap.app import create_app
 from app.bootstrap.build import build_application_container
+from app.bootstrap.http.application import create_app
+from app.bootstrap.worker.application import WorkerHost
+from app.bootstrap.worker.main import app as worker_cli
 from app.config.database import DatabaseSettings
 from app.config.queue import QueueSettings
 from app.infrastructure.queue.errors import QueueError
@@ -13,8 +17,6 @@ from app.infrastructure.queue.failed.sql.model import FailedJobModel
 from app.infrastructure.queue.manager import QueueManager
 from app.interfaces.console.commands.queue import list_failures
 from app.interfaces.console.context import ConsoleContext
-from app.interfaces.worker.application import WorkerApplication
-from app.interfaces.worker.main import app as worker_cli
 from app.interfaces.worker.registry import HandlerRegistry
 from tests.console.test_application import build_settings
 from tests.queue.fakes import FakeQueueBackend, queue_backend_factory
@@ -79,7 +81,7 @@ async def test_worker_uses_own_runtime_and_drains_job() -> None:
     registry = HandlerRegistry()
     registry.register(definition(), handle)
     await (await container.queues.get()).dispatch(Job(17))
-    application = WorkerApplication(container_builder=lambda _: container, registry_builder=lambda _: registry)
+    application = WorkerHost(container_builder=lambda _: container, registry_builder=lambda _: registry)
     await asyncio.wait_for(application.serve(settings, connection="main", queue=None, concurrency=2, stop=stop), 1)
     assert values == [17]
     with pytest.raises(QueueError):
@@ -101,3 +103,15 @@ def test_worker_help_has_independent_connection_queue_and_concurrency() -> None:
     assert "connection" in result.output
     assert "queue" in result.output
     assert "concurrency" in result.output
+
+
+def test_worker_module_is_executable() -> None:
+    result = subprocess.run(
+        [sys.executable, "-m", "app.worker", "--help"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "connection" in result.stdout

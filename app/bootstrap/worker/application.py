@@ -4,17 +4,17 @@ from collections.abc import Callable
 from functools import partial
 
 from app.bootstrap.build import build_application_container
-from app.bootstrap.container import ApplicationContainer
-from app.bootstrap.runtime import ApplicationRuntime
+from app.bootstrap.worker.composition import build_worker_registry
+from app.bootstrap.worker.logging import configure_worker_logging
 from app.config.settings import Settings, load_settings
-from app.interfaces.worker.composition import build_worker_registry
 from app.interfaces.worker.executor import JobExecutor
-from app.interfaces.worker.logging import configure_worker_logging
 from app.interfaces.worker.registry import HandlerRegistry
 from app.interfaces.worker.runner import WorkerRunner
+from app.runtime.container import ApplicationContainer
+from app.runtime.lifecycle import ApplicationRuntime
 
 
-class WorkerApplication:
+class WorkerHost:
     def __init__(
         self,
         *,

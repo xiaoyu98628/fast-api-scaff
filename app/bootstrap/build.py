@@ -1,4 +1,3 @@
-from app.bootstrap.container import ApplicationContainer
 from app.config.settings import Settings
 from app.contexts.user.composition import build_user_context
 from app.infrastructure.cache.manager import CacheManager
@@ -7,6 +6,7 @@ from app.infrastructure.database.manager import DatabaseManager
 from app.infrastructure.database.providers.registry import DEFAULT_DATABASE_PROVIDERS, DatabaseProviderRegistry
 from app.infrastructure.http.manager import HttpClientManager
 from app.infrastructure.queue.manager import QueueManager
+from app.runtime.container import ApplicationContainer
 
 
 def build_application_container(

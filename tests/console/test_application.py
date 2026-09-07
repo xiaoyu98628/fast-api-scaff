@@ -1,6 +1,6 @@
 import pytest
 
-from app.bootstrap.container import ApplicationContainer
+from app.bootstrap.console.application import ConsoleHost
 from app.config.app import AppSettings
 from app.config.cache import CacheSettings
 from app.config.cors import CorsSettings
@@ -13,8 +13,8 @@ from app.infrastructure.cache.manager import CacheManager
 from app.infrastructure.database.manager import DatabaseManager
 from app.infrastructure.http.manager import HttpClientManager
 from app.infrastructure.queue.manager import QueueManager
-from app.interfaces.console.application import ConsoleApplication
 from app.interfaces.console.context import ConsoleContext
+from app.runtime.container import ApplicationContainer
 
 
 def build_settings() -> Settings:
@@ -50,7 +50,7 @@ def build_container(settings: Settings, events: list[str]) -> ApplicationContain
 def test_console_application_provides_context_and_closes_runtime() -> None:
     settings = build_settings()
     events: list[str] = []
-    console = ConsoleApplication(
+    console = ConsoleHost(
         settings_loader=lambda: settings,
         container_builder=lambda active_settings: build_container(active_settings, events),
         logging_configurer=lambda _settings: events.append("logging"),
@@ -68,7 +68,7 @@ def test_console_application_provides_context_and_closes_runtime() -> None:
 def test_console_application_closes_runtime_when_operation_fails() -> None:
     settings = build_settings()
     events: list[str] = []
-    console = ConsoleApplication(
+    console = ConsoleHost(
         settings_loader=lambda: settings,
         container_builder=lambda active_settings: build_container(active_settings, events),
         logging_configurer=lambda _settings: events.append("logging"),

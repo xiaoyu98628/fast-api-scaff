@@ -1,24 +1,24 @@
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from functools import partial
 
 from app.bootstrap.build import build_application_container
-from app.bootstrap.container import ApplicationContainer
-from app.bootstrap.runtime import ApplicationRuntime
+from app.bootstrap.console.logging import configure_console_logging
 from app.config.settings import Settings, load_settings
 from app.interfaces.console.context import ConsoleContext
-from app.interfaces.console.logging import configure_console_logging
+from app.interfaces.console.contracts import ConsoleOperation
 from app.interfaces.console.presentation import ConsolePresenter
+from app.runtime.container import ApplicationContainer
+from app.runtime.lifecycle import ApplicationRuntime
 
 type SettingsLoader = Callable[[], Settings]
 type ContainerBuilder = Callable[[Settings], ApplicationContainer]
 type LoggingConfigurer = Callable[[Settings], None]
-type ConsoleOperation[T] = Callable[[ConsoleContext], Awaitable[T]]
 
 
 @dataclass(frozen=True, slots=True)
-class ConsoleApplication:
+class ConsoleHost:
     """在一次性进程中执行依赖应用容器的操作。"""
 
     settings_loader: SettingsLoader = load_settings

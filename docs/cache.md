@@ -17,7 +17,7 @@ CACHE_CONNECTIONS__LOCAL__KEY_PREFIX=local
 通过应用公共入口使用：
 
 ```python
-from app.bootstrap.container import ApplicationContainer
+from app.runtime.container import ApplicationContainer
 from app.infrastructure.cache.codecs.json import JsonCacheCodec
 
 
@@ -176,7 +176,7 @@ greeting = None if raw is None else TextCacheCodec.decode(raw)
 检查指定连接：
 
 ```python
-from app.bootstrap.container import ApplicationContainer
+from app.runtime.container import ApplicationContainer
 
 
 async def check_cache(container: ApplicationContainer) -> bool:
