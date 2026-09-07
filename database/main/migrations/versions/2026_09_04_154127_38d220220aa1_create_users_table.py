@@ -1,7 +1,7 @@
 """create users table
 
 Revision ID: 38d220220aa1
-Revises:
+Revises: c90c9d934260
 Create Date: 2026-09-04 15:41:27.226976
 
 """
@@ -13,7 +13,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "38d220220aa1"
-down_revision: str | Sequence[str] | None = None
+down_revision: str | Sequence[str] | None = "c90c9d934260"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
