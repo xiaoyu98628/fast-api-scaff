@@ -4,19 +4,23 @@
 
 ## 1. 连接与逻辑队列
 
+`QUEUE_CONNECTIONS__<NAME>` 中的 `<NAME>` 是连接名，用来区分后端、集群、认证信息和消费组；`QUEUE_DEFAULT` 只选择默认连接。`default_queue` 和运行时的 `queue=` 才是逻辑队列名。同一连接可以承载多个逻辑队列并复用连接资源；只有后端、集群、认证信息或消费组不同时，才需要新增命名连接。
+
 使用 `ApplicationContainer.queues` 获取已绑定连接的 Dispatcher：
 
 ```python
 from app.bootstrap.container import ApplicationContainer
 
 async def submit(container: ApplicationContainer, job: object):
-    dispatcher = await container.queues.get("main")
+    dispatcher = await container.queues.get("redis")
     return await dispatcher.dispatch(job, queue="reports", correlation_id="request-123")
 ```
 
 `job` 必须先注册到该容器的 `queues.catalog`。`get()` 不启动消费者；构建容器也不连接队列服务。第一次发布时 Kafka 才建立 Producer，RabbitMQ 在第一次 `get()` 时建立发布连接，Redis 客户端在首次命令时连接。Kafka Worker 只消费时不会初始化 Producer。
 
 队列名映射为 Memory 队列名、Redis 的 `prefix + queue`、Kafka Topic、RabbitMQ 同名持久队列。RabbitMQ 使用默认 exchange 和同名 routing key；首版不提供自定义 exchange 或绑定。
+
+`sample.env` 同时声明 `redis`、`kafka`、`rabbitmq` 和 `local` 四个命名连接，并以 `redis` 为默认连接。Worker 可通过 `--connection redis --queue reports` 独立选择连接和逻辑队列。
 
 配置见[配置参考](configuration.md#队列与-worker)与 `sample.env`。未配置连接时，HTTP/Console 仍可启动；调用队列公共入口才报告未配置错误。连接字段在容器构建时严格校验。
 

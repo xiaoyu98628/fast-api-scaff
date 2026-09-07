@@ -283,12 +283,14 @@ Memory 没有网络参数。数据仅存在于当前进程内，进程重启即�
 
 ## 队列与 Worker
 
-HTTP 不启动消费者。新增配置无队列连接默认值；QUEUE_DEFAULT 留空应省略该变量，而不是写空字符串。
+HTTP 不启动消费者。新增配置无队列连接默认值；`QUEUE_DEFAULT` 留空应省略该变量，而不是写空字符串。
+
+`QUEUE_CONNECTIONS__<NAME>` 中的 `<NAME>` 是连接名，用来选择后端、集群、认证信息和消费组；`QUEUE_DEFAULT` 选择的也是连接名，不是逻辑队列名。每个连接的 `default_queue` 是未显式传入队列时使用的逻辑队列。发布时的 `queue=` 和 Worker 的 `--queue` 可以在同一连接上选择其他逻辑队列，因此一个连接不需要为每个业务队列重复配置。后端、集群、认证信息或消费组不同时，则应配置不同的命名连接。
 
 | 配置 | 默认值 | 用途 |
 | --- | --- | --- |
-| QUEUE_DEFAULT | None | 默认连接名 |
-| QUEUE_CONNECTIONS | {} | 命名连接，可用双下划线配置字段 |
+| QUEUE_DEFAULT | None | 默认连接名，不是逻辑队列名 |
+| QUEUE_CONNECTIONS | {} | 命名连接，可用双下划线配置多个连接及其字段 |
 | QUEUE_MAX_MESSAGE_BYTES | 1048576 | 完整编码信封的字节上限，最小 256 |
 | QUEUE_FAILED__DATABASE | main | 失败记录数据库连接；Worker 与 Console 使用前必须配置 |
 | QUEUE_WORKER__CONCURRENCY | 4 | 1–1024 个执行槽，Kafka 同分区仍串行 |
@@ -305,4 +307,4 @@ HTTP 不启动消费者。新增配置无队列连接默认值；QUEUE_DEFAULT �
 
 Kafka security_protocol 可选 PLAINTEXT、SSL、SASL_PLAINTEXT、SASL_SSL；SASL 模式需要 username/password，mechanism 支持 PLAIN、SCRAM-SHA-256、SCRAM-SHA-512。Kafka 保留 bootstrap_servers 列表以支持多个 Broker。Redis 和 RabbitMQ 使用独立的主机、端口及认证字段；ssl=true 时使用系统 CA。Redis command_timeout 控制普通命令与消费阻塞读取的 socket 超时，和仅约束发布调用的 publish_timeout 相互独立。
 
-完整环境示例见 `sample.env`，使用方式见[队列](queue.md)与[Worker](worker.md)。Settings 新增 queue，Worker 参数位于 `queue.worker`，ApplicationContainer 新增 queues。构建容器校验连接字段但不连接；失败存储数据库名称在 Worker 或 Console 使用前校验。资源按使用创建，关闭后不允许重新获取。
+完整环境示例见 `sample.env`，其中 `redis`、`kafka`、`rabbitmq` 和 `local` 四个命名连接可同时存在，`QUEUE_DEFAULT=redis` 仅指定默认使用 Redis 连接。使用方式见[队列](queue.md)与[Worker](worker.md)。Settings 新增 queue，Worker 参数位于 `queue.worker`，ApplicationContainer 新增 queues。构建容器校验连接字段但不连接；失败存储数据库名称在 Worker 或 Console 使用前校验。资源按使用创建，关闭后不允许重新获取。
