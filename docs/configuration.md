@@ -11,7 +11,7 @@
 | 配置组 | 前缀 | 示例 |
 | --- | --- | --- |
 | 应用 | `APP_` | `APP_NAME` |
-| 认证示例 | `AUTH_` | `AUTH_SESSION_TTL_SECONDS` |
+| 认证 | `AUTH_` | `AUTH_SESSION_TTL_SECONDS` |
 | 日志 | `LOG_` | `LOG_LEVEL` |
 | CORS | `CORS_` | `CORS_ALLOW_ORIGINS` |
 | HTTP 出站 | `HTTP_` | `HTTP_TIMEOUT__CONNECT` |
@@ -43,7 +43,7 @@ LOG_HANDLERS={"stdout":{"driver":"stream","stream":"stdout"}}
 | --- | --- | --- | --- |
 | `AUTH_SESSION_TTL_SECONDS` | `int` | `3600` | 1–2592000 秒；登录时按本地无时区 datetime 确定过期时间，修改配置只影响新会话 |
 
-会话固定存放在用户上下文的 `main` 数据库，且不使用 `CACHE_DEFAULT_TTL`。详见[认证示例](authentication.md)。
+会话固定存放在用户上下文的 `main` 数据库，且不使用 `CACHE_DEFAULT_TTL`。详见[认证](authentication.md)。
 
 | 变量 | 类型 | 默认值 | 约束与说明 |
 | --- | --- | --- | --- |

@@ -9,7 +9,7 @@
 - [快速开始](getting-started.md)：三种启动路径、迁移顺序和首次验证。
 - [配置参考](configuration.md)：环境变量、默认值、校验时机和生效方式。
 - [HTTP 接口](http.md)：路由、统一响应、错误处理、中间件和扩展方法。
-- [认证示例](authentication.md)：数据库会话、Bearer Token、登录、当前用户和退出。
+- [认证](authentication.md)：数据库会话、Bearer Token、登录、当前用户和退出。
 - [Console 命令](console.md)：命令、输出协议、退出码和新增命令方式。
 
 ## 基础设施

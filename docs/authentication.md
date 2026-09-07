@@ -1,4 +1,4 @@
-# 认证示例
+# 认证
 
 用户上下文提供简单数据库会话，用于演示认证用例如何贯穿 Domain、Application、Infrastructure 和 HTTP。没有角色、权限或版本控制，用户表保持原结构。现有用户 CRUD 和 Console 命令保持公开示例行为，`GET /api/v1/auth/me` 是需要登录的示例接口。
 

@@ -116,7 +116,7 @@ Python 无法提供绝对私有性；下划线是协作契约。真正的保证�
 
 Application 不知道 FastAPI、Typer、SQLAlchemy、pwdlib 或具体数据库。时钟和 `PasswordHasher` 窄端口由组合根注入，测试可提供固定时间和确定性的假哈希实现。端口提供 `async def hash(self, password: Password) -> PasswordHash` 和 `async def verify(self, password: str, password_hash: PasswordHash) -> bool`。基础设施适配器在线程中执行 Argon2 哈希和验证，两类操作共享同一个默认容量为 2 的限制器；用户服务和认证服务复用该实例。取消调用时会等待本次工作结束再传播取消，避免提前释放仍在计算的额度。聚合不会接触明文密码。
 
-会话令牌通过应用层 `SessionTokenCodec` 窄协议注入，基础设施使用 `secrets.token_urlsafe(32)` 和 SHA-256。用户不存在时立即抛出 `LoginUserNotFoundError`，HTTP 映射为 404 和“用户不存在”，不执行密码验证；用户存在时，慢密码验证在数据库事务外执行，签发前重新读取密码哈希与账户状态。没有版本字段或锁定串行化，重新读取不是并发改密撤销保证；已有会话也不会因密码重置失效。完整契约见[认证示例](authentication.md)。
+会话令牌通过应用层 `SessionTokenCodec` 窄协议注入，基础设施使用 `secrets.token_urlsafe(32)` 和 SHA-256。用户不存在时立即抛出 `LoginUserNotFoundError`，HTTP 映射为 404 和“用户不存在”，不执行密码验证；用户存在时，慢密码验证在数据库事务外执行，签发前重新读取密码哈希与账户状态。没有版本字段或锁定串行化，重新读取不是并发改密撤销保证；已有会话也不会因密码重置失效。完整契约见[认证](authentication.md)。
 
 Application Service 可以做跨聚合的流程编排和权限决策，但不应承载实体自身的核心规则。反过来，Domain 也不应执行数据库/缓存/网络 I/O。
 
