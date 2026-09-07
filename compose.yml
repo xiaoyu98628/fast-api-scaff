@@ -18,6 +18,27 @@ services:
     networks:
       - fast-api-scaff
 
+  worker:
+    profiles:
+      - worker
+    build:
+      context: ./
+      dockerfile: Dockerfile
+    env_file:
+      - ./.env
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+    container_name: ${APP_NAME}-worker
+    volumes:
+      - .:/app
+      - /app/.venv
+    command: ["python", "-m", "app.interfaces.worker"]
+    restart: no
+    healthcheck:
+      disable: true
+    networks:
+      - fast-api-scaff
+
 networks:
   fast-api-scaff:
     name: fast-api-scaff

@@ -12,8 +12,8 @@
 - Repository、Mapper、Unit of Work 与 Alembic migration；
 - Redis、Memcached、Memory 字节级 KV 缓存；
 - 普通与流式 HTTP 出站请求、独立连接池、阶段超时、池压力诊断和结构化日志；
-- Memory（asyncio.Queue）、Redis Streams、Kafka、RabbitMQ 队列适配器和独立 Worker；
-- Job 注册与分发、投递内重试、SQL/Memory 失败存储及 Console 重放；
+- Redis Streams、Kafka、RabbitMQ 队列适配器和独立 Worker；
+- Job 注册与分发、投递内重试、SQL 失败存储及 Console 重放；
 - JSON/Text 结构化日志、request ID、访问日志和数据库查询日志；
 - 架构依赖测试、pytest、Ruff、ty 与 GitHub Actions 质量检查；
 - CI 使用临时 MySQL/PostgreSQL 服务验证 Alembic upgrade、downgrade 和再次 upgrade。
@@ -101,9 +101,12 @@ curl -X POST http://127.0.0.1:8000/api/v1/auth/login \
 
 ```bash
 docker compose up --build
+docker compose --profile worker up --build
 ```
 
-当前 `compose.yml` 只启动应用，不提供 MySQL、PostgreSQL、Redis 或 Memcached。容器内 `127.0.0.1` 指向容器自身；请使用 SQLite + Memory，或配置容器可访问的外部服务地址。Compose 使用 Uvicorn reload，仅适合本地开发。
+默认命令只启动 HTTP 应用；带 `worker` profile 的命令同时启动独立消费容器。Compose 不提供 MySQL、PostgreSQL、Redis、Kafka、RabbitMQ 或 Memcached。容器内 `127.0.0.1` 指向容器自身；应用可以使用 SQLite 与 Memory 缓存，队列 Worker 必须配置容器可访问的 Redis、Kafka 或 RabbitMQ 地址。Compose 使用 Uvicorn reload，仅适合本地开发。
+
+Worker 复用应用镜像、`.env` 和网络，不暴露端口，并禁用镜像中的 HTTP 健康检查。脚手架默认没有业务 Handler，注册 JobDefinition 并在 Worker composition 绑定 Handler 后才能持续消费。
 
 生产镜像以 UID/GID 1000 的非 root 用户运行。镜像中的应用代码和虚拟环境由 root 持有，运行用户只对 `storage/data`、`storage/logs` 和自己的 home 目录拥有写权限。Compose 会把项目目录挂载到 `/app`；若使用 SQLite 或其他本地文件存储，请确保宿主机对应目录允许该用户写入。需要适配其他运行平台时，可通过 `APP_UID`、`APP_GID` 构建参数覆盖镜像用户。
 
@@ -145,9 +148,10 @@ GitHub Actions 还会在 MySQL 和 PostgreSQL 上执行迁移往返验证。HTTP
 
 ```bash
 uv run python -m app.interfaces.worker --help
-uv run python -m app.interfaces.worker --connection main --queue reports --concurrency 4
+uv run python -m app.interfaces.worker --connection redis --queue reports --concurrency 4
+docker compose --profile worker up --build
 ```
 
-先按[队列文档](docs/queue.md)配置连接、注册 JobDefinition，再在 Worker composition 中绑定 Handler；没有业务 Handler 时启动会明确报错。HTTP 不启动消费者。Memory 仅用于同进程，独立 HTTP 与 Worker 需外部后端。
+先按[队列文档](docs/queue.md)配置连接、注册 JobDefinition，再在 Worker composition 中绑定 Handler；没有业务 Handler 时启动会明确报错。HTTP 与 Console 只负责发布，独立 Worker 通过 Redis、Kafka 或 RabbitMQ 消费。
 
 失败任务固定使用 SQL 存储，需配置 QUEUE_FAILED__DATABASE 并执行对应 Alembic migration。外部适配器目前由模拟客户端测试覆盖，未进行真实 Redis/Kafka/RabbitMQ 服务集成验证。重试是投递内重试，不包含持久延迟调度或 exactly-once 保证。

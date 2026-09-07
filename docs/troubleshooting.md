@@ -245,15 +245,17 @@ uv run python -m app.interfaces.console users list 1>result.json 2>error.log
 
 ## 11. Docker 问题
 
-当前 `compose.yml` 只启动应用服务。它：
+当前 `compose.yml` 默认只启动 HTTP 服务；启用 `worker` profile 后还会启动独立消费服务。它们：
 
 - 从 `.env` 读取配置；
-- 把宿主 `${APP_PORT:-8000}` 映射到容器 8000；
+- 复用应用镜像、源码挂载和 Compose 网络；
+- 仅 HTTP 服务把宿主 `${APP_PORT:-8000}` 映射到容器 8000；
 - bind mount 项目源码并使用独立 `/app/.venv` volume；
-- 运行 Uvicorn `--reload`；
-- 不启动数据库或缓存。
+- HTTP 服务运行 Uvicorn `--reload`；
+- Worker 运行 `python -m app.interfaces.worker`，不开放端口，并禁用 HTTP 健康检查；
+- 不启动数据库、缓存或队列服务。
 
-若使用 SQLite，相对路径位于 bind mount 的项目 `storage/` 下；检查目录写权限。若使用外部服务，容器内 `127.0.0.1` 不是宿主。若容器不断重启，先用 Compose 日志查看配置/导入/端口错误；当前 `restart: no`，正常情况下不会自动重启。
+若使用 SQLite，相对路径位于 bind mount 的项目 `storage/` 下；检查目录写权限。若使用外部服务，容器内 `127.0.0.1` 不是宿主。Worker 需要容器可访问的 Redis、Kafka 或 RabbitMQ，且必须先注册业务 Handler；空注册表会在连接队列前退出。若容器退出，先用 Compose 日志查看配置、Handler 注册和连接错误；当前 `restart: no`，不会自动重启。
 
 Dockerfile 的生产默认命令不带 reload，但 Compose 覆盖了它。不要把当前 Compose 直接当生产编排。
 
