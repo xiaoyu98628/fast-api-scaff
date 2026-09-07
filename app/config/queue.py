@@ -12,11 +12,6 @@ class ConnectionSettings(BaseModel):
     publish_timeout: float = Field(default=10.0, gt=0)
 
 
-class MemoryQueueSettings(ConnectionSettings):
-    driver: Literal["memory"]
-    capacity: int = Field(default=1000, ge=1)
-
-
 class RedisQueueSettings(ConnectionSettings):
     driver: Literal["redis"]
     host: str = Field(min_length=1)
@@ -61,7 +56,7 @@ class RabbitMQQueueSettings(ConnectionSettings):
     connect_timeout: float = Field(default=5.0, gt=0)
 
 
-type QueueConnection = MemoryQueueSettings | RedisQueueSettings | KafkaQueueSettings | RabbitMQQueueSettings
+type QueueConnection = RedisQueueSettings | KafkaQueueSettings | RabbitMQQueueSettings
 _CONNECTION_ADAPTER = TypeAdapter(Annotated[QueueConnection, Field(discriminator="driver")])
 
 

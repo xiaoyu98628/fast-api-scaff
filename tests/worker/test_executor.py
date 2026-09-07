@@ -2,13 +2,12 @@ import asyncio
 
 import pytest
 
-from app.infrastructure.queue.drivers.memory import MemoryBackend
 from app.infrastructure.queue.errors import RetryableJobError
 from app.infrastructure.queue.policies import JobPolicy
 from app.interfaces.worker.executor import JobExecutor
 from app.interfaces.worker.registry import HandlerRegistry
 from app.interfaces.worker.runner import WorkerRunner
-from tests.queue.fakes import RecordingFailedJobStore
+from tests.queue.fakes import FakeDelivery, FakeQueueBackend, RecordingFailedJobStore
 from tests.queue.test_core import Job, definition, manager
 
 
@@ -58,8 +57,9 @@ async def test_failed_record_recovery_does_not_execute_again_and_replay_retains_
 
         with pytest.raises(OSError):
             await executor.execute(BrokenAck())
-    async with queues.consume() as consumer:
-        await executor.execute(await consumer.receive())
+    redelivery = FakeDelivery(original.payload)
+    await executor.execute(redelivery)
+    assert redelivery.settled
     assert calls == [9]
     records = await queues.failed_jobs.list()
     assert len(records) == 1
@@ -79,7 +79,7 @@ async def test_failed_record_recovery_does_not_execute_again_and_replay_retains_
 async def test_malformed_envelope_and_unknown_job_are_recorded() -> None:
     queues = manager()
     registry = HandlerRegistry()
-    backend = MemoryBackend(2)
+    backend = FakeQueueBackend()
     await backend.publish("default", b"broken-json")
     async with queues.consume() as unused:
         del unused
@@ -109,10 +109,8 @@ async def test_failure_store_error_leaves_delivery_unacknowledged() -> None:
         executor = JobExecutor("main", "default", HandlerRegistry(), BrokenStore(), queues.codec)
         with pytest.raises(OSError):
             await executor.execute(delivery)
-    async with queues.consume() as consumer:
-        restored = await consumer.receive()
-        assert restored.identity == delivery.identity
-        await restored.acknowledge()
+    assert isinstance(delivery, FakeDelivery)
+    assert not delivery.settled
     await queues.aclose()
 
 

@@ -1,4 +1,3 @@
-import asyncio
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from uuid import uuid4
@@ -12,10 +11,9 @@ from app.infrastructure.database.manager import DatabaseManager
 from app.infrastructure.queue.catalog import JobCatalog, JobDefinition
 from app.infrastructure.queue.codecs.envelope_json import EnvelopeJsonCodec
 from app.infrastructure.queue.contracts.message import MessageEnvelope
-from app.infrastructure.queue.drivers.memory import MemoryBackend
 from app.infrastructure.queue.errors import InvalidMessageError, QueueConfigurationError, QueueError
 from app.infrastructure.queue.manager import QueueManager
-from tests.queue.fakes import RecordingFailedJobStore
+from tests.queue.fakes import FakeQueueBackend, RecordingFailedJobStore, queue_backend_factory
 
 
 @dataclass(frozen=True)
@@ -40,8 +38,14 @@ def message() -> MessageEnvelope:
 
 
 def manager() -> QueueManager:
-    settings = QueueSettings(_env_file=None, default="main", connections={"main": {"driver": "memory", "capacity": 2}})
-    queues = QueueManager(settings, DatabaseManager(DatabaseSettings(_env_file=None)), failed_jobs=RecordingFailedJobStore())
+    settings = QueueSettings(_env_file=None, default="main", connections={"main": {"driver": "redis", "host": "localhost"}})
+    backend = FakeQueueBackend()
+    queues = QueueManager(
+        settings,
+        DatabaseManager(DatabaseSettings(_env_file=None)),
+        failed_jobs=RecordingFailedJobStore(),
+        factory=queue_backend_factory(backend),
+    )
     queues.catalog.register(definition())
     return queues
 
@@ -99,46 +103,6 @@ def test_catalog_rejects_duplicates_and_unknown_type() -> None:
 
 
 @pytest.mark.asyncio
-async def test_capacity_includes_inflight_and_recovery_never_blocks() -> None:
-    backend = MemoryBackend(1)
-    await backend.publish("jobs", b"first")
-    consumer = await backend.consumer("jobs", 1)
-    delivery = await consumer.receive()
-    blocked = asyncio.create_task(backend.publish("jobs", b"second"))
-    await asyncio.sleep(0)
-    assert not blocked.done()
-    await asyncio.wait_for(consumer.aclose(), 0.2)
-    resumed = await backend.consumer("jobs", 1)
-    restored = await resumed.receive()
-    assert restored.identity == delivery.identity
-    assert restored.payload == b"first"
-    with pytest.raises(QueueError):
-        await delivery.acknowledge()
-    await restored.acknowledge()
-    await asyncio.wait_for(blocked, 0.2)
-    next_delivery = await resumed.receive()
-    assert next_delivery.payload == b"second"
-    await next_delivery.acknowledge()
-    with pytest.raises(QueueError):
-        await next_delivery.acknowledge()
-    await resumed.aclose()
-    await backend.aclose()
-
-
-@pytest.mark.asyncio
-async def test_shutdown_wakes_blocked_publish_and_receive() -> None:
-    backend = MemoryBackend(1)
-    await backend.publish("full", b"one")
-    consumer = await backend.consumer("empty", 1)
-    publish = asyncio.create_task(backend.publish("full", b"two"))
-    receive = asyncio.create_task(consumer.receive())
-    await asyncio.sleep(0)
-    await backend.aclose()
-    results = await asyncio.gather(publish, receive, return_exceptions=True)
-    assert all(isinstance(item, QueueError) for item in results)
-
-
-@pytest.mark.asyncio
 async def test_manager_is_lazy_and_dispatches_typed_job() -> None:
     queues = manager()
     assert not queues.is_initialized()
@@ -160,8 +124,7 @@ async def test_manager_is_lazy_and_dispatches_typed_job() -> None:
 @pytest.mark.parametrize(
     "raw",
     [
-        {"driver": "memory", "host": "localhost"},
-        {"driver": "memory", "capacity": 0},
+        {"driver": "memory"},
         {"driver": "rabbitmq"},
         {"driver": "rabbitmq", "url": "amqp://guest:guest@localhost/"},
         {"driver": "kafka", "bootstrap_servers": []},

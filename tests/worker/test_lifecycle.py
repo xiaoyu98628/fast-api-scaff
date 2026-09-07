@@ -1,4 +1,5 @@
 import asyncio
+from dataclasses import replace
 
 import pytest
 from typer.testing import CliRunner
@@ -9,19 +10,27 @@ from app.config.database import DatabaseSettings
 from app.config.queue import QueueSettings
 from app.infrastructure.queue.errors import QueueError
 from app.infrastructure.queue.failed.sql.model import FailedJobModel
+from app.infrastructure.queue.manager import QueueManager
 from app.interfaces.console.commands.queue import list_failures
 from app.interfaces.console.context import ConsoleContext
 from app.interfaces.worker.application import WorkerApplication
 from app.interfaces.worker.main import app as worker_cli
 from app.interfaces.worker.registry import HandlerRegistry
 from tests.console.test_application import build_settings
+from tests.queue.fakes import FakeQueueBackend, queue_backend_factory
 from tests.queue.test_core import Job, definition
 
 
 @pytest.mark.asyncio
 async def test_http_lifespan_does_not_initialize_queue() -> None:
     settings = build_settings().model_copy(
-        update={"queue": QueueSettings(_env_file=None, default="main", connections={"main": {"driver": "memory"}})}
+        update={
+            "queue": QueueSettings(
+                _env_file=None,
+                default="main",
+                connections={"main": {"driver": "redis", "host": "localhost"}},
+            )
+        }
     )
     container = build_application_container(settings)
     app = create_app(settings, container_builder=lambda _: container)
@@ -38,10 +47,24 @@ async def test_worker_uses_own_runtime_and_drains_job() -> None:
                 default="main",
                 connections={"main": {"driver": "sqlite", "database": ":memory:"}},
             ),
-            "queue": QueueSettings(_env_file=None, default="main", connections={"main": {"driver": "memory"}}),
+            "queue": QueueSettings(
+                _env_file=None,
+                default="main",
+                connections={"main": {"driver": "redis", "host": "localhost"}},
+            ),
         }
     )
-    container = build_application_container(settings)
+    base_container = build_application_container(settings)
+    queues = QueueManager(
+        settings.queue,
+        base_container.databases,
+        factory=queue_backend_factory(FakeQueueBackend()),
+    )
+    container = replace(
+        base_container,
+        queues=queues,
+        async_shutdown_callbacks=(*base_container.async_shutdown_callbacks[:-1], queues.aclose),
+    )
     engine = await container.databases.get_engine("main")
     async with engine.begin() as connection:
         await connection.run_sync(FailedJobModel.metadata.create_all)
