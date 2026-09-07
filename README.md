@@ -93,7 +93,7 @@ curl -X POST http://127.0.0.1:8000/api/v1/auth/login \
 
 登录用户不存在时直接返回 404 和“用户不存在”，不执行密码验证；密码错误或账户禁用返回 401。
 
-认证使用独立的 `user_sessions` 表，签发时间和过期时间采用与用户资料一致的本地无时区 `datetime`，用户表不增加角色或版本字段。密码重置保留已有会话；禁用期间会话不可用，再启用后未过期会话仍可使用。详细契约见[认证示例](docs/authentication.md)。
+认证使用独立的 `user_sessions` 表，签发时间和过期时间采用与用户资料一致的本地无时区 `datetime`，用户表不增加角色或版本字段。密码重置保留已有会话；禁用期间会话不可用，再启用后未过期会话仍可使用。详细契约见[认证](docs/authentication.md)。
 
 ## Docker
 
@@ -111,7 +111,7 @@ docker compose up --build
 - [快速开始](docs/getting-started.md)
 - [配置参考](docs/configuration.md)
 - [HTTP 接口](docs/http.md)
-- [认证示例](docs/authentication.md)
+- [认证](docs/authentication.md)
 - [Console 命令](docs/console.md)
 - [数据库](docs/database.md)
 - [缓存](docs/cache.md)

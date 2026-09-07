@@ -35,7 +35,7 @@ uv run uvicorn app.main:app --reload
 
 创建用户和重置密码时必须提供密码，应用只持久化密码哈希，任何响应都不返回密码或哈希。用户示例包含简单会话登录，但不包含用户自行修改密码、角色、权限、软删除或审计历史。`PUT /users/{user_id}` 是可编辑用户基本信息的完整更新，必须提供 `username` 和 `email`，不是部分更新，也不接受密码或状态。状态修改与密码重置是独立用例。所有用户 CRUD 仍为公开示例，只有 `/auth/me` 演示登录校验；不能将密码重置示例视为受保护的管理员入口。
 
-登录请求使用 JSON `username/password`，成功返回统一响应中的 `data.access_token`、`data.token_type` 和 `data.expires_in`。登录用户不存在时返回 404 和“用户不存在”，不执行密码验证；用户名格式无效、密码错误、账户禁用或会话不可用返回 401，并带 `WWW-Authenticate: Bearer`。`/auth/me` 与 `/auth/logout` 从 `Authorization: Bearer <token>` 提取凭据，不读取 Cookie 或查询参数中的 Token。登录和当前用户成功响应、登录 404 和认证 401 都带 `Cache-Control: no-store`。退出成功返回空的 204；格式合法但不存在或已过期的 Token 也可幂等退出。详见[认证示例](authentication.md)。
+登录请求使用 JSON `username/password`，成功返回统一响应中的 `data.access_token`、`data.token_type` 和 `data.expires_in`。登录用户不存在时返回 404 和“用户不存在”，不执行密码验证；用户名格式无效、密码错误、账户禁用或会话不可用返回 401，并带 `WWW-Authenticate: Bearer`。`/auth/me` 与 `/auth/logout` 从 `Authorization: Bearer <token>` 提取凭据，不读取 Cookie 或查询参数中的 Token。登录和当前用户成功响应、登录 404 和认证 401 都带 `Cache-Control: no-store`。退出成功返回空的 204；格式合法但不存在或已过期的 Token 也可幂等退出。详见[认证](authentication.md)。
 
 ## 3. 完整调用示例
 
@@ -190,7 +190,7 @@ CORS_MAX_AGE=600
 
 应用中间件从外到内依次为 CORS、Request ID、访问日志（启用时）、异常捕获、查询解码。非法 Request ID 的 400 和业务链路的错误响应也会经过 CORS；只有允许的来源才能读取跨域响应。带有 `Origin` 和 `Access-Control-Request-Method` 的 OPTIONS 预检由 CORS 直接处理，不进入请求上下文或应用访问日志，也不生成 Request ID。
 
-允许凭据时来源不能包含 `*`。即使 CORS 配置正确，非浏览器调用方仍能访问接口。当前认证示例只保护 `/auth/me`，没有角色或权限体系，CORS 不能代替访问控制。
+允许凭据时来源不能包含 `*`。即使 CORS 配置正确，非浏览器调用方仍能访问接口。当前认证只保护 `/auth/me`，没有角色或权限体系，CORS 不能代替访问控制。
 
 ## 9. Controller 的职责边界
 
