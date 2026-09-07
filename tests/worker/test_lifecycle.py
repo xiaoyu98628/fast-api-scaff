@@ -9,7 +9,6 @@ from typer.testing import CliRunner
 from app.bootstrap.build import build_application_container
 from app.bootstrap.http.application import create_app
 from app.bootstrap.worker.application import WorkerHost
-from app.bootstrap.worker.main import app as worker_cli
 from app.config.database import DatabaseSettings
 from app.config.queue import QueueSettings
 from app.infrastructure.queue.errors import QueueError
@@ -18,6 +17,7 @@ from app.infrastructure.queue.manager import QueueManager
 from app.interfaces.console.commands.queue import list_failures
 from app.interfaces.console.context import ConsoleContext
 from app.interfaces.worker.registry import HandlerRegistry
+from app.worker import app as worker_cli
 from tests.console.test_application import build_settings
 from tests.queue.fakes import FakeQueueBackend, queue_backend_factory
 from tests.queue.test_core import Job, definition

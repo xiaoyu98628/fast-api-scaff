@@ -310,7 +310,7 @@ def test_console_configuration_failure_is_rendered_in_fresh_process(name: str, v
 from app.config.settings import Settings
 for field in Settings.model_fields.values():
     field.annotation.model_config["env_file"] = None
-from app.bootstrap.console.main import main
+from app.console import main
 main()
 """
     result = subprocess.run(
