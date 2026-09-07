@@ -28,8 +28,7 @@ def create_console(console: ConsoleExecutor) -> typer.Typer:
         if not value:
             return
 
-        settings = console.settings_loader()
-        console.presenter.text(f"{settings.app.name} {settings.app.version}")
+        console.presenter.text(f"{console.settings.app.name} {console.settings.app.version}")
         raise typer.Exit(code=ConsoleExitCode.SUCCESS)
 
     @application.callback()

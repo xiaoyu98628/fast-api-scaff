@@ -89,8 +89,11 @@ uv run python -m app.console users list \
 依赖容器的命令按以下顺序执行：
 
 ```text
-读取并缓存 Settings
+导入 app.console
+  → 读取并缓存 Settings
   → 配置 Console 日志
+  → 创建 ConsoleHost 和 Typer 应用
+  → 解析并执行命令
   → 构建 ApplicationRuntime
   → 构建并启动 ApplicationContainer
   → 执行异步 operation
@@ -100,7 +103,7 @@ uv run python -m app.console users list \
 
 命令失败时，上下文管理器仍会尝试关闭容器。关闭阶段多个资源同时失败时可能形成 `ExceptionGroup`，不应为了隐藏关闭错误而直接终止进程。
 
-`app info` 是特例：它只需要配置快照，所以直接调用 settings loader，避免无意义地构建缓存、数据库和用户上下文。
+配置加载和日志初始化由顶层入口负责，因此包括 `--help` 在内的所有调用都会先校验完整配置。`app info` 是特例：它直接读取入口注入的配置快照，避免无意义地构建缓存、数据库和用户上下文。
 
 ## 7. 新增命令
 

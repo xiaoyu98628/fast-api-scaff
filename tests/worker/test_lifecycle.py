@@ -81,8 +81,8 @@ async def test_worker_uses_own_runtime_and_drains_job() -> None:
     registry = HandlerRegistry()
     registry.register(definition(), handle)
     await (await container.queues.get()).dispatch(Job(17))
-    application = WorkerHost(container_builder=lambda _: container, registry_builder=lambda _: registry)
-    await asyncio.wait_for(application.serve(settings, connection="main", queue=None, concurrency=2, stop=stop), 1)
+    application = WorkerHost(settings, container_builder=lambda _: container, registry_builder=lambda _: registry)
+    await asyncio.wait_for(application.serve(connection="main", queue=None, concurrency=2, stop=stop), 1)
     assert values == [17]
     with pytest.raises(QueueError):
         await container.queues.get()

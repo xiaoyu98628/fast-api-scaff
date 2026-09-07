@@ -1,7 +1,12 @@
 from app.bootstrap.worker.application import WorkerHost
+from app.bootstrap.worker.logging import configure_worker_logging
+from app.config.settings import load_settings
 from app.interfaces.worker.cli import create_worker, run_worker
 
-_worker = WorkerHost()
+settings = load_settings()
+configure_worker_logging(settings)
+
+_worker = WorkerHost(settings)
 app = create_worker(_worker.run)
 
 

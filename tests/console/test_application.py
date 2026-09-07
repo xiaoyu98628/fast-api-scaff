@@ -51,9 +51,8 @@ def test_console_application_provides_context_and_closes_runtime() -> None:
     settings = build_settings()
     events: list[str] = []
     console = ConsoleHost(
-        settings_loader=lambda: settings,
+        settings,
         container_builder=lambda active_settings: build_container(active_settings, events),
-        logging_configurer=lambda _settings: events.append("logging"),
     )
 
     async def operation(context: ConsoleContext) -> str:
@@ -62,16 +61,15 @@ def test_console_application_provides_context_and_closes_runtime() -> None:
         return context.settings.app.name
 
     assert console.run(operation) == "console-test"
-    assert events == ["logging", "start", "operation", "stop"]
+    assert events == ["start", "operation", "stop"]
 
 
 def test_console_application_closes_runtime_when_operation_fails() -> None:
     settings = build_settings()
     events: list[str] = []
     console = ConsoleHost(
-        settings_loader=lambda: settings,
+        settings,
         container_builder=lambda active_settings: build_container(active_settings, events),
-        logging_configurer=lambda _settings: events.append("logging"),
     )
 
     async def fail(_context: ConsoleContext) -> None:
@@ -81,4 +79,4 @@ def test_console_application_closes_runtime_when_operation_fails() -> None:
     with pytest.raises(RuntimeError, match="operation failed"):
         console.run(fail)
 
-    assert events == ["logging", "start", "operation", "stop"]
+    assert events == ["start", "operation", "stop"]

@@ -5,13 +5,12 @@ from app.config.settings import Settings
 from app.interfaces.console.context import ConsoleContext
 from app.interfaces.console.presentation import ConsolePresenter
 
-type SettingsLoader = Callable[[], Settings]
 type ConsoleOperation[T] = Callable[[ConsoleContext], Awaitable[T]]
 
 
 class ConsoleExecutor(Protocol):
     @property
-    def settings_loader(self) -> SettingsLoader: ...
+    def settings(self) -> Settings: ...
 
     @property
     def presenter(self) -> ConsolePresenter: ...

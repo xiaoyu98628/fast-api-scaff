@@ -100,9 +100,8 @@ def build_console(service: FakeUserService) -> tuple[CliRunner, typer.Typer]:
         )
 
     console = ConsoleHost(
-        settings_loader=lambda: settings,
+        settings,
         container_builder=build_container,
-        logging_configurer=lambda _settings: None,
     )
     return CliRunner(), create_console(console)
 
@@ -114,7 +113,7 @@ def test_app_info_displays_runtime_configuration() -> None:
         raise AssertionError("app info 不应构建应用容器")
 
     console = ConsoleHost(
-        settings_loader=lambda: settings,
+        settings,
         container_builder=reject_container_build,
     )
     runner = CliRunner()
@@ -276,7 +275,7 @@ def test_run_console_preserves_unexpected_programming_error() -> None:
 
 @pytest.mark.parametrize(("name", "value"), [("HTTP_POOL__MAX_CONNECTIONS", "0"), ("LOG_LEVEL", "invalid")])
 @pytest.mark.parametrize("color", [False, True], ids=["plain", "colored"])
-def test_console_help_does_not_load_invalid_environment(name: str, value: str, color: bool) -> None:
+def test_console_help_loads_and_validates_environment(name: str, value: str, color: bool) -> None:
     color_variables = {"NO_COLOR", "FORCE_COLOR", "PY_COLORS", "GITHUB_ACTIONS", "_TYPER_FORCE_DISABLE_TERMINAL"}
     environment = {key: item for key, item in os.environ.items() if key not in color_variables}
     environment["TERM"] = "xterm-256color" if color else "dumb"
@@ -292,17 +291,15 @@ def test_console_help_does_not_load_invalid_environment(name: str, value: str, c
         text=True,
         timeout=10,
     )
-    assert result.returncode == 0, result.stderr
-    help_output = unstyle(result.stdout)
-    assert (result.stdout != help_output) is color
-    assert "--version" in help_output
-    assert "Traceback" not in result.stderr
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert "ValidationError" in result.stderr
 
 
 @pytest.mark.parametrize(
     ("name", "value", "location"), [("HTTP_POOL__MAX_CONNECTIONS", "0", "pool.max_connections"), ("LOG_LEVEL", "invalid", "level")]
 )
-def test_console_configuration_failure_is_rendered_in_fresh_process(name: str, value: str, location: str) -> None:
+def test_console_configuration_failure_matches_eager_host_startup(name: str, value: str, location: str) -> None:
     prefixes = ("APP_", "DB_", "CACHE_", "HTTP_", "CORS_", "LOG_")
     environment = {key: item for key, item in os.environ.items() if not key.startswith(prefixes)}
     environment[name] = value
@@ -322,8 +319,8 @@ main()
     )
     assert result.returncode == 1
     assert result.stdout == ""
-    assert f"Error: 配置 {location}：" in result.stderr
-    assert "Traceback" not in result.stderr
+    assert location in result.stderr
+    assert "ValidationError" in result.stderr
 
 
 def test_settings_accept_explicit_overrides_in_invalid_environment(monkeypatch: pytest.MonkeyPatch) -> None:
