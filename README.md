@@ -155,3 +155,7 @@ docker compose --profile worker up --build
 先按[队列文档](docs/queue.md)配置连接、注册 JobDefinition，再在 Worker composition 中绑定 Handler；没有业务 Handler 时启动会明确报错。HTTP 与 Console 只负责发布，独立 Worker 通过 Redis、Kafka 或 RabbitMQ 消费。
 
 失败任务固定使用 SQL 存储，需配置 QUEUE_FAILED__DATABASE 并执行对应 Alembic migration。外部适配器目前由模拟客户端测试覆盖，未进行真实 Redis/Kafka/RabbitMQ 服务集成验证。重试是投递内重试，不包含持久延迟调度或 exactly-once 保证。
+
+## 许可证
+
+本项目基于 [MIT License](LICENSE) 开源。
