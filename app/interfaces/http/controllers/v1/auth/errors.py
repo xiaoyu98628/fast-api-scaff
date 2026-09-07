@@ -15,7 +15,7 @@ def auth_error_to_http(error: AuthApplicationError) -> HttpError:
     if isinstance(error, InvalidCredentialsError):
         message = "用户名或密码错误"
     elif isinstance(error, AuthenticationRequiredError):
-        message = "请先登录或重新登录"
+        message = None
     else:
         raise TypeError(f"不支持的认证边界异常: {type(error).__name__}")
 

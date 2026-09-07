@@ -11,6 +11,7 @@ from app.config.cache import CacheSettings
 from app.config.cors import CorsSettings
 from app.config.database import DatabaseSettings
 from app.config.settings import Settings
+from app.interfaces.http.shared.response.codes.error_code import ErrorCode
 from database.main.model_registry import load_main_database_metadata
 
 
@@ -60,7 +61,9 @@ async def test_http_login_me_logout_and_public_crud(client: AsyncClient) -> None
         logout = await client.post("/api/v1/auth/logout", headers=headers)
         assert logout.status_code == 204
         assert logout.content == b""
-    assert (await client.get("/api/v1/auth/me", headers=headers)).status_code == 401
+    logged_out = await client.get("/api/v1/auth/me", headers=headers)
+    assert logged_out.status_code == 401
+    assert logged_out.json()["message"] == ErrorCode.UNAUTHORIZED.message
     assert (await client.get("/api/v1/users")).status_code == 200
 
 
@@ -69,6 +72,8 @@ async def test_http_login_me_logout_and_public_crud(client: AsyncClient) -> None
 async def test_missing_malformed_and_unknown_credentials_use_unified_401(client: AsyncClient, authorization: str | None) -> None:
     response = await client.get("/api/v1/auth/me", headers={"Authorization": authorization} if authorization is not None else {})
     assert response.status_code == 401
+    assert response.json()["code"] == "4010010101"
+    assert response.json()["message"] == ErrorCode.UNAUTHORIZED.message
     assert response.headers["WWW-Authenticate"] == "Bearer"
     assert response.headers["Cache-Control"] == "no-store"
     assert response.json()["success"] is False
