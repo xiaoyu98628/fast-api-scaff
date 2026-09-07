@@ -20,6 +20,7 @@ from app.config.cors import CorsSettings
 from app.config.database import DatabaseSettings
 from app.config.http import HttpSettings
 from app.config.logging import LoggingSettings
+from app.config.queue import QueueSettings
 from app.config.settings import Settings
 from app.contexts.user.application.dto import CreateUserCommand, UserDTO, UserPageDTO
 from app.contexts.user.application.service import UserApplicationService
@@ -30,6 +31,7 @@ from app.infrastructure.cache.manager import CacheManager
 from app.infrastructure.database.manager import DatabaseManager
 from app.infrastructure.http.errors import HttpTransportError
 from app.infrastructure.http.manager import HttpClientManager
+from app.infrastructure.queue.manager import QueueManager
 from app.interfaces.console.application import ConsoleApplication
 from app.interfaces.console.exit_codes import ConsoleExitCode
 from app.interfaces.console.main import create_console, run_console
@@ -89,6 +91,7 @@ def build_console(service: FakeUserService) -> tuple[CliRunner, typer.Typer]:
         caches = CacheManager(settings.cache)
         http = HttpClientManager(HttpSettings(_env_file=None))
         return ApplicationContainer(
+            queues=QueueManager(QueueSettings(_env_file=None), databases),
             databases=databases,
             caches=caches,
             http=http,

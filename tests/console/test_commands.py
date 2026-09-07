@@ -30,6 +30,9 @@ def test_discovery_finds_concrete_commands_in_stable_order() -> None:
 
     assert [(command.group, command.name) for command in commands] == [
         ("app", "info"),
+        ("queue", "failed"),
+        ("queue", "forget"),
+        ("queue", "retry"),
         ("users", "create"),
         ("users", "list"),
     ]

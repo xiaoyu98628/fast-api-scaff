@@ -277,3 +277,7 @@ MySQL/PostgreSQL 支持 `pool_size`、`max_overflow`、`pool_pre_ping`、`pool_r
 | SQLite 正常而生产失败 | 目标方言约束、DDL、排序规则和并发差异 |
 
 综合排查步骤见[故障排查](troubleshooting.md)。
+
+## 队列失败表
+
+main metadata 新增 queue_failed_jobs，由 Alembic revision 7a1c90e4d812 创建。仅配置 SQL 失败存储时访问，启动不自动建表。downgrade 会删除失败记录。详见[队列](queue.md)。

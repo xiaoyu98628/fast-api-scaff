@@ -1,0 +1,6 @@
+from typing import Protocol
+
+
+class JobCodec[T](Protocol):
+    def encode(self, job: T) -> bytes: ...
+    def decode(self, payload: bytes) -> T: ...

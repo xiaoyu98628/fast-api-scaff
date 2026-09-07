@@ -12,11 +12,13 @@
 - Repository、Mapper、Unit of Work 与 Alembic migration；
 - Redis、Memcached、Memory 字节级 KV 缓存；
 - 普通与流式 HTTP 出站请求、独立连接池、阶段超时、池压力诊断和结构化日志；
+- Memory（asyncio.Queue）、Redis Streams、Kafka、RabbitMQ 队列适配器和独立 Worker；
+- Job 注册与分发、投递内重试、SQL/Memory 失败存储及 Console 重放；
 - JSON/Text 结构化日志、request ID、访问日志和数据库查询日志；
 - 架构依赖测试、pytest、Ruff、ty 与 GitHub Actions 质量检查；
 - CI 使用临时 MySQL/PostgreSQL 服务验证 Alembic upgrade、downgrade 和再次 upgrade。
 
-当前不包含角色/权限体系、刷新令牌、常驻 Scheduler/Worker、领域事件/Outbox/Saga、跨数据库原子事务、Redis 高级数据结构、缓存自动降级或通用 HTTP 自动重试。它们需要按实际业务边界设计，不能把规划项当作现有功能。用户 CRUD 仍是公开示例，`GET /api/v1/auth/me` 演示登录校验。
+当前不包含角色/权限体系、刷新令牌、常驻 Scheduler、领域事件/Outbox/Saga、跨数据库原子事务、Redis 高级数据结构、缓存自动降级或通用 HTTP 自动重试。它们需要按实际业务边界设计，不能把规划项当作现有功能。用户 CRUD 仍是公开示例，`GET /api/v1/auth/me` 演示登录校验。
 
 ## 五分钟启动
 
@@ -113,6 +115,8 @@ docker compose up --build
 - [HTTP 接口](docs/http.md)
 - [认证](docs/authentication.md)
 - [Console 命令](docs/console.md)
+- [队列](docs/queue.md)
+- [独立 Worker](docs/worker.md)
 - [数据库](docs/database.md)
 - [缓存](docs/cache.md)
 - [HTTP 出站请求](docs/outbound-http.md)
@@ -136,3 +140,14 @@ git diff --check
 GitHub Actions 还会在 MySQL 和 PostgreSQL 上执行迁移往返验证。HTTPX2/httpcore2 由 `uv.lock` 固定到当前已验证版本；升级时必须运行出站 HTTP 取消测试和全量质量检查。
 
 修改公开配置、入口、依赖、目录或调用方式时，必须同步 README、专题文档和 `sample.env`；文档只能描述已经实现并验证的能力。
+
+## 队列与独立 Worker
+
+```bash
+uv run python -m app.interfaces.worker --help
+uv run python -m app.interfaces.worker --connection main --queue reports --concurrency 4
+```
+
+先按[队列文档](docs/queue.md)配置连接、注册 JobDefinition，再在 Worker composition 中绑定 Handler；没有业务 Handler 时启动会明确报错。HTTP 不启动消费者。Memory 仅用于同进程，独立 HTTP 与 Worker 需外部后端。
+
+跨进程失败管理需要 QUEUE_FAILED__DRIVER=sql，并执行 main Alembic migration。外部适配器目前由模拟客户端测试覆盖，未进行真实 Redis/Kafka/RabbitMQ 服务集成验证。重试是投递内重试，不包含持久延迟调度或 exactly-once 保证。

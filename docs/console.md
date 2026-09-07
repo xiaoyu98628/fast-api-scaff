@@ -170,3 +170,7 @@ class ExampleConsoleCommand(ConsoleCommand):
 - 一次性 Console 不适合承载常驻调度循环；未来 Scheduler 应作为独立宿主复用 runtime，而不是塞进某个命令后无限运行。
 
 架构关系见[架构说明](architecture.md)，数据库命令故障见[故障排查](troubleshooting.md)。
+
+## 队列失败管理
+
+新增 `queue failed --limit 20 --offset 0`、`queue retry <failure-id>`、`queue forget <failure-id>`，均由现有 ConsoleApplication 管理生命周期。需要 SQL 失败存储；列表不显示 payload，重放保留原记录。详见[队列](queue.md)。

@@ -218,3 +218,7 @@ README 只能描述已经实现和验证的功能。规划项可以明确标成�
 - 最后人工审查 diff，确认没有把样例能力夸大成生产保证。
 
 遇到失败时按[故障排查](troubleshooting.md)缩小范围，而不是通过捕获所有异常、关闭校验或扩大抽象来掩盖问题。
+
+## 队列验证
+
+针对性命令：`uv run python -m pytest -q tests/queue tests/worker`。测试覆盖实际内存队列与 SQLite 失败存储，外部驱动使用模拟客户端；不等同于真实服务验证。tests 根目录是空初始化文件的 Python 包，避免 tests/queue 被 pytest 当作标准库 queue 同名顶级包。

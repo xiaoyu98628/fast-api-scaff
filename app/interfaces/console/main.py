@@ -7,6 +7,7 @@ from app.infrastructure.cache.errors import CacheError
 from app.infrastructure.database.errors import DatabaseError
 from app.infrastructure.http.errors import HttpError
 from app.infrastructure.logging.errors import LoggingConfigurationError
+from app.infrastructure.queue.errors import QueueError
 from app.interfaces.console.application import ConsoleApplication
 from app.interfaces.console.discovery import discover_console_commands
 from app.interfaces.console.exit_codes import ConsoleExitCode
@@ -59,7 +60,7 @@ def run_console(entrypoint: ConsoleEntrypoint, presenter: ConsolePresenter) -> N
     """执行 Console 入口并将可预期运行错误转换为稳定退出码。"""
     try:
         entrypoint()
-    except (ValidationError, LoggingConfigurationError, DatabaseError, CacheError, HttpError) as error:
+    except (ValidationError, LoggingConfigurationError, DatabaseError, CacheError, HttpError, QueueError) as error:
         presenter.error(error)
         raise SystemExit(ConsoleExitCode.FAILURE) from None
 

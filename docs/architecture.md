@@ -253,3 +253,11 @@ HTTP 独立定义 `page/limit` 查询协议和 `items + meta` 分页响应，并
 ```
 
 局部修复若破坏依赖方向、事务边界、时间语义或宿主一致性，应优先调整整体方案。具体质量命令见[开发与质量](development.md)。
+
+## 16. 队列与 Worker
+
+共享基础设施新增 queue，提供 Catalog、Dispatcher、QueueManager、驱动和 FailedJobStore。ApplicationContainer.queues 与数据库等 Manager 一样按需使用；队列先关闭，数据库后关闭。HTTP 不订阅队列。
+
+独立 app.interfaces.worker 宿主复用 ApplicationRuntime，负责 Handler、并发、信号和关闭。任务数据归业务 Application；业务投递窄协议由上下文 Infrastructure 适配；类型定义由 composition 注册到 Catalog，Worker 另行绑定 Handler，HTTP 不依赖 Worker 注册表。共享 Infrastructure 不导入业务或宿主。首版不新增虚构业务 Job。
+
+SQL 失败表属于共享技术能力，在 main metadata 注册；失败写入使用独立短事务，不借用业务 UoW。任务执行和消息确认不是跨系统原子事务。详见[队列](queue.md)、[Worker](worker.md)。
