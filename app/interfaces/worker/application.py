@@ -47,9 +47,9 @@ class WorkerApplication:
                 registry.require_handlers()
                 name = container.queues.resolve_name(connection)
                 target = container.queues.queue_name(name, queue)
-                count = settings.worker.concurrency if concurrency is None else concurrency
+                count = settings.queue.worker.concurrency if concurrency is None else concurrency
                 executor = JobExecutor(name, target, registry, container.queues.failed_jobs, container.queues.codec)
-                runner = WorkerRunner(concurrency=count, shutdown_timeout=settings.worker.shutdown_timeout_seconds)
+                runner = WorkerRunner(concurrency=count, shutdown_timeout=settings.queue.worker.shutdown_timeout_seconds)
                 async with container.queues.consume(connection=name, queue=target, concurrency=count) as consumer:
                     await runner.run(consumer, executor, active_stop)
         finally:

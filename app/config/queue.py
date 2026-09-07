@@ -72,11 +72,19 @@ class FailedStoreSettings(BaseModel):
     database: str = "main"
 
 
+class WorkerSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, allow_inf_nan=False)
+
+    concurrency: int = Field(default=4, ge=1, le=1024)
+    shutdown_timeout_seconds: float = Field(default=30.0, gt=0)
+
+
 class QueueSettings(BaseSettings):
     model_config = SettingsConfigDict(**BASE_SETTINGS_CONFIG, env_prefix="QUEUE_", env_nested_delimiter="__", frozen=True, allow_inf_nan=False)
     default: str | None = None
     connections: dict[str, dict[str, object]] = Field(default_factory=dict)
     failed: FailedStoreSettings = Field(default_factory=FailedStoreSettings)
+    worker: WorkerSettings = Field(default_factory=WorkerSettings)
     max_message_bytes: int = Field(default=1_048_576, ge=256)
 
 

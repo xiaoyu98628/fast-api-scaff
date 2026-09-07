@@ -9,7 +9,7 @@ uv run python -m app.interfaces.worker --help
 uv run python -m app.interfaces.worker --connection main --queue reports --concurrency 4
 ```
 
-省略 connection/queue 时采用默认连接和该连接的默认队列。省略 concurrency 时采用 WORKER_CONCURRENCY。
+省略 connection/queue 时采用默认连接和该连接的默认队列。省略 concurrency 时采用 QUEUE_WORKER__CONCURRENCY。
 
 脚手架没有虚构业务任务。首次使用需在上下文/全局组合根向 `container.queues.catalog` 注册 JobDefinition，在 `app/interfaces/worker/composition.py` 显式绑定 Handler；空注册表会在连接队列前报错退出。完整同进程示例见[队列](queue.md)。
 
@@ -47,7 +47,7 @@ Kafka 的 max_poll_interval_ms 必须大于最大任务执行与全部退避时�
 
 ## 生命周期与故障
 
-SIGINT/SIGTERM 设置停止信号：停止安排新任务，取消等待消息的执行槽，等待在途任务。超过 WORKER_SHUTDOWN_TIMEOUT_SECONDS 后请求取消在途任务，然后关闭消费者和容器。该上限是发出取消的等待时间，不保证强制终止不响应取消的业务代码。
+SIGINT/SIGTERM 设置停止信号：停止安排新任务，取消等待消息的执行槽，等待在途任务。超过 QUEUE_WORKER__SHUTDOWN_TIMEOUT_SECONDS 后请求取消在途任务，然后关闭消费者和容器。该上限是发出取消的等待时间，不保证强制终止不响应取消的业务代码。
 
 消费、ACK、失败存储或租约错误会停止整个 Worker，其他在途任务被取消，未确认任务交给后端恢复；首版没有自动无限重连循环。Kafka 再均衡导致在途任务取消时也按故障退出，避免旧消费者继续提交。无在途任务的正常再均衡可以继续消费。
 

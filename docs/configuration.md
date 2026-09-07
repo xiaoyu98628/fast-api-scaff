@@ -292,8 +292,8 @@ HTTP 不启动消费者。新增配置无队列连接默认值；QUEUE_DEFAULT �
 | QUEUE_MAX_MESSAGE_BYTES | 1048576 | 完整编码信封的字节上限，最小 256 |
 | QUEUE_FAILED__DRIVER | memory | memory 或 sql；Console 管理需要 sql |
 | QUEUE_FAILED__DATABASE | main | SQL 失败记录数据库连接 |
-| WORKER_CONCURRENCY | 4 | 1–1024 个执行槽，Kafka 同分区仍串行 |
-| WORKER_SHUTDOWN_TIMEOUT_SECONDS | 30 | 取消在途任务前的等待时间 |
+| QUEUE_WORKER__CONCURRENCY | 4 | 1–1024 个执行槽，Kafka 同分区仍串行 |
+| QUEUE_WORKER__SHUTDOWN_TIMEOUT_SECONDS | 30 | 取消在途任务前的等待时间 |
 
 所有连接包含 driver、default_queue（default）、publish_timeout（10 秒）。驱动特有字段如下；不支持的额外字段会被拒绝。
 
@@ -306,4 +306,4 @@ HTTP 不启动消费者。新增配置无队列连接默认值；QUEUE_DEFAULT �
 
 Kafka security_protocol 可选 PLAINTEXT、SSL、SASL_PLAINTEXT、SASL_SSL；SASL 模式需要 username/password，mechanism 支持 PLAIN、SCRAM-SHA-256、SCRAM-SHA-512。SSL 使用系统 CA。Redis 使用 redis:// 或 rediss:// URL；RabbitMQ 使用 amqp:// 或 amqps:// URL。
 
-完整环境示例见 `sample.env`，使用方式见[队列](queue.md)与[Worker](worker.md)。Settings 新增 queue/worker，ApplicationContainer 新增 queues。构建容器校验队列配置但不连接；资源按使用创建，关闭后不允许重新获取。
+完整环境示例见 `sample.env`，使用方式见[队列](queue.md)与[Worker](worker.md)。Settings 新增 queue，Worker 参数位于 `queue.worker`，ApplicationContainer 新增 queues。构建容器校验队列配置但不连接；资源按使用创建，关闭后不允许重新获取。

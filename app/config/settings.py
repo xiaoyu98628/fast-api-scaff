@@ -10,7 +10,6 @@ from app.config.database import DatabaseSettings
 from app.config.http import HttpSettings
 from app.config.logging import LoggingSettings
 from app.config.queue import QueueSettings
-from app.config.worker import WorkerSettings
 
 
 class Settings(BaseModel):
@@ -19,7 +18,6 @@ class Settings(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     queue: QueueSettings = Field(default_factory=lambda: QueueSettings(_env_file=None))
-    worker: WorkerSettings = Field(default_factory=lambda: WorkerSettings(_env_file=None))
     app: AppSettings
     auth: AuthSettings = Field(default_factory=lambda: AuthSettings(_env_file=None))
     database: DatabaseSettings
@@ -34,7 +32,6 @@ def load_settings() -> Settings:
     """加载并缓存应用配置。"""
     return Settings(
         queue=QueueSettings(),
-        worker=WorkerSettings(),
         app=AppSettings(),
         auth=AuthSettings(),
         database=DatabaseSettings(),

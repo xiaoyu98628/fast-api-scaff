@@ -17,7 +17,7 @@ from app.infrastructure.queue.contracts.failed_store import FailedJobStore
 from app.infrastructure.queue.contracts.provider import QueueBackend
 from app.infrastructure.queue.dispatcher import Dispatcher
 from app.infrastructure.queue.errors import QueueConfigurationError, QueueError
-from app.infrastructure.queue.failed.memory import MemoryFailedJobStore
+from app.infrastructure.queue.failed.in_memory import InMemoryFailedJobStore
 from app.infrastructure.queue.failed.sql.store import SqlFailedJobStore
 from app.infrastructure.queue.providers.registry import create_backend
 from app.infrastructure.queue.resource import close_backend
@@ -38,7 +38,7 @@ class QueueManager:
         self._configs = self._validate(settings)
         self._resources = {name: AsyncLazy(partial(factory, config), close_backend) for name, config in self._configs.items()}
         self.failed_jobs: FailedJobStore = (
-            SqlFailedJobStore(databases, settings.failed.database) if settings.failed.driver == "sql" else MemoryFailedJobStore()
+            SqlFailedJobStore(databases, settings.failed.database) if settings.failed.driver == "sql" else InMemoryFailedJobStore()
         )
         self.persistent_failures = settings.failed.driver == "sql"
 

@@ -44,6 +44,16 @@ def manager() -> QueueManager:
     return queues
 
 
+def test_worker_settings_are_nested_under_queue(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("QUEUE_WORKER__CONCURRENCY", "8")
+    monkeypatch.setenv("QUEUE_WORKER__SHUTDOWN_TIMEOUT_SECONDS", "45")
+
+    settings = QueueSettings(_env_file=None)
+
+    assert settings.worker.concurrency == 8
+    assert settings.worker.shutdown_timeout_seconds == 45
+
+
 def test_envelope_roundtrip_and_size_and_json_validation() -> None:
     codec = EnvelopeJsonCodec()
     item = message()

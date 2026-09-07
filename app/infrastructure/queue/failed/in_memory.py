@@ -4,7 +4,9 @@ from uuid import UUID
 from app.infrastructure.queue.contracts.failed_store import FailedJobRecord
 
 
-class MemoryFailedJobStore:
+class InMemoryFailedJobStore:
+    """在当前进程内暂存最终失败的任务，供测试和本地单进程运行使用。"""
+
     def __init__(self) -> None:
         self._records: dict[UUID, FailedJobRecord] = {}
 
