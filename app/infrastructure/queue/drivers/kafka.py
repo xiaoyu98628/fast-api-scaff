@@ -1,11 +1,13 @@
 import asyncio
 import ssl
 from collections.abc import Iterable
+from functools import partial
 
 from aiokafka import AIOKafkaConsumer, AIOKafkaProducer, ConsumerRebalanceListener, TopicPartition
 
 from app.config.queue import KafkaQueueSettings
 from app.infrastructure.queue.errors import DeliveryLostError, QueueError
+from app.infrastructure.resources.lazy import AsyncLazy
 
 
 def client_options(settings: KafkaQueueSettings) -> dict[str, object]:
@@ -90,22 +92,16 @@ class KafkaConsumer:
 
 
 class KafkaBackend:
-    def __init__(self, settings: KafkaQueueSettings, producer: AIOKafkaProducer) -> None:
+    def __init__(self, settings: KafkaQueueSettings) -> None:
         self._settings = settings
-        self._producer = producer
+        self._producer = AsyncLazy(partial(_create_producer, settings), _close_producer)
 
     @classmethod
     async def create(cls, settings: KafkaQueueSettings) -> KafkaBackend:
-        producer = AIOKafkaProducer(**client_options(settings), enable_idempotence=True, acks="all")
-        try:
-            await producer.start()
-        except BaseException:
-            await producer.stop()
-            raise
-        return cls(settings, producer)
+        return cls(settings)
 
     async def publish(self, queue: str, payload: bytes) -> None:
-        await self._producer.send_and_wait(queue, payload)
+        await (await self._producer.get()).send_and_wait(queue, payload)
 
     async def consumer(self, queue: str, concurrency: int) -> KafkaConsumer:
         consumer = KafkaConsumer(self._settings, queue)
@@ -117,4 +113,18 @@ class KafkaBackend:
         return consumer
 
     async def aclose(self) -> None:
-        await self._producer.stop()
+        await self._producer.aclose()
+
+
+async def _create_producer(settings: KafkaQueueSettings) -> AIOKafkaProducer:
+    producer = AIOKafkaProducer(**client_options(settings), enable_idempotence=True, acks="all")
+    try:
+        await producer.start()
+    except BaseException:
+        await producer.stop()
+        raise
+    return producer
+
+
+async def _close_producer(producer: AIOKafkaProducer) -> None:
+    await producer.stop()

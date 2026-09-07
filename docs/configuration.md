@@ -300,10 +300,10 @@ HTTP 不启动消费者。新增配置无队列连接默认值；QUEUE_DEFAULT �
 | driver | 字段 |
 | --- | --- |
 | memory | capacity=1000（包含在途任务） |
-| redis | url 必填；group=workers；prefix=queue:；lease_seconds=120（至少 3 秒） |
+| redis | url 必填；group=workers；prefix=queue:；lease_seconds=120（至少 3 秒）；command_timeout=10（至少 2 秒） |
 | kafka | bootstrap_servers 非空列表；group=workers；security_protocol=PLAINTEXT；sasl_mechanism=PLAIN；username/password 可选；max_poll_interval_ms=300000 |
 | rabbitmq | url 必填 |
 
-Kafka security_protocol 可选 PLAINTEXT、SSL、SASL_PLAINTEXT、SASL_SSL；SASL 模式需要 username/password，mechanism 支持 PLAIN、SCRAM-SHA-256、SCRAM-SHA-512。SSL 使用系统 CA。Redis 使用 redis:// 或 rediss:// URL；RabbitMQ 使用 amqp:// 或 amqps:// URL。
+Kafka security_protocol 可选 PLAINTEXT、SSL、SASL_PLAINTEXT、SASL_SSL；SASL 模式需要 username/password，mechanism 支持 PLAIN、SCRAM-SHA-256、SCRAM-SHA-512。SSL 使用系统 CA。Redis 使用 redis:// 或 rediss:// URL；command_timeout 控制普通命令与消费阻塞读取的 socket 超时，和仅约束发布调用的 publish_timeout 相互独立。RabbitMQ 使用 amqp:// 或 amqps:// URL。
 
 完整环境示例见 `sample.env`，使用方式见[队列](queue.md)与[Worker](worker.md)。Settings 新增 queue，Worker 参数位于 `queue.worker`，ApplicationContainer 新增 queues。构建容器校验队列配置但不连接；资源按使用创建，关闭后不允许重新获取。

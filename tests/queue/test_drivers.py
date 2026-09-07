@@ -10,9 +10,9 @@ from redis.asyncio import Redis
 from redis.exceptions import ResponseError
 
 from app.config.queue import KafkaQueueSettings, RedisQueueSettings
-from app.infrastructure.queue.drivers.kafka import KafkaConsumer, RebalanceListener
+from app.infrastructure.queue.drivers.kafka import KafkaBackend, KafkaConsumer, RebalanceListener
 from app.infrastructure.queue.drivers.rabbitmq import RabbitBackend, RabbitDelivery
-from app.infrastructure.queue.drivers.redis import RedisConsumer, RedisDelivery
+from app.infrastructure.queue.drivers.redis import RedisBackend, RedisConsumer, RedisDelivery
 from app.infrastructure.queue.errors import DeliveryLostError
 
 
@@ -88,6 +88,35 @@ async def test_redis_new_message_uses_manual_group_read() -> None:
     assert delivery.payload == b"new"
     assert client.xreadgroup.call_args.args == ("workers", consumer.name, {"jobs": ">"})
     await consumer.aclose()
+
+
+def test_redis_uses_separate_connect_and_command_timeouts(monkeypatch: pytest.MonkeyPatch) -> None:
+    from_url = Mock(return_value=Mock())
+    monkeypatch.setattr("app.infrastructure.queue.drivers.redis.Redis.from_url", from_url)
+
+    RedisBackend(RedisQueueSettings(driver="redis", url="redis://localhost", publish_timeout=0.5, command_timeout=3))
+
+    assert from_url.call_args.kwargs["socket_connect_timeout"] == 0.5
+    assert from_url.call_args.kwargs["socket_timeout"] == 3
+
+
+@pytest.mark.asyncio
+async def test_kafka_producer_is_lazy_and_reused(monkeypatch: pytest.MonkeyPatch) -> None:
+    producer = Mock(start=AsyncMock(), stop=AsyncMock(), send_and_wait=AsyncMock())
+    constructor = Mock(return_value=producer)
+    monkeypatch.setattr("app.infrastructure.queue.drivers.kafka.AIOKafkaProducer", constructor)
+    backend = await KafkaBackend.create(KafkaQueueSettings(driver="kafka", bootstrap_servers=["localhost:9092"]))
+
+    constructor.assert_not_called()
+    await backend.publish("jobs", b"one")
+    await backend.publish("jobs", b"two")
+
+    constructor.assert_called_once()
+    producer.start.assert_awaited_once()
+    assert producer.send_and_wait.await_args_list[0].args == ("jobs", b"one")
+    assert producer.send_and_wait.await_args_list[1].args == ("jobs", b"two")
+    await backend.aclose()
+    producer.stop.assert_awaited_once()
 
 
 @pytest.mark.asyncio

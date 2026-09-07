@@ -9,6 +9,8 @@ from redis.exceptions import ResponseError
 from app.config.queue import RedisQueueSettings
 from app.infrastructure.queue.errors import DeliveryLostError, QueueError
 
+_READ_BLOCK_MS = 1000
+
 # 比较 PEL 所有者与确认/续租在同一 Redis 脚本内完成，防止旧消费者确认已被接管的消息。
 _OWNED_ACK = """
 local p = redis.call('XPENDING', KEYS[1], ARGV[1], ARGV[3], ARGV[3], 1)
@@ -74,7 +76,7 @@ class RedisConsumer:
                 self._cursor = claimed[0]
                 entries = cast(list[tuple[bytes, dict[bytes, bytes]]], claimed[1])
                 if not entries:
-                    result = await self.client.xreadgroup(self.group, self.name, {self.stream: ">"}, count=1, block=1000)
+                    result = await self.client.xreadgroup(self.group, self.name, {self.stream: ">"}, count=1, block=_READ_BLOCK_MS)
                     entries = cast(list[tuple[bytes, list[tuple[bytes, dict[bytes, bytes]]]]], result)[0][1] if result else []
                 if entries:
                     identity, fields = entries[0]
@@ -117,7 +119,7 @@ class RedisBackend:
             decode_responses=False,
             protocol=2,
             socket_connect_timeout=settings.publish_timeout,
-            socket_timeout=settings.publish_timeout,
+            socket_timeout=settings.command_timeout,
         )
 
     async def publish(self, queue: str, payload: bytes) -> None:

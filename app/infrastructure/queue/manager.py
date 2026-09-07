@@ -37,9 +37,12 @@ class QueueManager:
         self._consumers: list[QueueConsumer] = []
         self._configs = self._validate(settings)
         self._resources = {name: AsyncLazy(partial(factory, config), close_backend) for name, config in self._configs.items()}
-        self.failed_jobs: FailedJobStore = (
-            SqlFailedJobStore(databases, settings.failed.database) if settings.failed.driver == "sql" else InMemoryFailedJobStore()
-        )
+        if settings.failed.driver == "sql":
+            if not settings.failed.database.strip() or settings.failed.database not in databases.connection_names:
+                raise QueueConfigurationError("队列 SQL 失败存储数据库未配置")
+            self.failed_jobs: FailedJobStore = SqlFailedJobStore(databases, settings.failed.database)
+        else:
+            self.failed_jobs = InMemoryFailedJobStore()
         self.persistent_failures = settings.failed.driver == "sql"
 
     @staticmethod

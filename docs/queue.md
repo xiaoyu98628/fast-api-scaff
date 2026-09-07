@@ -14,7 +14,7 @@ async def submit(container: ApplicationContainer, job: object):
     return await dispatcher.dispatch(job, queue="reports", correlation_id="request-123")
 ```
 
-`job` 必须先注册到该容器的 `queues.catalog`。`get()` 不启动消费者；构建容器也不连接队列服务。第一次 `get()` 才创建后端，Kafka/RabbitMQ 会建立发布连接，Redis 客户端在首次命令时连接。
+`job` 必须先注册到该容器的 `queues.catalog`。`get()` 不启动消费者；构建容器也不连接队列服务。第一次发布时 Kafka 才建立 Producer，RabbitMQ 在第一次 `get()` 时建立发布连接，Redis 客户端在首次命令时连接。Kafka Worker 只消费时不会初始化 Producer。
 
 队列名映射为 Memory 队列名、Redis 的 `prefix + queue`、Kafka Topic、RabbitMQ 同名持久队列。RabbitMQ 使用默认 exchange 和同名 routing key；首版不提供自定义 exchange 或绑定。
 
@@ -98,7 +98,7 @@ JobDefinition 的同一 Python 类型只能注册一个发布版本；Worker 可
 | 后端 | 行为与边界 |
 | --- | --- |
 | Memory | `asyncio.Queue` 保存字节；容量包括在途任务，消费者关闭后使用恢复缓冲交还未确认任务；连接关闭唤醒等待者；进程退出丢失全部数据 |
-| Redis | Streams + Consumer Group，消费时创建组并从 0-0 起读；XAUTOCLAIM 恢复超时 pending；后台续租；Lua 检查所有者后 ACK；失败退出后等待租约过期恢复 |
+| Redis | Streams + Consumer Group，消费时创建组并从 0-0 起读；XAUTOCLAIM 恢复超时 pending；后台续租；Lua 检查所有者后 ACK；command_timeout 独立于发布超时；失败退出后等待租约过期恢复 |
 | Kafka | 禁止自动 offset 提交；每个分区最多一条在途，成功提交 offset+1 后恢复该分区；跨分区并发；再均衡取消当前执行并使旧 delivery 失效，Worker 退出报告故障 |
 | RabbitMQ | 默认 exchange、同名 durable 队列、persistent 消息、发布确认和 mandatory；手动 ACK，prefetch 等于并发数；关闭消费 channel 后未确认消息由服务端恢复 |
 

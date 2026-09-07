@@ -44,6 +44,14 @@ def manager() -> QueueManager:
     return queues
 
 
+def test_sql_failure_store_rejects_unknown_database() -> None:
+    settings = QueueSettings(_env_file=None, failed={"driver": "sql", "database": "missing"})
+    databases = DatabaseManager(DatabaseSettings(_env_file=None))
+
+    with pytest.raises(QueueConfigurationError, match="SQL 失败存储数据库未配置"):
+        QueueManager(settings, databases)
+
+
 def test_worker_settings_are_nested_under_queue(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("QUEUE_WORKER__CONCURRENCY", "8")
     monkeypatch.setenv("QUEUE_WORKER__SHUTDOWN_TIMEOUT_SECONDS", "45")
@@ -149,6 +157,7 @@ async def test_manager_is_lazy_and_dispatches_typed_job() -> None:
         {"driver": "rabbitmq"},
         {"driver": "kafka", "bootstrap_servers": []},
         {"driver": "redis", "url": "redis://localhost", "lease_seconds": 0},
+        {"driver": "redis", "url": "redis://localhost", "command_timeout": 1.5},
     ],
 )
 def test_strict_driver_configuration(raw: dict[str, object]) -> None:

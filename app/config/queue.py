@@ -31,6 +31,7 @@ class RedisQueueSettings(ConnectionSettings):
     group: str = Field(default="workers", min_length=1, pattern=r"^\S+$")
     prefix: str = "queue:"
     lease_seconds: float = Field(default=120.0, ge=3)
+    command_timeout: float = Field(default=10.0, ge=2.0)
 
 
 class KafkaQueueSettings(ConnectionSettings):
