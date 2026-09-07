@@ -14,6 +14,12 @@ services:
       - .:/app
       - /app/.venv
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 30s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
     restart: no
     networks:
       - fast-api-scaff
@@ -34,8 +40,6 @@ services:
       - /app/.venv
     command: ["python", "-m", "app.interfaces.worker"]
     restart: no
-    healthcheck:
-      disable: true
     networks:
       - fast-api-scaff
 

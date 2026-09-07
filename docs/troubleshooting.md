@@ -252,7 +252,8 @@ uv run python -m app.interfaces.console users list 1>result.json 2>error.log
 - 仅 HTTP 服务把宿主 `${APP_PORT:-8000}` 映射到容器 8000；
 - bind mount 项目源码并使用独立 `/app/.venv` volume；
 - HTTP 服务运行 Uvicorn `--reload`；
-- Worker 运行 `python -m app.interfaces.worker`，不开放端口，并禁用 HTTP 健康检查；
+- Worker 运行 `python -m app.interfaces.worker`，不开放端口，也不配置健康检查；
+- 镜像本身不声明健康检查，Compose 只为 HTTP 服务检测 `/health`；
 - 不启动数据库、缓存或队列服务。
 
 若使用 SQLite，相对路径位于 bind mount 的项目 `storage/` 下；检查目录写权限。若使用外部服务，容器内 `127.0.0.1` 不是宿主。Worker 需要容器可访问的 Redis、Kafka 或 RabbitMQ，且必须先注册业务 Handler；空注册表会在连接队列前退出。若容器退出，先用 Compose 日志查看配置、Handler 注册和连接错误；当前 `restart: no`，不会自动重启。
