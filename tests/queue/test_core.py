@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
+from pydantic import ValidationError
 
 from app.config.database import DatabaseSettings
 from app.config.queue import QueueSettings, parse_connection
@@ -14,6 +15,7 @@ from app.infrastructure.queue.contracts.message import MessageEnvelope
 from app.infrastructure.queue.drivers.memory import MemoryBackend
 from app.infrastructure.queue.errors import InvalidMessageError, QueueConfigurationError, QueueError
 from app.infrastructure.queue.manager import QueueManager
+from tests.queue.fakes import RecordingFailedJobStore
 
 
 @dataclass(frozen=True)
@@ -39,17 +41,23 @@ def message() -> MessageEnvelope:
 
 def manager() -> QueueManager:
     settings = QueueSettings(_env_file=None, default="main", connections={"main": {"driver": "memory", "capacity": 2}})
-    queues = QueueManager(settings, DatabaseManager(DatabaseSettings(_env_file=None)))
+    queues = QueueManager(settings, DatabaseManager(DatabaseSettings(_env_file=None)), failed_jobs=RecordingFailedJobStore())
     queues.catalog.register(definition())
     return queues
 
 
-def test_sql_failure_store_rejects_unknown_database() -> None:
-    settings = QueueSettings(_env_file=None, failed={"driver": "sql", "database": "missing"})
+def test_sql_failure_store_rejects_unknown_database_on_use() -> None:
+    settings = QueueSettings(_env_file=None, failed={"database": "missing"})
     databases = DatabaseManager(DatabaseSettings(_env_file=None))
+    queues = QueueManager(settings, databases)
 
     with pytest.raises(QueueConfigurationError, match="SQL 失败存储数据库未配置"):
-        QueueManager(settings, databases)
+        _ = queues.failed_jobs
+
+
+def test_failure_store_driver_is_not_configurable() -> None:
+    with pytest.raises(ValidationError):
+        QueueSettings(_env_file=None, failed={"driver": "sql"})
 
 
 def test_worker_settings_are_nested_under_queue(monkeypatch: pytest.MonkeyPatch) -> None:

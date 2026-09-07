@@ -4,11 +4,11 @@ import pytest
 
 from app.infrastructure.queue.drivers.memory import MemoryBackend
 from app.infrastructure.queue.errors import RetryableJobError
-from app.infrastructure.queue.failed.in_memory import InMemoryFailedJobStore
 from app.infrastructure.queue.policies import JobPolicy
 from app.interfaces.worker.executor import JobExecutor
 from app.interfaces.worker.registry import HandlerRegistry
 from app.interfaces.worker.runner import WorkerRunner
+from tests.queue.fakes import RecordingFailedJobStore
 from tests.queue.test_core import Job, definition, manager
 
 
@@ -99,7 +99,7 @@ async def test_malformed_envelope_and_unknown_job_are_recorded() -> None:
 async def test_failure_store_error_leaves_delivery_unacknowledged() -> None:
     queues = manager()
 
-    class BrokenStore(InMemoryFailedJobStore):
+    class BrokenStore(RecordingFailedJobStore):
         async def save(self, record) -> None:
             raise OSError("database unavailable")
 

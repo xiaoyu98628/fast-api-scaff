@@ -5,8 +5,10 @@ from typer.testing import CliRunner
 
 from app.bootstrap.app import create_app
 from app.bootstrap.build import build_application_container
+from app.config.database import DatabaseSettings
 from app.config.queue import QueueSettings
 from app.infrastructure.queue.errors import QueueError
+from app.infrastructure.queue.failed.sql.model import FailedJobModel
 from app.interfaces.console.commands.queue import list_failures
 from app.interfaces.console.context import ConsoleContext
 from app.interfaces.worker.application import WorkerApplication
@@ -30,9 +32,19 @@ async def test_http_lifespan_does_not_initialize_queue() -> None:
 @pytest.mark.asyncio
 async def test_worker_uses_own_runtime_and_drains_job() -> None:
     settings = build_settings().model_copy(
-        update={"queue": QueueSettings(_env_file=None, default="main", connections={"main": {"driver": "memory"}})}
+        update={
+            "database": DatabaseSettings(
+                _env_file=None,
+                default="main",
+                connections={"main": {"driver": "sqlite", "database": ":memory:"}},
+            ),
+            "queue": QueueSettings(_env_file=None, default="main", connections={"main": {"driver": "memory"}}),
+        }
     )
     container = build_application_container(settings)
+    engine = await container.databases.get_engine("main")
+    async with engine.begin() as connection:
+        await connection.run_sync(FailedJobModel.metadata.create_all)
     container.queues.catalog.register(definition())
     stop = asyncio.Event()
     values: list[int] = []
@@ -52,10 +64,10 @@ async def test_worker_uses_own_runtime_and_drains_job() -> None:
 
 
 @pytest.mark.asyncio
-async def test_console_rejects_memory_failures_instead_of_empty_list() -> None:
+async def test_console_rejects_unconfigured_failure_database() -> None:
     settings = build_settings()
     container = build_application_container(settings)
-    with pytest.raises(QueueError, match="独立 Console"):
+    with pytest.raises(QueueError, match="SQL 失败存储数据库未配置"):
         await list_failures(ConsoleContext(settings, container), limit=20, offset=0)
     await container.aclose()
 

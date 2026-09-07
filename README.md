@@ -150,4 +150,4 @@ uv run python -m app.interfaces.worker --connection main --queue reports --concu
 
 先按[队列文档](docs/queue.md)配置连接、注册 JobDefinition，再在 Worker composition 中绑定 Handler；没有业务 Handler 时启动会明确报错。HTTP 不启动消费者。Memory 仅用于同进程，独立 HTTP 与 Worker 需外部后端。
 
-跨进程失败管理需要 QUEUE_FAILED__DRIVER=sql，并执行 main Alembic migration。外部适配器目前由模拟客户端测试覆盖，未进行真实 Redis/Kafka/RabbitMQ 服务集成验证。重试是投递内重试，不包含持久延迟调度或 exactly-once 保证。
+失败任务固定使用 SQL 存储，需配置 QUEUE_FAILED__DATABASE 并执行对应 Alembic migration。外部适配器目前由模拟客户端测试覆盖，未进行真实 Redis/Kafka/RabbitMQ 服务集成验证。重试是投递内重试，不包含持久延迟调度或 exactly-once 保证。

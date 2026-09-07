@@ -69,7 +69,6 @@ _CONNECTION_ADAPTER = TypeAdapter(Annotated[QueueConnection, Field(discriminator
 
 class FailedStoreSettings(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
-    driver: Literal["memory", "sql"] = "memory"
     database: str = "main"
 
 

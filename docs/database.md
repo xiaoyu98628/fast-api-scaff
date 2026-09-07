@@ -280,4 +280,4 @@ MySQL/PostgreSQL 支持 `pool_size`、`max_overflow`、`pool_pre_ping`、`pool_r
 
 ## 队列失败表
 
-main metadata 新增 queue_failed_jobs，由迁移链的首个 Alembic revision `c90c9d934260` 创建，后续依次创建 users 和 user_sessions。仅配置 SQL 失败存储时访问，启动不自动建表。downgrade 到 base 会删除失败记录。详见[队列](queue.md)。
+main metadata 包含 queue_failed_jobs，由迁移链的首个 Alembic revision `c90c9d934260` 创建，后续依次创建 users 和 user_sessions。Worker 或 Console 使用失败存储时访问，启动不自动建表。downgrade 到 base 会删除失败记录。详见[队列](queue.md)。

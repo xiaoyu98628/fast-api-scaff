@@ -3,18 +3,11 @@ from uuid import UUID
 
 import typer
 
-from app.infrastructure.queue.errors import QueueError
 from app.interfaces.console.command import ConsoleCommand
 from app.interfaces.console.context import ConsoleContext
 
 
-def require_persistent_store(context: ConsoleContext) -> None:
-    if not context.container.queues.persistent_failures:
-        raise QueueError("独立 Console 无法读取 Worker 内存记录；请配置 QUEUE_FAILED__DRIVER=sql 并执行迁移")
-
-
 async def list_failures(context: ConsoleContext, *, limit: int, offset: int) -> list[dict[str, object]]:
-    require_persistent_store(context)
     records = await context.container.queues.failed_jobs.list(limit=limit, offset=offset)
     return [
         {
@@ -31,13 +24,11 @@ async def list_failures(context: ConsoleContext, *, limit: int, offset: int) -> 
 
 
 async def replay_failure(context: ConsoleContext, *, failure_id: UUID) -> dict[str, UUID]:
-    require_persistent_store(context)
     job_id = await context.container.queues.replay(failure_id)
     return {"job_id": job_id, "replay_of": failure_id}
 
 
 async def forget_failure(context: ConsoleContext, *, failure_id: UUID) -> dict[str, UUID]:
-    require_persistent_store(context)
     await context.container.queues.failed_jobs.delete(failure_id)
     return {"failure_id": failure_id}
 

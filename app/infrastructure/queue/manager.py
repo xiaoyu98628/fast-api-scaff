@@ -17,7 +17,6 @@ from app.infrastructure.queue.contracts.failed_store import FailedJobStore
 from app.infrastructure.queue.contracts.provider import QueueBackend
 from app.infrastructure.queue.dispatcher import Dispatcher
 from app.infrastructure.queue.errors import QueueConfigurationError, QueueError
-from app.infrastructure.queue.failed.in_memory import InMemoryFailedJobStore
 from app.infrastructure.queue.failed.sql.store import SqlFailedJobStore
 from app.infrastructure.queue.providers.registry import create_backend
 from app.infrastructure.queue.resource import close_backend
@@ -28,7 +27,13 @@ type BackendFactory = Callable[[QueueConnection], Awaitable[QueueBackend]]
 
 class QueueManager:
     def __init__(
-        self, settings: QueueSettings, databases: DatabaseManager, *, catalog: JobCatalog | None = None, factory: BackendFactory = create_backend
+        self,
+        settings: QueueSettings,
+        databases: DatabaseManager,
+        *,
+        catalog: JobCatalog | None = None,
+        failed_jobs: FailedJobStore | None = None,
+        factory: BackendFactory = create_backend,
     ) -> None:
         self.catalog = catalog if catalog is not None else JobCatalog()
         self.codec = EnvelopeJsonCodec(settings.max_message_bytes)
@@ -37,13 +42,17 @@ class QueueManager:
         self._consumers: list[QueueConsumer] = []
         self._configs = self._validate(settings)
         self._resources = {name: AsyncLazy(partial(factory, config), close_backend) for name, config in self._configs.items()}
-        if settings.failed.driver == "sql":
-            if not settings.failed.database.strip() or settings.failed.database not in databases.connection_names:
+        self._databases = databases
+        self._failed_database = settings.failed.database
+        self._failed_jobs = failed_jobs
+
+    @property
+    def failed_jobs(self) -> FailedJobStore:
+        if self._failed_jobs is None:
+            if not self._failed_database.strip() or self._failed_database not in self._databases.connection_names:
                 raise QueueConfigurationError("队列 SQL 失败存储数据库未配置")
-            self.failed_jobs: FailedJobStore = SqlFailedJobStore(databases, settings.failed.database)
-        else:
-            self.failed_jobs = InMemoryFailedJobStore()
-        self.persistent_failures = settings.failed.driver == "sql"
+            self._failed_jobs = SqlFailedJobStore(self._databases, self._failed_database)
+        return self._failed_jobs
 
     @staticmethod
     def _validate(settings: QueueSettings) -> dict[str, QueueConnection]:

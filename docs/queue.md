@@ -112,10 +112,9 @@ Memory 后端仅同一 QueueManager 的同名队列共享。独立 HTTP 与 Work
 
 非法信封按原始字节摘要记录，保留原始数据和失败原因；这种记录无法直接重放，需修正生产者协议。失败原因使用固定分类，日志和 Console 列表不输出 payload 或任意业务异常文本。
 
-`QUEUE_FAILED__DRIVER=memory` 使用 `InMemoryFailedJobStore`，仅在当前进程保存最终失败记录。它与负责传输待执行任务的 Memory Queue Driver 是两个独立组件。使用跨进程管理命令时配置 SQL：
+失败任务固定使用 SQL 存储；这与负责传输待执行任务的 Memory Queue Driver 是两个独立组件。配置失败记录数据库并执行对应迁移：
 
 ```dotenv
-QUEUE_FAILED__DRIVER=sql
 QUEUE_FAILED__DATABASE=main
 ```
 
