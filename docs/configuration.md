@@ -72,7 +72,7 @@ LOG_HANDLERS={"stdout":{"driver":"stream","stream":"stdout"}}
 | `LOG_LEVEL` | 枚举 | `INFO` | `DEBUG`、`INFO`、`WARNING`、`ERROR`、`CRITICAL` |
 | `LOG_FORMAT` | 枚举 | `json` | `json` 或 `text` |
 | `LOG_ACCESS_ENABLED` | `bool` | `true` | 是否装配 HTTP 访问日志中间件 |
-| `LOG_ACCESS_EXCLUDE_ROUTES` | JSON 字符串集合 | `["/health"]` | 每项必须以 `/` 开头；失败请求不会因排除而静默 |
+| `LOG_ACCESS_EXCLUDE_ROUTES` | JSON 字符串集合 | `["/health"]` | 完整请求路径的精确匹配集合，每项必须以 `/` 开头；失败请求不会因排除而静默 |
 | `LOG_ACTIVE_HANDLERS` | JSON 字符串元组 | `["stdout"]` | 激活的 handler 名称 |
 | `LOG_HANDLERS` | JSON 对象 | stdout stream | handler 定义；当前内置驱动为 `stream` |
 
