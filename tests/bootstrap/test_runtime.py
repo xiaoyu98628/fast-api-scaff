@@ -2,15 +2,17 @@ import asyncio
 
 import pytest
 
-from app.bootstrap.container import ApplicationContainer
-from app.bootstrap.runtime import ApplicationRuntime
 from app.config.cache import CacheSettings
 from app.config.database import DatabaseSettings
 from app.config.http import HttpSettings
+from app.config.queue import QueueSettings
 from app.contexts.user.composition import build_user_context
 from app.infrastructure.cache.manager import CacheManager
 from app.infrastructure.database.manager import DatabaseManager
 from app.infrastructure.http.manager import HttpClientManager
+from app.infrastructure.queue.manager import QueueManager
+from app.runtime.container import ApplicationContainer
+from app.runtime.lifecycle import ApplicationRuntime
 
 
 def build_container(
@@ -22,6 +24,7 @@ def build_container(
     caches = CacheManager(CacheSettings(_env_file=None))
     http = HttpClientManager(HttpSettings(_env_file=None))
     return ApplicationContainer(
+        queues=QueueManager(QueueSettings(_env_file=None), databases),
         databases=databases,
         caches=caches,
         http=http,

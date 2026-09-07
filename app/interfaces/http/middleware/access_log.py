@@ -3,7 +3,6 @@ from asyncio import CancelledError
 from time import perf_counter
 
 from starlette.middleware import Middleware
-from starlette.routing import BaseRoute
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.infrastructure.logging.record import log_extra
@@ -69,7 +68,7 @@ class AccessLogMiddleware:
         cancelled: bool,
         completed: bool,
     ) -> None:
-        route = _get_route_path(scope)
+        route = _get_request_path(scope)
         failed = not completed
         effective_status = status_code if status_code is not None else (499 if cancelled else 500)
 
@@ -101,12 +100,8 @@ def build_access_log_middleware(*, exclude_routes: frozenset[str]) -> Middleware
     return Middleware(AccessLogMiddleware, exclude_routes=exclude_routes)
 
 
-def _get_route_path(scope: Scope) -> str | None:
-    route = scope.get("route")
-    if not isinstance(route, BaseRoute):
-        return None
-
-    path = getattr(route, "path", None)
+def _get_request_path(scope: Scope) -> str | None:
+    path = scope.get("path")
     return path if isinstance(path, str) else None
 
 

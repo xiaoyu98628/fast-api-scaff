@@ -4,9 +4,9 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.bootstrap.logging import ApplicationLogEvent
-from app.bootstrap.runtime import ApplicationRuntime, ContainerFactory
+from app.bootstrap.http.logging import ApplicationLogEvent
 from app.infrastructure.logging.record import log_extra
+from app.runtime.lifecycle import ApplicationRuntime, ContainerFactory
 
 _APPLICATION_LOGGER = logging.getLogger("app.bootstrap.lifecycle")
 

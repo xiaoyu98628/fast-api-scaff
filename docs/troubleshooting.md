@@ -7,7 +7,7 @@
 从项目根目录执行：
 
 ```bash
-uv run python -m app.interfaces.console app info
+uv run python -m app.console app info
 uv run alembic -c database/main/alembic.ini current
 uv run python -m pytest -q tests/test_architecture.py
 git status --short
@@ -102,7 +102,7 @@ uv run uvicorn app.main:app --reload --port 8000
 
 ```bash
 uv run alembic -c database/main/alembic.ini current
-uv run python -m app.interfaces.console users list
+uv run python -m app.console users list
 ```
 
 Console 和 HTTP 都失败，通常是共享数据库/业务层；只 HTTP 失败则检查 HTTP schema、依赖或中间件；只 Console 失败则检查参数、输出和 Console 日志边界。
@@ -208,7 +208,7 @@ uv run alembic -c database/main/alembic.ini current
 stderr 中会有业务、配置或基础设施错误。单独重定向：
 
 ```bash
-uv run python -m app.interfaces.console users list 1>result.json 2>error.log
+uv run python -m app.console users list 1>result.json 2>error.log
 ```
 
 若 stdout 为空是正常失败行为，不要把 stderr 当 JSON 解析。
@@ -245,15 +245,18 @@ uv run python -m app.interfaces.console users list 1>result.json 2>error.log
 
 ## 11. Docker 问题
 
-当前 `compose.yml` 只启动应用服务。它：
+当前 `compose.yml` 默认只启动 HTTP 服务；启用 `worker` profile 后还会启动独立消费服务。它们：
 
 - 从 `.env` 读取配置；
-- 把宿主 `${APP_PORT:-8000}` 映射到容器 8000；
+- 复用应用镜像、源码挂载和 Compose 网络；
+- 仅 HTTP 服务把宿主 `${APP_PORT:-8000}` 映射到容器 8000；
 - bind mount 项目源码并使用独立 `/app/.venv` volume；
-- 运行 Uvicorn `--reload`；
-- 不启动数据库或缓存。
+- HTTP 服务运行 Uvicorn `--reload`；
+- Worker 运行 `python -m app.worker`，不开放端口，也不配置健康检查；
+- 镜像本身不声明健康检查，Compose 只为 HTTP 服务检测 `/health`；
+- 不启动数据库、缓存或队列服务。
 
-若使用 SQLite，相对路径位于 bind mount 的项目 `storage/` 下；检查目录写权限。若使用外部服务，容器内 `127.0.0.1` 不是宿主。若容器不断重启，先用 Compose 日志查看配置/导入/端口错误；当前 `restart: no`，正常情况下不会自动重启。
+若使用 SQLite，相对路径位于 bind mount 的项目 `storage/` 下；检查目录写权限。若使用外部服务，容器内 `127.0.0.1` 不是宿主。Worker 需要容器可访问的 Redis、Kafka 或 RabbitMQ，且必须先注册业务 Handler；空注册表会在连接队列前退出。若容器退出，先用 Compose 日志查看配置、Handler 注册和连接错误；当前 `restart: no`，不会自动重启。
 
 Dockerfile 的生产默认命令不带 reload，但 Compose 覆盖了它。不要把当前 Compose 直接当生产编排。
 

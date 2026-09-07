@@ -9,7 +9,7 @@ from httpx2 import ASGITransport, AsyncClient
 from starlette_context import context
 from starlette_context.header_keys import HeaderKeys
 
-from app.bootstrap.app import create_app
+from app.bootstrap.http.application import create_app
 from app.config.app import AppSettings
 from app.config.cache import CacheSettings
 from app.config.cors import CorsSettings

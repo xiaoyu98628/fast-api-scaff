@@ -3,7 +3,7 @@ from typing import Any, ClassVar
 
 import typer
 
-from app.interfaces.console.application import ConsoleApplication
+from app.interfaces.console.contracts import ConsoleExecutor
 
 
 class ConsoleCommand(ABC):
@@ -14,7 +14,7 @@ class ConsoleCommand(ABC):
     name: ClassVar[str]
     help: ClassVar[str]
 
-    def __init__(self, console: ConsoleApplication) -> None:
+    def __init__(self, console: ConsoleExecutor) -> None:
         self._console = console
 
     def register(self, group: typer.Typer) -> None:

@@ -7,6 +7,7 @@ from app.contexts.user.composition import UserContext
 from app.infrastructure.cache.manager import CacheManager
 from app.infrastructure.database.manager import DatabaseManager
 from app.infrastructure.http.manager import HttpClientManager
+from app.infrastructure.queue.manager import QueueManager
 
 type AsyncCallback = Callable[[], Awaitable[None]]
 type Callback = Callable[[], None]
@@ -19,6 +20,7 @@ class ApplicationContainer:
     databases: DatabaseManager
     caches: CacheManager
     http: HttpClientManager
+    queues: QueueManager
     users: UserContext
     startup_callbacks: tuple[AsyncCallback, ...] = ()
     async_shutdown_callbacks: tuple[AsyncCallback, ...] = ()

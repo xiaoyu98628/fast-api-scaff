@@ -4,7 +4,7 @@ import pytest
 import pytest_asyncio
 from httpx2 import ASGITransport, AsyncClient
 
-from app.bootstrap.app import create_app
+from app.bootstrap.http.application import create_app
 from app.config.app import AppSettings
 from app.config.auth import AuthSettings
 from app.config.cache import CacheSettings

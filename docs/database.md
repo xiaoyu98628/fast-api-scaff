@@ -87,7 +87,7 @@ Manager 进入关闭后是终态：在第一次等待前统一禁止所有连接
 基础设施用法示例：
 
 ```python
-from app.bootstrap.container import ApplicationContainer
+from app.runtime.container import ApplicationContainer
 
 
 async def inspect_connection(container: ApplicationContainer) -> None:
@@ -277,3 +277,7 @@ MySQL/PostgreSQL 支持 `pool_size`、`max_overflow`、`pool_pre_ping`、`pool_r
 | SQLite 正常而生产失败 | 目标方言约束、DDL、排序规则和并发差异 |
 
 综合排查步骤见[故障排查](troubleshooting.md)。
+
+## 队列失败表
+
+main metadata 包含 queue_failed_jobs，由迁移链的首个 Alembic revision `c90c9d934260` 创建，后续依次创建 users 和 user_sessions。Worker 或 Console 使用失败存储时访问，启动不自动建表。downgrade 到 base 会删除失败记录。详见[队列](queue.md)。

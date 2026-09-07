@@ -2,9 +2,10 @@ import logging
 from asyncio import CancelledError
 
 import pytest
+from fastapi import APIRouter
 from httpx2 import ASGITransport, AsyncClient
 
-from app.bootstrap.app import create_app
+from app.bootstrap.http.application import create_app
 from app.config.app import AppSettings
 from app.config.cache import CacheSettings
 from app.config.cors import CorsSettings
@@ -68,10 +69,63 @@ async def test_access_log_contains_request_metadata(caplog: pytest.LogCaptureFix
     assert isinstance(details, dict)
     assert details["method"] == "GET"
     assert "path" not in details
-    assert "sensitive-token" not in str(details)
-    assert details["route"] == "/items/{item_id}"
+    assert "sensitive-query" not in str(details)
+    assert details["route"] == "/items/sensitive-token"
     assert details["status_code"] == 200
     assert details["duration_ms"] >= 0
+
+
+@pytest.mark.parametrize("query_mode", ["plain", "encoded", "invalid"])
+@pytest.mark.asyncio
+async def test_access_log_distinguishes_same_route_under_different_prefixes(caplog: pytest.LogCaptureFixture, query_mode: str) -> None:
+    app = create_app(build_settings())
+    shared_router = APIRouter()
+
+    @shared_router.get("/items/{item_id}")
+    async def read_shared_item(item_id: str) -> dict[str, str]:
+        return {"item_id": item_id}
+
+    app.include_router(shared_router, prefix="/public")
+    app.include_router(shared_router, prefix="/internal")
+
+    logger_name = "app.interfaces.http.access"
+    logging.getLogger(logger_name).disabled = False
+    caplog.set_level(logging.INFO, logger=logger_name)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+        public_response = await client.get("/public/items/public-id", params=query_params(query_mode))
+        internal_response = await client.get("/internal/items/internal-id", params=query_params(query_mode))
+
+    records = [record for record in caplog.records if record.name == logger_name]
+    details: list[dict[str, object]] = []
+    for record in records:
+        item = getattr(record, "details", None)
+        assert isinstance(item, dict)
+        details.append(item)
+
+    assert public_response.status_code == 200
+    assert internal_response.status_code == 200
+    assert [item["route"] for item in details] == ["/public/items/public-id", "/internal/items/internal-id"]
+    assert "sensitive-query" not in str(details)
+
+
+@pytest.mark.asyncio
+async def test_unmatched_request_logs_full_path_without_query(caplog: pytest.LogCaptureFixture) -> None:
+    app = create_app(build_settings())
+    logger_name = "app.interfaces.http.access"
+    logging.getLogger(logger_name).disabled = False
+    caplog.set_level(logging.WARNING, logger=logger_name)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+        response = await client.get("/missing/request-path", params={"secret": "query-value"})
+
+    record = next(record for record in caplog.records if record.name == logger_name)
+    details = getattr(record, "details", None)
+
+    assert response.status_code == 404
+    assert isinstance(details, dict)
+    assert details["route"] == "/missing/request-path"
+    assert "query-value" not in str(details)
 
 
 @pytest.mark.asyncio

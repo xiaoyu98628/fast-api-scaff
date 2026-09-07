@@ -1,6 +1,6 @@
 # 架构说明
 
-项目采用模块化单体：一个部署单元内按限界上下文划分业务，并在每个上下文内部保持 Domain、Application、Infrastructure 边界。HTTP 与 Console 是宿主适配器，共享组合根、应用用例和资源生命周期。
+项目采用模块化单体：一个部署单元内按限界上下文划分业务，并在每个上下文内部保持 Domain、Application、Infrastructure 边界。HTTP、Console 与 Worker 是独立宿主，共享组合根、应用用例和资源生命周期。
 
 这不是为了堆叠 DDD 名词，而是解决三个实际问题：业务规则不被框架入口绕过，基础设施可以替换/测试，多入口复用同一用例且不会出现行为分叉。
 
@@ -8,7 +8,14 @@
 
 ```text
 app/
-├── bootstrap/              # 设置、组合根、容器和运行时生命周期
+├── main.py                 # HTTP/ASGI 薄入口
+├── console.py              # Console 薄入口
+├── worker.py               # Worker 薄入口
+├── bootstrap/              # 全局组合根与 HTTP/Console/Worker 启动装配
+│   ├── build.py
+│   ├── http/
+│   ├── console/
+│   └── worker/
 ├── config/                 # 环境配置模型
 ├── contexts/
 │   └── user/
@@ -17,10 +24,11 @@ app/
 │       ├── infrastructure/ # SQLAlchemy Repository/UoW/Mapper/Model
 │       └── composition.py  # 用户上下文装配
 ├── infrastructure/        # 跨上下文基础设施能力：数据库、缓存、HTTP 出站、日志
-├── interfaces/
-│   ├── http/               # FastAPI 宿主
-│   └── console/            # Typer 宿主
-└── runtime/                # 项目路径等进程运行约定
+├── interfaces/             # 入站协议适配，不负责启动与全局装配
+│   ├── http/               # FastAPI 请求、响应、中间件和路由
+│   ├── console/            # Typer 命令、参数、展示和退出码
+│   └── worker/             # 队列消息执行、Handler 注册和消费并发
+└── runtime/                # 宿主无关的容器、生命周期和进程路径约定
 
 database/main/              # main 数据库的 Alembic 环境与模型注册
 tests/                      # 分层测试与架构约束
@@ -33,10 +41,11 @@ tests/                      # 分层测试与架构约束
 核心方向：
 
 ```text
-interfaces ─┐
-            ├→ application → domain
-infrastructure ┘      ↑
-       composition 负责把实现注入协议
+入口模块 → bootstrap → interfaces → application → domain
+                     ├→ runtime
+                     └→ infrastructure
+
+bootstrap/composition 负责选择实现并完成装配
 ```
 
 更严格地说：
@@ -45,9 +54,11 @@ infrastructure ┘      ↑
 - Application 只依赖自己的 Application、Domain 和标准库；
 - Infrastructure 可以依赖 Application/Domain 协议并实现它们；
 - Interfaces 依赖 Application DTO/错误，不把 FastAPI/Typer 传入业务层；
-- Bootstrap/Composition 是允许知道具体实现的装配边界。
+- Interfaces 不依赖 Bootstrap，避免协议适配器反向控制启动装配；
+- Runtime 保存宿主无关的 `ApplicationContainer` 和 `ApplicationRuntime`；
+- Bootstrap/Composition 是允许知道具体实现、Interfaces 和 Runtime 的装配边界。
 
-`tests/test_architecture.py` 用 AST 检查 Domain、Application、Infrastructure 与 Interfaces 的导入。它不仅保护核心层，还禁止共享 Infrastructure 反向依赖业务或宿主、上下文 Infrastructure 跨上下文依赖，以及 Interfaces 直接穿透到上下文 Infrastructure。相对导入也会被视为违规，项目统一要求绝对、显式导入。这类测试防止边界在日常迭代中悄悄腐化。
+`tests/test_architecture.py` 用 AST 检查 Domain、Application、Infrastructure、Interfaces 与 Bootstrap 的导入。它不仅保护核心层，还禁止共享 Infrastructure 反向依赖业务或宿主、上下文 Infrastructure 跨上下文依赖、Interfaces 依赖 Bootstrap，以及 Interfaces 直接穿透到上下文 Infrastructure。相对导入也会被视为违规，项目统一要求绝对、显式导入。这类测试防止边界在日常迭代中悄悄腐化。
 
 ## 3. 用户限界上下文
 
@@ -133,17 +144,18 @@ Application Service 可以做跨聚合的流程编排和权限决策，但不应
 
 用户 UoW 在 commit 阶段和事务体退出阶段处理唯一约束异常，覆盖 INSERT 提交和 UPDATE 立即执行两条路径；执行阶段的异常在回滚、关闭成功后转换。未知 `IntegrityError` 原样保留，因为错误映射是语义承诺，过宽映射会把真实数据缺陷伪装成普通冲突。
 
-## 8. Container 与 Composition Root
+## 8. Runtime Container 与 Composition Root
 
-`ApplicationContainer` 保存：
+`app.runtime.container.ApplicationContainer` 保存：
 
 - `DatabaseManager`；
 - `CacheManager`；
 - `HttpClientManager`；
+- `QueueManager`；
 - 已组装的 `UserContext`；
 - 启动和关闭 callback。
 
-`build_application_container()` 是全局组合根，`build_user_context()` 是上下文组合点。它们可以依赖具体实现，因为“选择实现并接线”就是它们的职责。
+`app.bootstrap.build.build_application_container()` 是全局组合根，`build_user_context()` 是上下文组合点。它们可以依赖具体实现，因为“选择实现并接线”就是它们的职责。
 
 `UserContext.service` 保留用户 CRUD，`UserContext.auth` 提供认证用例。`build_user_context(databases, *, session_ttl_seconds=3600)` 由全局组合根传入认证配置；构建时不连接数据库、不计算密码哈希，也不新增需要关闭的资源。
 
@@ -153,7 +165,7 @@ Application Service 可以做跨聚合的流程编排和权限决策，但不应
 
 ## 9. ApplicationRuntime 与宿主
 
-`ApplicationRuntime` 管理非特定宿主的容器生命周期：
+`app.runtime.lifecycle.ApplicationRuntime` 管理非特定宿主的容器生命周期：
 
 - 防止同一 runtime 重复启动；
 - 构建容器并执行 startup callbacks；
@@ -161,7 +173,7 @@ Application Service 可以做跨聚合的流程编排和权限决策，但不应
 - 关闭时先清空当前引用，再聚合资源关闭错误；
 - 支持 `async with`。
 
-HTTP lifespan 和 Console 都复用 runtime。这样资源的初始化、失败清理和关闭顺序不会在不同入口重复实现。数据库、缓存和 HTTP 出站资源都由管理器延迟创建，并由容器 callback 逆序关闭；未初始化资源不会在关闭阶段被创建。关闭进入不可取消清理区间，单个 callback 失败或收到取消后仍会尝试剩余 callback，最后通过异常组保留全部根因。Manager/延迟资源是一次性生命周期对象，关闭开始后拒绝新获取，也不能通过再次调用 `get()` 隐式重建。数据库和缓存 Manager 在第一次等待前统一禁止所有资源获取，再逐个释放；已经开始的初始化允许完成，但结果只交给关闭流程，不再返回调用方。宿主必须先停止使用已经借出的资源，再关闭 Manager。
+HTTP lifespan、ConsoleHost 和 WorkerHost 都复用 runtime。这样资源的初始化、失败清理和关闭顺序不会在不同入口重复实现。数据库、缓存和 HTTP 出站资源都由管理器延迟创建，并由容器 callback 逆序关闭；未初始化资源不会在关闭阶段被创建。关闭进入不可取消清理区间，单个 callback 失败或收到取消后仍会尝试剩余 callback，最后通过异常组保留全部根因。Manager/延迟资源是一次性生命周期对象，关闭开始后拒绝新获取，也不能通过再次调用 `get()` 隐式重建。数据库和缓存 Manager 在第一次等待前统一禁止所有资源获取，再逐个释放；已经开始的初始化允许完成，但结果只交给关闭流程，不再返回调用方。宿主必须先停止使用已经借出的资源，再关闭 Manager。
 
 顶层 HTTP 出站能力只负责驱动无关请求、连接池、超时、传输错误和日志，不知道具体上游协议。上下文若需要调用外部服务，应在自己的 application 层定义业务窄端口，在 infrastructure 层使用公共 HTTP 客户端实现，并由 composition 注入；application service 不应持有整个容器，也不应直接导入 HTTPX2。
 
@@ -182,17 +194,18 @@ HTTP lifespan 和 Console 都复用 runtime。这样资源的初始化、失败�
 
 如果业务跨时区、需要精确时间线或与外部系统交换绝对时间，应重新设计为 UTC aware datetime/instant，并同步领域、DTO、数据库列、序列化、迁移和测试；不能只改某一层。
 
-## 11. HTTP 与 Console 适配器
+## 11. HTTP、Console 与 Worker 适配器
 
-两个入口都调用 `UserApplicationService`：
+HTTP 与 Console 都调用 `UserApplicationService`，Worker 则把队列消息交给已绑定的应用 Handler：
 
 - HTTP 负责 schema、status、统一 JSON 和异常到 HTTP 映射；
 - Console 负责 Typer 参数、JSON stdout、错误 stderr 和退出码；
-- 二者都不实现业务规则，不直接操作 ORM。
+- Worker 负责消息解码、执行策略、并发消费和确认；
+- 三者都不实现业务规则，不直接操作 ORM，也不负责全局启动装配。
 
 HTTP 独立定义 `page/limit` 查询协议和 `items + meta` 分页响应，并在调用应用服务前把页码换算为 `offset/limit`。Console 的 `users list` 也在宿主边界约束 `page` 和 `limit`，但直接输出应用 DTO；后台批处理应根据任务语义使用 `batch_size`、进度、stdout/stderr 和退出码，而不是复用 HTTP 分页响应。
 
-新增宿主的判断标准不是“能否 import service”，而是是否完整承担自身协议边界、日志、生命周期、取消和错误语义。
+新增宿主时，`interfaces` 只承担协议边界，`bootstrap` 负责日志、组合、生命周期、取消和进程入口。不能因为某个适配器能够 import service，就把启动装配重新放回 `interfaces`。
 
 ## 12. 跨上下文协作
 
@@ -253,3 +266,11 @@ HTTP 独立定义 `page/limit` 查询协议和 `items + meta` 分页响应，并
 ```
 
 局部修复若破坏依赖方向、事务边界、时间语义或宿主一致性，应优先调整整体方案。具体质量命令见[开发与质量](development.md)。
+
+## 16. 队列与 Worker
+
+共享基础设施新增 queue，提供 Catalog、Dispatcher、QueueManager、驱动和 FailedJobStore。ApplicationContainer.queues 与数据库等 Manager 一样按需使用；队列先关闭，数据库后关闭。HTTP 不订阅队列。
+
+独立 `app.worker` 入口由 `app.bootstrap.worker` 完成装配并复用 ApplicationRuntime；`app.interfaces.worker` 只负责 Handler 注册结构、消息执行和消费并发。任务数据归业务 Application；业务投递窄协议由上下文 Infrastructure 适配；类型定义由 bootstrap composition 注册到 Catalog，Worker 另行绑定 Handler，HTTP 不依赖 Worker 注册表。共享 Infrastructure 不导入业务或宿主。首版不新增虚构业务 Job。
+
+SQL 失败表属于共享技术能力，在 main metadata 注册；失败写入使用独立短事务，不借用业务 UoW。任务执行和消息确认不是跨系统原子事务。详见[队列](queue.md)、[Worker](worker.md)。

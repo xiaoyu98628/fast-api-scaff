@@ -1,0 +1,98 @@
+# 队列
+
+队列基础设施提供 JobCatalog、Dispatcher、QueueManager 和三种后端：Redis Streams、Kafka、RabbitMQ。HTTP 和 Console 可以发布任务；消费由[独立 Worker](worker.md)启动。
+
+## 1. 连接与逻辑队列
+
+`QUEUE_CONNECTIONS__<NAME>` 中的 `<NAME>` 是连接名，用来区分后端、集群、认证信息和消费组；`QUEUE_DEFAULT` 只选择默认连接。`default_queue` 和运行时的 `queue=` 才是逻辑队列名。同一连接可以承载多个逻辑队列并复用连接资源；只有后端、集群、认证信息或消费组不同时，才需要新增命名连接。
+
+使用 `ApplicationContainer.queues` 获取已绑定连接的 Dispatcher：
+
+```python
+from app.runtime.container import ApplicationContainer
+
+async def submit(container: ApplicationContainer, job: object):
+    dispatcher = await container.queues.get("redis")
+    return await dispatcher.dispatch(job, queue="reports", correlation_id="request-123")
+```
+
+`job` 必须先注册到该容器的 `queues.catalog`。`get()` 不启动消费者；构建容器也不连接队列服务。第一次发布时 Kafka 才建立 Producer，RabbitMQ 在第一次 `get()` 时建立发布连接，Redis 客户端在首次命令时连接。Kafka Worker 只消费时不会初始化 Producer。
+
+队列名映射为 Redis 的 `prefix + queue`、Kafka Topic、RabbitMQ 同名持久队列。RabbitMQ 使用默认 exchange 和同名 routing key；首版不提供自定义 exchange 或绑定。
+
+`sample.env` 同时声明 `redis`、`kafka` 和 `rabbitmq` 三个命名连接，并以 `redis` 为默认连接。Worker 可通过 `--connection redis --queue reports` 独立选择连接和逻辑队列。
+
+配置见[配置参考](configuration.md#队列与-worker)与 `sample.env`。未配置连接时，HTTP/Console 仍可启动；调用队列公共入口才报告未配置错误。连接字段在容器构建时严格校验。
+
+## 2. Job 数据与 Codec
+
+业务 Application 定义纯数据类及业务发布窄协议。共享基础设施不能导入业务模块，也不使用 pickle、Python 模块路径或自动反射构造对象。
+
+任务类型和 Codec 由业务上下文定义，并在组合根中显式注册：
+
+```python
+from dataclasses import dataclass
+
+from app.infrastructure.queue.catalog import JobDefinition
+
+@dataclass(frozen=True, slots=True)
+class ExampleJob:
+    number: int
+
+class ExampleCodec:
+    def encode(self, job: ExampleJob) -> bytes:
+        return str(job.number).encode()
+
+    def decode(self, payload: bytes) -> ExampleJob:
+        return ExampleJob(int(payload))
+
+definition = JobDefinition("example.number", 1, ExampleJob, ExampleCodec())
+container.queues.catalog.register(definition)
+```
+
+业务将数据类放在上下文 Application，将 Codec、业务发布窄协议的实现放在该上下文 Infrastructure，在上下文组合根中注册任务定义。HTTP 或 Console 通过 Dispatcher 发布，独立 Worker 使用相同连接和逻辑队列消费。Worker 的 `composition.py` 只接收组合根公开的定义/服务来绑定 Handler，不直接导入上下文 Infrastructure。
+
+JobDefinition 的同一 Python 类型只能注册一个发布版本；Worker 可注册不同类型的旧版本来兼容历史任务。重复注册报错。Catalog 不持有 Handler，HTTP 不加载执行依赖。
+
+## 3. 信封与交付保证
+
+信封包含 `schema_version=1`、`job_id`、`job_name`、`job_version`、`payload`、`enqueued_at`、`correlation_id`、`replay_of`。业务 payload 必须是合法 JSON 字节，在外层 JSON 中采用 Base64 表达；不接受 NaN/Infinity。默认整个信封不超过 1 MiB。时间保持本地无时区，各宿主应使用相同 `TZ`。
+
+发布成功表示后端接受，不表示业务完成。发布超时或连接故障可能发生在接受之后，因此结果可能不确定，不能盲目重投。消息成功处理后再确认，外部后端恢复未确认消息时可能重复执行；业务幂等不由框架自动提供。数据库提交与发布不是原子操作，首版显式在 UoW 提交后投递，没有 after_commit 包装器或 Outbox。
+
+| 后端 | 行为与边界 |
+| --- | --- |
+| Redis | Streams + Consumer Group，消费时创建组并从 0-0 起读；XAUTOCLAIM 恢复超时 pending；后台续租；Lua 检查所有者后 ACK；command_timeout 独立于发布超时；失败退出后等待租约过期恢复 |
+| Kafka | 禁止自动 offset 提交；每个分区最多一条在途，成功提交 offset+1 后恢复该分区；跨分区并发；再均衡取消当前执行并使旧 delivery 失效，Worker 退出报告故障 |
+| RabbitMQ | 默认 exchange、同名 durable 队列、persistent 消息、发布确认和 mandatory；手动 ACK，prefetch 等于并发数；关闭消费 channel 后未确认消息由服务端恢复 |
+
+Redis 使用 XAUTOCLAIM，需 Redis 6.2+。Redis Stream 不自动裁剪；ACK 只删除 pending 状态，不删除历史条目。保留策略由使用者按所有消费组进度设计，不能裁掉尚未确认的任务。Kafka Topic 及其保留策略由使用者管理，框架不调用管理 API 创建 Topic；保留时间必须覆盖处理与恢复窗口。
+
+## 4. 失败存储与重放
+
+先保存失败记录，再确认原消息。失败存储不可用时不确认，Worker 报错退出。连接、队列和任务 ID 确定失败记录 ID；再次投递可补做确认而不重复执行已记录失败的任务。这不是并发去重锁，也不会记录成功任务。
+
+非法信封按原始字节摘要记录，保留原始数据和失败原因；这种记录无法直接重放，需修正生产者协议。失败原因使用固定分类，日志和 Console 列表不输出 payload 或任意业务异常文本。
+
+失败任务固定使用 SQL 存储；它与负责传输待执行任务的队列驱动是两个独立组件。配置失败记录数据库并执行对应迁移：
+
+```dotenv
+QUEUE_FAILED__DATABASE=main
+```
+
+```bash
+uv run alembic -c database/main/alembic.ini upgrade head
+uv run python -m app.console queue failed --limit 20 --offset 0
+uv run python -m app.console queue retry <failure-id>
+uv run python -m app.console queue forget <failure-id>
+```
+
+SQL 使用独立短事务，表名为 `queue_failed_jobs`，迁移归 main 管理。若选择其他数据库连接，必须保证该连接具有同一表结构；框架不会启动时自动建表。迁移 downgrade 会删除失败记录。
+
+retry 生成新 job_id 并保留 replay_of，原失败记录保留；forget 单独删除。重复 retry 可生成多条任务。发布结果不确定时需检查下游，不能宣称人工重放 exactly-once。独立 Console 在 Memory 失败存储下明确报错，不返回误导性的空列表。
+
+## 5. 验证范围
+
+测试包含内存实际消息流、SQLite 失败存储与迁移、模拟外部客户端的 ACK/offset/所有权恢复，以及 Worker 关闭和取消。未新增真实 Redis、Kafka、RabbitMQ 服务集成测试，模拟测试不代表真实服务已验证。
+
+驱动机制参考 [aiokafka consumer](https://aiokafka.readthedocs.io/en/stable/consumer.html)、[aio-pika](https://docs.aio-pika.com/quick-start.html)、[Redis XCLAIM](https://redis.io/docs/latest/commands/xclaim/)。

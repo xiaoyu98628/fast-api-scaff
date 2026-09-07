@@ -2,7 +2,7 @@
 
 配置由 `pydantic-settings` 从项目根目录 `.env` 和进程环境变量读取。进程环境变量优先于 `.env`；未知字段会被忽略；配置对象创建后不可变，并由 `load_settings()` 在当前进程内缓存。
 
-导入配置模块不会读取或校验环境变量。正常启动由 `load_settings()` 显式创建各组配置；手动构造 `Settings` 时，未提供的认证、HTTP 和日志配置由默认值工厂在实例化时创建。默认值工厂的 `_env_file=None` 只跳过 `.env`，仍读取进程环境变量；显式注入这些配置时不会调用对应工厂。Console 的 `--help` 不加载配置，执行需要配置的命令时才校验并输出配置错误。
+导入配置模块不会读取或校验环境变量。HTTP、Console 和 Worker 顶层入口均在导入时通过 `load_settings()` 显式创建各组配置并初始化各自的日志；因此即使 Console 或 Worker 只请求 `--help`，也会先校验完整配置。手动构造 `Settings` 时，未提供的认证、HTTP 和日志配置由默认值工厂在实例化时创建。默认值工厂的 `_env_file=None` 只跳过 `.env`，仍读取进程环境变量；显式注入这些配置时不会调用对应工厂。
 
 ## 1. 命名和嵌套规则
 
@@ -72,7 +72,7 @@ LOG_HANDLERS={"stdout":{"driver":"stream","stream":"stdout"}}
 | `LOG_LEVEL` | 枚举 | `INFO` | `DEBUG`、`INFO`、`WARNING`、`ERROR`、`CRITICAL` |
 | `LOG_FORMAT` | 枚举 | `json` | `json` 或 `text` |
 | `LOG_ACCESS_ENABLED` | `bool` | `true` | 是否装配 HTTP 访问日志中间件 |
-| `LOG_ACCESS_EXCLUDE_ROUTES` | JSON 字符串集合 | `["/health"]` | 每项必须以 `/` 开头；失败请求不会因排除而静默 |
+| `LOG_ACCESS_EXCLUDE_ROUTES` | JSON 字符串集合 | `["/health"]` | 完整请求路径的精确匹配集合，每项必须以 `/` 开头；失败请求不会因排除而静默 |
 | `LOG_ACTIVE_HANDLERS` | JSON 字符串元组 | `["stdout"]` | 激活的 handler 名称 |
 | `LOG_HANDLERS` | JSON 对象 | stdout stream | handler 定义；当前内置驱动为 `stream` |
 
@@ -280,3 +280,30 @@ Memory 没有网络参数。数据仅存在于当前进程内，进程重启即�
 - 不把 `LOG_LEVEL=DEBUG` 当作生产故障的长期方案，尤其不要记录密码、令牌和完整个人数据。
 
 配置报错时，先对照 `sample.env` 和本章字段，再阅读[故障排查](troubleshooting.md)。
+
+## 队列与 Worker
+
+HTTP 不启动消费者。新增配置无队列连接默认值；`QUEUE_DEFAULT` 留空应省略该变量，而不是写空字符串。
+
+`QUEUE_CONNECTIONS__<NAME>` 中的 `<NAME>` 是连接名，用来选择后端、集群、认证信息和消费组；`QUEUE_DEFAULT` 选择的也是连接名，不是逻辑队列名。每个连接的 `default_queue` 是未显式传入队列时使用的逻辑队列。发布时的 `queue=` 和 Worker 的 `--queue` 可以在同一连接上选择其他逻辑队列，因此一个连接不需要为每个业务队列重复配置。后端、集群、认证信息或消费组不同时，则应配置不同的命名连接。
+
+| 配置 | 默认值 | 用途 |
+| --- | --- | --- |
+| QUEUE_DEFAULT | None | 默认连接名，不是逻辑队列名 |
+| QUEUE_CONNECTIONS | {} | 命名连接，可用双下划线配置多个连接及其字段 |
+| QUEUE_MAX_MESSAGE_BYTES | 1048576 | 完整编码信封的字节上限，最小 256 |
+| QUEUE_FAILED__DATABASE | main | 失败记录数据库连接；Worker 与 Console 使用前必须配置 |
+| QUEUE_WORKER__CONCURRENCY | 4 | 1–1024 个执行槽，Kafka 同分区仍串行 |
+| QUEUE_WORKER__SHUTDOWN_TIMEOUT_SECONDS | 30 | 取消在途任务前的等待时间 |
+
+所有连接包含 driver、default_queue（default）、publish_timeout（10 秒）。驱动特有字段如下；不支持的额外字段会被拒绝。
+
+| driver | 字段 |
+| --- | --- |
+| redis | host 必填；port=6379；database=0；username/password 可选；ssl=false；max_connections=10；connect_timeout=5；group=workers；prefix=queue:；lease_seconds=120（至少 3 秒）；command_timeout=10（至少 2 秒） |
+| kafka | bootstrap_servers 非空列表；group=workers；security_protocol=PLAINTEXT；sasl_mechanism=PLAIN；username/password 可选；max_poll_interval_ms=300000 |
+| rabbitmq | host 必填；port=5672；virtual_host=/；username/password=guest；ssl=false；connect_timeout=5 |
+
+Kafka security_protocol 可选 PLAINTEXT、SSL、SASL_PLAINTEXT、SASL_SSL；SASL 模式需要 username/password，mechanism 支持 PLAIN、SCRAM-SHA-256、SCRAM-SHA-512。Kafka 保留 bootstrap_servers 列表以支持多个 Broker。Redis 和 RabbitMQ 使用独立的主机、端口及认证字段；ssl=true 时使用系统 CA。Redis command_timeout 控制普通命令与消费阻塞读取的 socket 超时，和仅约束发布调用的 publish_timeout 相互独立。
+
+完整环境示例见 `sample.env`，其中 `redis`、`kafka` 和 `rabbitmq` 三个命名连接可同时存在，`QUEUE_DEFAULT=redis` 仅指定默认使用 Redis 连接。使用方式见[队列](queue.md)与[Worker](worker.md)。Settings 新增 queue，Worker 参数位于 `queue.worker`，ApplicationContainer 新增 queues。构建容器校验连接字段但不连接；失败存储数据库名称在 Worker 或 Console 使用前校验。资源按使用创建，关闭后不允许重新获取。

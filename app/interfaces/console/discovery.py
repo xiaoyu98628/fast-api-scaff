@@ -3,11 +3,11 @@ import inspect
 import pkgutil
 
 import app.interfaces.console.commands as commands_package
-from app.interfaces.console.application import ConsoleApplication
 from app.interfaces.console.command import ConsoleCommand
+from app.interfaces.console.contracts import ConsoleExecutor
 
 
-def discover_console_commands(console: ConsoleApplication) -> tuple[ConsoleCommand, ...]:
+def discover_console_commands(console: ConsoleExecutor) -> tuple[ConsoleCommand, ...]:
     """扫描 commands 包并实例化其中定义的具体命令类。"""
     command_types: list[type[ConsoleCommand]] = []
     prefix = f"{commands_package.__name__}."

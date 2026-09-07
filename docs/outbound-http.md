@@ -5,7 +5,7 @@
 ## 1. 普通请求
 
 ```python
-from app.bootstrap.container import ApplicationContainer
+from app.runtime.container import ApplicationContainer
 from app.infrastructure.http.contracts.request import HttpRequest
 
 
@@ -32,7 +32,7 @@ async def fetch_profile(container: ApplicationContainer, user_id: str) -> object
 ## 2. 流式请求
 
 ```python
-from app.bootstrap.container import ApplicationContainer
+from app.runtime.container import ApplicationContainer
 from app.infrastructure.http.contracts.request import HttpRequest
 
 

@@ -1,0 +1,9 @@
+from typing import Protocol
+
+from app.infrastructure.queue.contracts.consumer import QueueConsumer
+
+
+class QueueBackend(Protocol):
+    async def publish(self, queue: str, payload: bytes) -> None: ...
+    async def consumer(self, queue: str, concurrency: int) -> QueueConsumer: ...
+    async def aclose(self) -> None: ...

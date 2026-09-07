@@ -36,5 +36,5 @@ class AppInfoConsoleCommand(ConsoleCommand):
     help = "显示应用配置和资源连接信息。"
 
     def handle(self) -> None:
-        result = get_application_info(self._console.settings_loader())
+        result = get_application_info(self._console.settings)
         self._console.presenter.result(result)

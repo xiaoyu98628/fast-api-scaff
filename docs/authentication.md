@@ -81,7 +81,7 @@ curl -X POST http://127.0.0.1:8000/api/v1/auth/logout \
 宿主通过已经启动的 `ApplicationContainer` 调用公开服务：
 
 ```python
-from app.bootstrap.container import ApplicationContainer
+from app.runtime.container import ApplicationContainer
 from app.contexts.user.application.auth_dto import LoginCommand
 from app.contexts.user.application.dto import UserDTO
 from app.contexts.user.application.session_token import SessionCredential

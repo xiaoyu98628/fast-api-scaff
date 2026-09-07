@@ -1,5 +1,8 @@
 from enum import StrEnum
 
+from app.config.settings import Settings
+from app.infrastructure.logging.configure import configure_logging
+
 
 class ApplicationLogEvent(StrEnum):
     STARTING = "application.starting"
@@ -8,3 +11,7 @@ class ApplicationLogEvent(StrEnum):
     STOPPING = "application.stopping"
     STOPPED = "application.stopped"
     STOP_FAILED = "application.stop_failed"
+
+
+def configure_http_logging(settings: Settings) -> None:
+    configure_logging(settings)

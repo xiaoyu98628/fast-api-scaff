@@ -1,18 +1,20 @@
 import pytest
 
-from app.bootstrap.container import ApplicationContainer
+from app.bootstrap.console.application import ConsoleHost
 from app.config.app import AppSettings
 from app.config.cache import CacheSettings
 from app.config.cors import CorsSettings
 from app.config.database import DatabaseSettings
 from app.config.http import HttpSettings
+from app.config.queue import QueueSettings
 from app.config.settings import Settings
 from app.contexts.user.composition import build_user_context
 from app.infrastructure.cache.manager import CacheManager
 from app.infrastructure.database.manager import DatabaseManager
 from app.infrastructure.http.manager import HttpClientManager
-from app.interfaces.console.application import ConsoleApplication
+from app.infrastructure.queue.manager import QueueManager
 from app.interfaces.console.context import ConsoleContext
+from app.runtime.container import ApplicationContainer
 
 
 def build_settings() -> Settings:
@@ -35,6 +37,7 @@ def build_container(settings: Settings, events: list[str]) -> ApplicationContain
     caches = CacheManager(settings.cache)
     http = HttpClientManager(HttpSettings(_env_file=None))
     return ApplicationContainer(
+        queues=QueueManager(QueueSettings(_env_file=None), databases),
         databases=databases,
         caches=caches,
         http=http,
@@ -47,10 +50,9 @@ def build_container(settings: Settings, events: list[str]) -> ApplicationContain
 def test_console_application_provides_context_and_closes_runtime() -> None:
     settings = build_settings()
     events: list[str] = []
-    console = ConsoleApplication(
-        settings_loader=lambda: settings,
+    console = ConsoleHost(
+        settings,
         container_builder=lambda active_settings: build_container(active_settings, events),
-        logging_configurer=lambda _settings: events.append("logging"),
     )
 
     async def operation(context: ConsoleContext) -> str:
@@ -59,16 +61,15 @@ def test_console_application_provides_context_and_closes_runtime() -> None:
         return context.settings.app.name
 
     assert console.run(operation) == "console-test"
-    assert events == ["logging", "start", "operation", "stop"]
+    assert events == ["start", "operation", "stop"]
 
 
 def test_console_application_closes_runtime_when_operation_fails() -> None:
     settings = build_settings()
     events: list[str] = []
-    console = ConsoleApplication(
-        settings_loader=lambda: settings,
+    console = ConsoleHost(
+        settings,
         container_builder=lambda active_settings: build_container(active_settings, events),
-        logging_configurer=lambda _settings: events.append("logging"),
     )
 
     async def fail(_context: ConsoleContext) -> None:
@@ -78,4 +79,4 @@ def test_console_application_closes_runtime_when_operation_fails() -> None:
     with pytest.raises(RuntimeError, match="operation failed"):
         console.run(fail)
 
-    assert events == ["logging", "start", "operation", "stop"]
+    assert events == ["start", "operation", "stop"]

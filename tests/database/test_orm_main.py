@@ -2,6 +2,7 @@ from sqlalchemy import DateTime, String
 
 from app.contexts.user.infrastructure.persistence.models.user import UserModel
 from app.infrastructure.database.orm.main import MainBase
+from app.infrastructure.queue.failed.sql.model import FailedJobModel
 from database.main.model_registry import load_main_database_metadata
 
 
@@ -28,4 +29,23 @@ def test_main_database_model_registry_loads_user_model() -> None:
         "status": "用户状态",
         "created_at": "创建时间",
         "updated_at": "更新时间",
+    }
+
+
+def test_main_database_model_registry_loads_queue_failed_job_model() -> None:
+    metadata = load_main_database_metadata()
+    failed_jobs_table = FailedJobModel.__table__
+
+    assert failed_jobs_table is metadata.tables["queue_failed_jobs"]
+    assert failed_jobs_table.primary_key.name == "pk_queue_failed_jobs"
+    assert failed_jobs_table.comment == "队列失败任务记录"
+    assert {column.name: column.comment for column in failed_jobs_table.columns} == {
+        "failure_id": "失败记录 ID",
+        "job_id": "原任务 ID，非法信封时为空",
+        "payload": "原始任务信封",
+        "connection": "队列连接名",
+        "queue": "逻辑队列名",
+        "failed_at": "最终失败时间",
+        "attempts": "本次投递执行次数",
+        "reason": "失败原因分类",
     }

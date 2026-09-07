@@ -124,6 +124,15 @@ def test_interfaces_do_not_depend_on_context_persistence_ports() -> None:
     assert violations == []
 
 
+def test_interfaces_do_not_depend_on_bootstrap() -> None:
+    violations = _find_forbidden_dependencies(
+        _APP_ROOT / "interfaces",
+        forbidden_prefixes=("app.bootstrap",),
+    )
+
+    assert violations == []
+
+
 def _find_dependency_violations(layer: str, *, allowed_layers: tuple[str, ...]) -> list[str]:
     violations: list[str] = []
 
@@ -186,3 +195,18 @@ def _is_allowed_dependency(module: str, allowed_prefixes: tuple[str, ...]) -> bo
         return True
 
     return any(module == prefix or module.startswith(f"{prefix}.") for prefix in allowed_prefixes)
+
+
+def test_http_does_not_import_worker_host() -> None:
+    assert _find_forbidden_dependencies(_APP_ROOT / "interfaces/http", forbidden_prefixes=("app.interfaces.worker",)) == []
+
+
+def test_queue_clients_are_confined_to_drivers() -> None:
+    violations: list[str] = []
+    for path in sorted(_APP_ROOT.rglob("*.py")):
+        if path.is_relative_to(_APP_ROOT / "infrastructure/queue/drivers"):
+            continue
+        for module, line in _iter_imports(ast.parse(path.read_text(encoding="utf-8"))):
+            if module.split(".")[0] in {"aiokafka", "aio_pika"}:
+                violations.append(f"{path.relative_to(PROJECT_ROOT)}:{line} imports {module}")
+    assert violations == []

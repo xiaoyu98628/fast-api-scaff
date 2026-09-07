@@ -4,11 +4,14 @@ from functools import partial
 from fastapi import FastAPI
 
 from app.bootstrap.build import build_application_container
-from app.bootstrap.configure import configure_http_app
-from app.bootstrap.container import ApplicationContainer
-from app.bootstrap.lifespan import create_lifespan
+from app.bootstrap.http.lifespan import create_lifespan
 from app.config.settings import Settings, load_settings
+from app.interfaces.http.exceptions.register import register_exception_handlers
 from app.interfaces.http.middleware.registry import build_http_middlewares
+from app.interfaces.http.routes.register import register_routes
+from app.interfaces.http.shared.response.codes.builder import ResponseCodeBuilder
+from app.interfaces.http.shared.response.factory import JsonResponseFactory
+from app.runtime.container import ApplicationContainer
 
 type ContainerBuilder = Callable[[Settings], ApplicationContainer]
 
@@ -34,6 +37,10 @@ def create_app(
         },
     )
 
-    configure_http_app(app, active_settings)
+    app.state.json_response_factory = JsonResponseFactory(
+        code_builder=ResponseCodeBuilder(active_settings.app.service_code),
+    )
+    register_exception_handlers(app)
+    register_routes(app)
 
     return app

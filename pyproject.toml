@@ -29,6 +29,9 @@ dependencies = [
     "alembic>=1.19.1",
 
     "typer>=0.21.0",
+
+    "aio-pika>=9.5,<10",
+    "aiokafka>=0.12,<1",
 ]
 
 [project.optional-dependencies]

@@ -1,4 +1,3 @@
-from app.bootstrap.container import ApplicationContainer
 from app.config.settings import Settings
 from app.contexts.user.composition import build_user_context
 from app.infrastructure.cache.manager import CacheManager
@@ -6,6 +5,8 @@ from app.infrastructure.cache.providers.registry import DEFAULT_CACHE_PROVIDERS,
 from app.infrastructure.database.manager import DatabaseManager
 from app.infrastructure.database.providers.registry import DEFAULT_DATABASE_PROVIDERS, DatabaseProviderRegistry
 from app.infrastructure.http.manager import HttpClientManager
+from app.infrastructure.queue.manager import QueueManager
+from app.runtime.container import ApplicationContainer
 
 
 def build_application_container(
@@ -18,6 +19,7 @@ def build_application_container(
     databases = DatabaseManager(settings.database, providers=database_providers)
     caches = CacheManager(settings.cache, providers=cache_providers)
     http = HttpClientManager(settings.http)
+    queues = QueueManager(settings.queue, databases)
     users = build_user_context(databases, session_ttl_seconds=settings.auth.session_ttl_seconds)
 
     return ApplicationContainer(
@@ -25,5 +27,6 @@ def build_application_container(
         caches=caches,
         http=http,
         users=users,
-        async_shutdown_callbacks=(databases.aclose, caches.aclose, http.aclose),
+        queues=queues,
+        async_shutdown_callbacks=(databases.aclose, caches.aclose, http.aclose, queues.aclose),
     )
