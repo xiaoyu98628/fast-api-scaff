@@ -1,3 +1,5 @@
+"""定义服务器端用户会话的 SQLAlchemy 模型。"""
+
 from datetime import datetime
 
 from sqlalchemy import CheckConstraint, DateTime, ForeignKey, String
@@ -7,7 +9,10 @@ from app.infrastructure.database.orm.main import MainBase
 
 
 class UserSessionModel(MainBase):
+    """保存令牌摘要、所属用户及会话有效时间。"""
+
     __tablename__ = "user_sessions"
+    # 数据库再次约束时间范围，并通过外键级联清理被删除用户的会话。
     __table_args__ = (
         CheckConstraint("expires_at > issued_at", name="time_range"),
         {"comment": "用户登录会话"},

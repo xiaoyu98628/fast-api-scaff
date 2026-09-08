@@ -1,3 +1,5 @@
+"""定义用户聚合在主数据库中的 SQLAlchemy 模型。"""
+
 from datetime import datetime
 
 from sqlalchemy import CheckConstraint, DateTime, String, UniqueConstraint
@@ -10,6 +12,7 @@ class UserModel(MainBase):
     """用户聚合的数据库持久化模型。"""
 
     __tablename__ = "users"
+    # 数据库约束是并发写入下的最终防线，应用层预检查只负责友好反馈。
     __table_args__ = (
         UniqueConstraint("username"),
         UniqueConstraint("email"),

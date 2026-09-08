@@ -1,3 +1,5 @@
+"""在用户领域聚合与 SQLAlchemy 模型之间显式转换。"""
+
 from uuid import UUID
 
 from app.contexts.user.domain.user import User
@@ -6,6 +8,8 @@ from app.contexts.user.infrastructure.persistence.models.user import UserModel
 
 
 def user_to_model(user: User) -> UserModel:
+    """把新用户聚合转换为可加入 Session 的持久化模型。"""
+
     return UserModel(
         id=str(user.id.value),
         username=user.username.value,
@@ -18,6 +22,8 @@ def user_to_model(user: User) -> UserModel:
 
 
 def user_to_domain(model: UserModel) -> User:
+    """把持久化模型恢复为重新检查不变量的用户聚合。"""
+
     return User.rehydrate(
         user_id=UserId(UUID(model.id)),
         username=Username(model.username),
@@ -30,6 +36,8 @@ def user_to_domain(model: UserModel) -> User:
 
 
 def user_update_values(user: User) -> dict[str, object]:
+    """提取允许更新的字段，不修改用户 ID 和创建时间。"""
+
     return {
         "username": user.username.value,
         "email": user.email.value,
