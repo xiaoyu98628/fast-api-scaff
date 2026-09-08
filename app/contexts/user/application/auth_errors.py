@@ -1,3 +1,6 @@
+"""定义认证用例可由入站适配器映射的边界异常。"""
+
+
 class AuthApplicationError(Exception):
     """认证用例的边界错误。"""
 

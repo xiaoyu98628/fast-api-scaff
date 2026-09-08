@@ -1,3 +1,5 @@
+"""编排用户创建、查询、修改和删除用例。"""
+
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -28,6 +30,9 @@ class UserApplicationService:
     clock: Callable[[], datetime] = datetime.now
 
     async def create(self, command: CreateUserCommand) -> UserDTO:
+        """创建用户，并在写入前检查用户名和邮箱唯一性。"""
+
+        # 密码哈希可能是慢操作，先在事务外完成以缩短数据库占用时间。
         password_hash = await self.password_hasher.hash(Password(command.password))
         user = User.create(
             username=command.username,
@@ -44,6 +49,8 @@ class UserApplicationService:
         return UserDTO.from_domain(user)
 
     async def get(self, user_id: UUID) -> UserDTO:
+        """按 ID 获取用户，不存在时抛出稳定的应用层异常。"""
+
         async with self.unit_of_work_factory() as unit_of_work:
             user = await unit_of_work.users.find(UserId(user_id))
 
@@ -53,6 +60,8 @@ class UserApplicationService:
         return UserDTO.from_domain(user)
 
     async def list(self, *, offset: int, limit: int) -> UserPageDTO:
+        """返回指定偏移量和数量限制的一页用户。"""
+
         async with self.unit_of_work_factory() as unit_of_work:
             users, total = await unit_of_work.users.find_page(offset=offset, limit=limit)
 
@@ -64,6 +73,8 @@ class UserApplicationService:
         )
 
     async def update(self, command: UpdateUserCommand) -> UserDTO:
+        """修改用户名和邮箱，并重新检查唯一性。"""
+
         user_id = UserId(command.user_id)
 
         async with self.unit_of_work_factory() as unit_of_work:
@@ -85,6 +96,8 @@ class UserApplicationService:
         return UserDTO.from_domain(user)
 
     async def change_status(self, command: ChangeUserStatusCommand) -> UserDTO:
+        """修改账户启用状态。"""
+
         user_id = UserId(command.user_id)
 
         async with self.unit_of_work_factory() as unit_of_work:
@@ -101,6 +114,8 @@ class UserApplicationService:
         return UserDTO.from_domain(user)
 
     async def reset_password(self, command: ResetUserPasswordCommand) -> None:
+        """在事务外生成新哈希，再替换目标用户密码。"""
+
         user_id = UserId(command.user_id)
         password_hash = await self.password_hasher.hash(Password(command.password))
 
@@ -116,6 +131,8 @@ class UserApplicationService:
             await unit_of_work.commit()
 
     async def delete(self, user_id: UUID) -> None:
+        """删除目标用户，不存在时抛出应用层异常。"""
+
         domain_id = UserId(user_id)
 
         async with self.unit_of_work_factory() as unit_of_work:
@@ -126,6 +143,8 @@ class UserApplicationService:
 
     @staticmethod
     async def _ensure_unique(repository: UserRepository, user: User) -> None:
+        """排除当前用户后检查用户名和邮箱占用情况。"""
+
         if await repository.exists_by_username(user.username, excluding=user.id):
             raise UserConflictError("username")
 
