@@ -1,3 +1,5 @@
+"""创建 Console 命令树并统一转换进程级失败。"""
+
 from collections.abc import Callable
 
 import typer
@@ -18,6 +20,8 @@ type ConsoleEntrypoint = Callable[[], None]
 
 
 def create_console(console: ConsoleExecutor) -> typer.Typer:
+    """自动发现命令并创建可独立调用的 Typer 应用。"""
+
     application = typer.Typer(
         help="应用命令行入口。",
         no_args_is_help=True,
@@ -25,6 +29,8 @@ def create_console(console: ConsoleExecutor) -> typer.Typer:
     )
 
     def show_version(value: bool) -> None:
+        """在执行普通命令解析前处理全局版本选项。"""
+
         if not value:
             return
 
@@ -41,8 +47,11 @@ def create_console(console: ConsoleExecutor) -> typer.Typer:
             help="显示应用名称和版本。",
         ),
     ) -> None:
+        """声明 Console 根命令及其全局选项。"""
+
         _ = version
 
+    # 所有具体命令由发现机制提供，入口不直接依赖业务命令模块。
     registry = ConsoleCommandRegistry(application)
     for command in discover_console_commands(console):
         registry.register(command)
@@ -52,8 +61,10 @@ def create_console(console: ConsoleExecutor) -> typer.Typer:
 
 def run_console(entrypoint: ConsoleEntrypoint, presenter: ConsolePresenter) -> None:
     """执行 Console 入口并将可预期运行错误转换为稳定退出码。"""
+
     try:
         entrypoint()
     except (ValidationError, LoggingConfigurationError, DatabaseError, CacheError, HttpError, QueueError) as error:
+        # 仅转换配置和基础设施边界错误，未知编程错误保留原始堆栈。
         presenter.error(error)
         raise SystemExit(ConsoleExitCode.FAILURE) from None

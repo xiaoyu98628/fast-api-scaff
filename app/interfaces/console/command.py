@@ -1,3 +1,5 @@
+"""定义 Console 自动发现机制使用的命令抽象。"""
+
 from abc import ABC, abstractmethod
 from typing import Any, ClassVar
 
@@ -15,10 +17,13 @@ class ConsoleCommand(ABC):
     help: ClassVar[str]
 
     def __init__(self, console: ConsoleExecutor) -> None:
+        """绑定能够执行应用操作的宿主。"""
+
         self._console = console
 
     def register(self, group: typer.Typer) -> None:
         """将当前命令注册到所属 Typer 命令组。"""
+
         group.command(name=self.name, help=self.help)(self.handle)
 
     @abstractmethod

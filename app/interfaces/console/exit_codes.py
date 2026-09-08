@@ -1,3 +1,5 @@
+"""定义 Console 对外承诺的稳定进程退出码。"""
+
 from enum import IntEnum
 
 
