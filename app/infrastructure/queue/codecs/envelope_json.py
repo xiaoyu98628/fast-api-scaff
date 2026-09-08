@@ -27,6 +27,8 @@ class EnvelopeData(BaseModel):
     @field_validator("enqueued_at")
     @classmethod
     def local_time(cls, value: datetime) -> datetime:
+        """拒绝带时区时间，保持与项目持久化时间约定一致。"""
+
         if value.tzinfo is not None:
             raise ValueError("队列时间必须为本地无时区时间")
         return value
@@ -34,6 +36,8 @@ class EnvelopeData(BaseModel):
     @field_validator("job_type")
     @classmethod
     def job_type_not_blank(cls, value: str) -> str:
+        """拒绝只有空白字符的任务类路径。"""
+
         if not value.strip():
             raise ValueError("任务类路径不能为空")
         return value
@@ -43,6 +47,8 @@ class EnvelopeJsonCodec:
     """编码和校验完整消息信封，并限制传输消息大小。"""
 
     def __init__(self, max_bytes: int = 1_048_576) -> None:
+        """设置包含外层 JSON 与 Base64 开销的最大信封字节数。"""
+
         self.max_bytes = max_bytes
 
     def encode(self, message: MessageEnvelope) -> bytes:
@@ -87,6 +93,8 @@ class EnvelopeJsonCodec:
             raise InvalidMessageError("任务信封解码失败") from error
 
     def _check_size(self, raw: bytes) -> None:
+        """拒绝超过传输限制的完整信封。"""
+
         if len(raw) > self.max_bytes:
             raise InvalidMessageError("任务信封超过大小限制")
 

@@ -6,5 +6,12 @@ from typing import Protocol
 class JobCodec[T](Protocol):
     """在具体 QueueJob 与其消息 payload 字节之间转换。"""
 
-    def encode(self, job: T) -> bytes: ...
-    def decode(self, payload: bytes) -> T: ...
+    def encode(self, job: T) -> bytes:
+        """把具体任务实例编码为驱动无关的 payload 字节。"""
+
+        ...
+
+    def decode(self, payload: bytes) -> T:
+        """校验 payload 并恢复具体任务实例。"""
+
+        ...
