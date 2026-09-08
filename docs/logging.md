@@ -203,10 +203,21 @@ uv run python -m app.console users list 1>result.json 2>command.log
 1. 定义严格配置模型；
 2. 实现 `LoggingDriverBuilder`，返回标准库 dictConfig handler 片段；
 3. 不设置由核心负责的 `formatter` 和 `filters`；
-4. 在组合位置注册 driver；
+4. 使用 `LoggingDriverRegistry` 在组合位置注册 driver；
 5. 验证 JSON/Text 格式、request ID、异常堆栈和关闭行为；
 6. 考虑网络 handler 的阻塞、缓冲、背压和进程退出丢日志；
 7. 同步 `sample.env`、[配置参考](configuration.md)与本章。
+
+扩展默认注册表时使用 `extended()`，它会返回新实例，不会修改全局默认值：
+
+```python
+from app.infrastructure.logging.drivers.registry import DEFAULT_LOGGING_DRIVERS
+
+drivers = DEFAULT_LOGGING_DRIVERS.extended(("custom", build_custom_handler))
+configure_logging(settings, drivers=drivers)
+```
+
+注册表会拒绝空名称和重复名称。如果宿主确实需要改变已有驱动的行为，应显式调用 `replaced()`；例如 Console 用它把内置 `stream` 驱动的 stdout 输出改到 stderr。这样普通扩展不会因注册顺序而静默覆盖已有驱动。
 
 远程日志传输更适合由 stdout + 部署侧采集器完成。若应用进程直连远端日志服务，必须避免在事件循环中阻塞，并明确失败是否影响业务请求。
 

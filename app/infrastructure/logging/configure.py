@@ -1,12 +1,12 @@
+"""将应用日志设置装配为 Python logging 配置。"""
+
 import logging.config
-from collections.abc import Mapping
 
 from pydantic import ValidationError
 
 from app.config.settings import Settings
 from app.infrastructure.logging.context import RequestContextFilter
-from app.infrastructure.logging.contracts.driver import LoggingDriverBuilder
-from app.infrastructure.logging.drivers.registry import DEFAULT_LOGGING_DRIVERS
+from app.infrastructure.logging.drivers.registry import DEFAULT_LOGGING_DRIVERS, LoggingDriverRegistry
 from app.infrastructure.logging.errors import LoggingConfigurationError
 from app.infrastructure.logging.formatter import JsonLogFormatter, TextLogFormatter
 
@@ -16,12 +16,14 @@ _CORE_HANDLER_KEYS = frozenset({"filters", "formatter"})
 def configure_logging(
     settings: Settings,
     *,
-    drivers: Mapping[str, LoggingDriverBuilder] = DEFAULT_LOGGING_DRIVERS,
+    drivers: LoggingDriverRegistry = DEFAULT_LOGGING_DRIVERS,
 ) -> None:
     """解析日志驱动并配置当前进程的 logging。"""
+
     handlers = _build_handlers(settings, drivers)
     active_handlers = list(settings.logging.active_handlers)
 
+    # 保留第三方库已经创建的 logger，仅统一接管项目明确声明的命名空间。
     logging.config.dictConfig(
         {
             "version": 1,
@@ -62,6 +64,7 @@ def configure_logging(
                     "propagate": False,
                 },
                 "uvicorn.access": {
+                    # HTTPAccessLogMiddleware 已提供统一访问日志，关闭 Uvicorn 的重复输出。
                     "handlers": [],
                     "propagate": False,
                 },
@@ -77,8 +80,10 @@ def configure_logging(
 
 def _build_handlers(
     settings: Settings,
-    drivers: Mapping[str, LoggingDriverBuilder],
+    drivers: LoggingDriverRegistry,
 ) -> dict[str, dict[str, object]]:
+    """校验已启用 Handler，并通过注册表构建 dictConfig 片段。"""
+
     active_handlers = settings.logging.active_handlers
     if not active_handlers:
         raise LoggingConfigurationError("至少需要启用一个日志 Handler")
@@ -111,6 +116,7 @@ def _build_handlers(
             rendered_keys = ", ".join(sorted(reserved_keys))
             raise LoggingConfigurationError(f"日志 Driver 不能配置 Core 保留字段：{rendered_keys}")
 
+        # 格式和请求上下文属于日志核心契约，不允许各驱动自行分叉。
         handlers[name] = {
             **handler,
             "formatter": settings.logging.format,

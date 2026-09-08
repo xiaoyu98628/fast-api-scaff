@@ -1,3 +1,5 @@
+"""定义应用日志的环境配置模型。"""
+
 from typing import Literal
 
 from pydantic import Field, field_validator
@@ -10,6 +12,8 @@ type LogFormat = Literal["json", "text"]
 
 
 def _default_handlers() -> dict[str, dict[str, object]]:
+    """返回相互隔离的默认 Handler 配置。"""
+
     return {
         "stdout": {
             "driver": "stream",
@@ -38,6 +42,8 @@ class LoggingSettings(BaseSettings):
     @field_validator("access_exclude_routes")
     @classmethod
     def validate_access_exclude_routes(cls, routes: frozenset[str]) -> frozenset[str]:
+        """确保路由配置使用与 ASGI 请求一致的绝对路径。"""
+
         if any(not route.startswith("/") for route in routes):
             raise ValueError("排除的 HTTP 路由必须以 '/' 开头")
 

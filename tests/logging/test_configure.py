@@ -9,7 +9,10 @@ from app.config.database import DatabaseSettings
 from app.config.logging import LoggingSettings
 from app.config.settings import Settings
 from app.infrastructure.logging.configure import configure_logging
-from app.infrastructure.logging.drivers.registry import DEFAULT_LOGGING_DRIVERS
+from app.infrastructure.logging.drivers.registry import (
+    DEFAULT_LOGGING_DRIVERS,
+    LoggingDriverRegistry,
+)
 from app.infrastructure.logging.errors import LoggingConfigurationError
 
 
@@ -92,7 +95,7 @@ def test_configure_logging_rejects_missing_active_handler() -> None:
         configure_logging(settings)
 
 
-def test_configure_logging_accepts_extended_driver_mapping(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_configure_logging_accepts_extended_driver_registry(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, object] = {}
 
     def build_custom_handler(_raw_config: dict[str, object]) -> dict[str, object]:
@@ -114,10 +117,7 @@ def test_configure_logging_accepts_extended_driver_mapping(monkeypatch: pytest.M
 
     configure_logging(
         settings,
-        drivers={
-            **DEFAULT_LOGGING_DRIVERS,
-            "custom": build_custom_handler,
-        },
+        drivers=DEFAULT_LOGGING_DRIVERS.extended(("custom", build_custom_handler)),
     )
 
     assert captured["handlers"] == {
@@ -158,4 +158,7 @@ def test_configure_logging_rejects_driver_owned_formatter() -> None:
     )
 
     with pytest.raises(LoggingConfigurationError, match="Core 保留字段"):
-        configure_logging(settings, drivers={"invalid": build_invalid_handler})
+        configure_logging(
+            settings,
+            drivers=LoggingDriverRegistry((("invalid", build_invalid_handler),)),
+        )
