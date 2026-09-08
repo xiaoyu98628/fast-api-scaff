@@ -1,3 +1,5 @@
+"""创建和关闭 Memcached 原生异步客户端。"""
+
 import ssl
 
 from memcachio import Client
@@ -14,6 +16,8 @@ class MemcachedCacheConnection:
 
     @classmethod
     def from_settings(cls, settings: MemcachedCacheSettings) -> MemcachedCacheConnection:
+        """根据连接池、认证和 TLS 配置构造客户端。"""
+
         ssl_context = ssl.create_default_context() if settings.ssl else None
         client: Client[bytes] = Client(
             (settings.host, settings.port),
@@ -31,15 +35,21 @@ class MemcachedCacheConnection:
 
     @property
     def client(self) -> Client[bytes]:
+        """暴露给 Memcached Storage 使用的原生客户端。"""
+
         return self._client
 
     async def ping(self) -> bool:
+        """通过 version 命令验证服务可访问。"""
+
         try:
             return bool(await self._client.version())
         except Exception as error:
             raise CacheConnectionError("Memcached 健康检查失败") from error
 
     async def aclose(self) -> None:
+        """关闭原生连接池，并转换为稳定连接错误。"""
+
         try:
             self._client.connection_pool.close()
         except Exception as error:

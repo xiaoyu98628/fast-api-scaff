@@ -1,8 +1,12 @@
+"""定义业务可依赖的缓存客户端和 TTL 公共语义。"""
+
 from enum import Enum, auto
 from typing import Protocol
 
 
 class CacheExpiration(Enum):
+    """区分使用全局默认 TTL 与显式永不过期。"""
+
     DEFAULT = auto()
     NEVER = auto()
 

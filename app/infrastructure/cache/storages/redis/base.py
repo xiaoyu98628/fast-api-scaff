@@ -1,3 +1,5 @@
+"""保存所有 Redis 数据类型 Storage 共用的原生客户端。"""
+
 from redis.asyncio import Redis
 
 

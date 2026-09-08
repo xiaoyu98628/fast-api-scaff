@@ -1,3 +1,5 @@
+"""组合缓存原生连接、字节 Storage 和公共客户端。"""
+
 from dataclasses import dataclass
 
 from app.infrastructure.cache.contracts.client import CacheClient
@@ -22,7 +24,11 @@ class ManagedCacheResource:
     client: CacheClient
 
     async def ping(self) -> bool:
+        """委托原生连接执行健康检查。"""
+
         return await self.connection.ping()
 
     async def aclose(self) -> None:
+        """关闭底层连接；Storage 和 Client 不单独持有资源。"""
+
         await self.connection.aclose()

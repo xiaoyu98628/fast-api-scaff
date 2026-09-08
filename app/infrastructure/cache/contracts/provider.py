@@ -1,3 +1,5 @@
+"""定义缓存 Provider 的扩展契约和延迟创建结果。"""
+
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Protocol

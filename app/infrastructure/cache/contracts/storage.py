@@ -1,3 +1,5 @@
+"""定义各缓存驱动都必须实现的字节级 KV 语义。"""
+
 from typing import Protocol
 
 

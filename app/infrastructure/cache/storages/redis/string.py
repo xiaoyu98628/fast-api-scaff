@@ -1,3 +1,5 @@
+"""将 Redis String 命令适配为统一字节级 KV Storage。"""
+
 from redis.asyncio import Redis
 
 from app.infrastructure.cache.errors import CacheOperationError
@@ -11,6 +13,8 @@ class RedisStringStorage(BaseRedisStorage):
         super().__init__(client)
 
     async def get(self, key: str) -> bytes | None:
+        """读取 bytes；拒绝客户端配置错误导致的文本返回值。"""
+
         try:
             value = await self._client.get(key)
         except Exception as error:
@@ -22,6 +26,8 @@ class RedisStringStorage(BaseRedisStorage):
         raise CacheOperationError("Redis 返回了非 bytes 类型的缓存值")
 
     async def set(self, key: str, value: bytes, ttl: int | None) -> bool:
+        """使用 Redis EX 秒级过期语义写入值。"""
+
         try:
             result = await self._client.set(key, value, ex=ttl)
         except Exception as error:

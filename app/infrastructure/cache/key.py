@@ -1,3 +1,5 @@
+"""构造满足 Redis 与 Memcached 共同约束的缓存 key。"""
+
 import re
 from dataclasses import dataclass
 
@@ -9,6 +11,8 @@ INVALID_KEY_CHARACTER = re.compile(r"[\x00-\x20\x7f]")
 
 @dataclass(frozen=True, slots=True)
 class CacheKeyBuilder:
+    """按 namespace、连接前缀和业务 key 生成最终 key。"""
+
     namespace: str
     prefix: str = ""
 
@@ -18,6 +22,8 @@ class CacheKeyBuilder:
             self._validate_config_segment(self.prefix, "key_prefix")
 
     def build(self, key: str) -> str:
+        """校验业务 key 并生成以冒号分隔的最终 UTF-8 key。"""
+
         if not key:
             raise CacheKeyError("缓存 key 不能为空")
 
@@ -25,6 +31,7 @@ class CacheKeyBuilder:
             raise CacheKeyError("缓存 key 不能包含空白字符或控制字符")
 
         final_key = ":".join(part for part in (self.namespace, self.prefix, key) if part)
+        # 使用最严格的 Memcached 250 字节上限，保证切换驱动后 key 仍然可用。
         if len(final_key.encode()) > MAX_CACHE_KEY_BYTES:
             raise CacheKeyError(f"缓存 key 的 UTF-8 长度不能超过 {MAX_CACHE_KEY_BYTES} 字节")
 

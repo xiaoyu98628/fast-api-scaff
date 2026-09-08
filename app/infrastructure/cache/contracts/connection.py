@@ -1,3 +1,5 @@
+"""定义缓存原生连接的健康检查与关闭契约。"""
+
 from typing import Protocol
 
 
