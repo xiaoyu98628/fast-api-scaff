@@ -6,8 +6,12 @@ class BytesCacheCodec:
 
     @staticmethod
     def encode(value: bytes) -> bytes:
+        """原样返回待写入字节。"""
+
         return value
 
     @staticmethod
     def decode(value: bytes) -> bytes:
+        """原样返回已读取字节。"""
+
         return value

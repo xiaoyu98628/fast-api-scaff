@@ -13,6 +13,8 @@ class MemcachedCacheStorage:
     """通过 Memcached 客户端实现字节级 KV 存储。"""
 
     def __init__(self, client: Client[bytes]) -> None:
+        """绑定已经配置为返回 bytes 的 Memcached 客户端。"""
+
         self._client = client
 
     async def get(self, key: str) -> bytes | None:
@@ -38,6 +40,8 @@ class MemcachedCacheStorage:
         return result is True
 
     async def delete(self, key: str) -> bool:
+        """删除 key，并返回 Memcached 是否确认删除。"""
+
         try:
             result = await self._client.delete(key.encode())
         except Exception as error:
@@ -46,6 +50,8 @@ class MemcachedCacheStorage:
         return result is True
 
     async def exists(self, key: str) -> bool:
+        """复用读取语义判断 key 是否存在有效值。"""
+
         return await self.get(key) is not None
 
     @staticmethod

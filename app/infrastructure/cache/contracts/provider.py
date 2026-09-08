@@ -22,4 +22,7 @@ class CacheProvider(Protocol):
 
     driver: str
 
-    def prepare(self, raw_config: dict[str, object]) -> CacheResourceDefinition: ...
+    def prepare(self, raw_config: dict[str, object]) -> CacheResourceDefinition:
+        """严格校验原始配置，并返回尚未连接的资源定义。"""
+
+        ...

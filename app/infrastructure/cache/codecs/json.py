@@ -8,8 +8,12 @@ class JsonCacheCodec:
 
     @staticmethod
     def encode(value: object) -> bytes:
+        """把 JSON 兼容对象编码为紧凑 UTF-8 字节。"""
+
         return json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode()
 
     @staticmethod
     def decode(value: bytes) -> object:
+        """把 UTF-8 JSON 字节还原为 Python 对象。"""
+
         return json.loads(value)

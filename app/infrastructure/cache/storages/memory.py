@@ -7,6 +7,8 @@ class MemoryCacheStorage:
     """基于单进程资源实现 KV；不提供跨进程一致性或显式并发锁。"""
 
     def __init__(self, connection: MemoryCacheConnection) -> None:
+        """绑定保存值和单调时钟的进程内连接。"""
+
         self._connection = connection
 
     async def get(self, key: str) -> bytes | None:
@@ -32,6 +34,8 @@ class MemoryCacheStorage:
         return True
 
     async def delete(self, key: str) -> bool:
+        """清理过期项或删除有效值，并返回是否删除成功。"""
+
         if await self.get(key) is None:
             return False
 
@@ -39,4 +43,6 @@ class MemoryCacheStorage:
         return True
 
     async def exists(self, key: str) -> bool:
+        """复用读取逻辑判断存在性，同时触发惰性过期清理。"""
+
         return await self.get(key) is not None

@@ -6,8 +6,12 @@ class TextCacheCodec:
 
     @staticmethod
     def encode(value: str) -> bytes:
+        """使用 UTF-8 编码文本。"""
+
         return value.encode()
 
     @staticmethod
     def decode(value: bytes) -> str:
+        """使用 UTF-8 解码字节。"""
+
         return value.decode()
