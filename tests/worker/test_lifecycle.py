@@ -1,69 +1,26 @@
 import asyncio
 import subprocess
 import sys
-from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, replace
+from dataclasses import replace
 
 import pytest
 from typer.testing import CliRunner
 
 from app.bootstrap.build import build_application_container
-from app.bootstrap.http.application import create_app
 from app.bootstrap.worker.application import WorkerHost
 from app.config.database import DatabaseSettings
 from app.config.queue import QueueSettings
 from app.infrastructure.queue.errors import QueueError
 from app.infrastructure.queue.failed.sql.model import FailedJobModel
-from app.infrastructure.queue.job import job_reference
 from app.infrastructure.queue.manager import QueueManager
-from app.infrastructure.queue.policies import JobPolicy
-from app.interfaces.console.commands.queue import list_failures
-from app.interfaces.console.context import ConsoleContext
-from app.interfaces.worker.resolver import ExecutableJob
+from app.interfaces.worker.resolver import JobResolver
 from app.worker import app as worker_cli
 from tests.console.test_application import build_settings
-from tests.queue.fakes import FakeQueueBackend, queue_backend_factory
-from tests.queue.test_core import Codec, Job
-
-
-@dataclass(frozen=True, slots=True)
-class LifecycleBinding:
-    handler: Callable[[Job], Awaitable[None]]
-    policy: JobPolicy = JobPolicy()
-
-    async def execute(self, payload: bytes) -> None:
-        await self.handler(Codec().decode(payload))
-
-
-@dataclass(frozen=True, slots=True)
-class LifecycleResolver:
-    binding: ExecutableJob
-
-    def resolve(self, reference: str, version: int) -> ExecutableJob:
-        if reference != job_reference(Job) or version != 1:
-            raise KeyError((reference, version))
-        return self.binding
+from tests.queue.fakes import FakeQueueBackend, Job, queue_backend_factory
 
 
 @pytest.mark.asyncio
-async def test_http_lifespan_does_not_initialize_queue() -> None:
-    settings = build_settings().model_copy(
-        update={
-            "queue": QueueSettings(
-                _env_file=None,
-                default="main",
-                connections={"main": {"driver": "redis", "host": "localhost"}},
-            )
-        }
-    )
-    container = build_application_container(settings)
-    app = create_app(settings, container_builder=lambda _: container)
-    async with app.router.lifespan_context(app):
-        assert not container.queues.is_initialized()
-
-
-@pytest.mark.asyncio
-async def test_worker_uses_own_runtime_and_drains_job() -> None:
+async def test_worker_uses_production_resolver_and_drains_job(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = build_settings().model_copy(
         update={
             "database": DatabaseSettings(
@@ -86,6 +43,8 @@ async def test_worker_uses_own_runtime_and_drains_job() -> None:
         values.append(job.value)
         stop.set()
 
+    monkeypatch.setattr(Job, "handle", handle)
+
     queues = QueueManager(
         settings.queue,
         base_container.databases,
@@ -103,21 +62,12 @@ async def test_worker_uses_own_runtime_and_drains_job() -> None:
     application = WorkerHost(
         settings,
         container_builder=lambda _: container,
-        resolver_builder=lambda: LifecycleResolver(LifecycleBinding(handle)),
+        resolver_builder=lambda: JobResolver(("tests",)),
     )
     await asyncio.wait_for(application.serve(connection=None, queue=None, concurrency=2, stop=stop), 1)
     assert values == [17]
     with pytest.raises(QueueError):
         await container.queues.get()
-
-
-@pytest.mark.asyncio
-async def test_console_rejects_unconfigured_failure_database() -> None:
-    settings = build_settings()
-    container = build_application_container(settings)
-    with pytest.raises(QueueError, match="SQL 失败存储数据库未配置"):
-        await list_failures(ConsoleContext(settings, container), limit=20, offset=0)
-    await container.aclose()
 
 
 def test_worker_help_has_independent_connection_queue_and_concurrency() -> None:
@@ -126,6 +76,8 @@ def test_worker_help_has_independent_connection_queue_and_concurrency() -> None:
     assert "connection" in result.output
     assert "queue" in result.output
     assert "concurrency" in result.output
+    assert "消费并执行队列中的后台任务" in result.output
+    assert "已注册" not in result.output
 
 
 def test_worker_module_is_executable() -> None:

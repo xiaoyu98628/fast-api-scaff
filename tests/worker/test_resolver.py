@@ -23,7 +23,7 @@ def test_resolver_rejects_unknown_version_and_external_module() -> None:
     with pytest.raises(KeyError):
         resolver.resolve(encoded.job_type, encoded.version + 1)
     with pytest.raises(KeyError):
-        resolver.resolve("tests.queue.test_core:Job", 1)
+        resolver.resolve("tests.queue.fakes:Job", 1)
 
 
 @pytest.mark.parametrize("allowed_packages", [(), ("",)])

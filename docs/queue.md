@@ -54,7 +54,7 @@ await container.queues.dispatch(ExampleJob(number=42))
 
 Dispatcher 自动取得 `类型.__module__:类型.__qualname__`，将类路径、默认版本 1 和 JSON payload 写入消息。Worker 不扫描 `contexts`、`jobs` 或其他业务目录，也没有 Job Catalog 或 Handler 注册表；它按消息中的类路径动态导入类型，确认模块属于应用根包且类型继承 `QueueJob`，解码后直接执行 `await job.handle()`。解析结果会缓存。
 
-普通 dataclass 和 Pydantic Model 默认使用基于 Pydantic schema 的 JSON Codec；需要兼容特殊历史协议时，可以在 Job 类上覆盖 `codec`。重试策略同样通过类级 `policy` 覆盖，版本通过类级 `version` 覆盖。当前 `handle()` 不注入全局容器；需要访问业务能力时，应先定义上下文内的窄接口和明确的装配边界，不能让 Application/Domain 反向依赖 `ApplicationContainer`。
+普通 dataclass 和 Pydantic Model 默认使用基于 Pydantic schema 的 JSON Codec；需要兼容特殊历史协议时，可以在 Job 类上覆盖 `codec`。重试策略同样通过类级 `policy` 覆盖，版本通过类级 `version` 覆盖。当前 `handle()` 固定为无参数方法，Worker 不注入全局容器、应用服务或其他依赖，因此现有能力适合只依赖自身 payload 的任务。需要访问业务能力时，必须先扩展显式装配边界并注入上下文内定义的窄接口，不能让 Application/Domain 反向依赖 `ApplicationContainer`。
 
 类路径属于队列消息契约。移动或重命名 Job 时，尚未消费的消息仍引用旧路径；应在旧模块暂时保留一个指向新类的显式导入，待旧队列排空后再删除。动态导入以队列服务是内部可信资源为前提，默认拒绝应用根包之外的类路径。
 

@@ -22,7 +22,7 @@ def create_worker(operation: WorkerOperation) -> typer.Typer:
         queue: str | None = typer.Option(None),
         concurrency: int | None = typer.Option(None, min=1, max=1024),
     ) -> None:
-        """独立执行已注册的后台任务。"""
+        """消费并执行队列中的后台任务。"""
         operation(connection=connection, queue=queue, concurrency=concurrency)
 
     return application

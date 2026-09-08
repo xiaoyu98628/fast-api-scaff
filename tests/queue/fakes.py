@@ -1,13 +1,38 @@
+from __future__ import annotations
+
 import asyncio
 import builtins
 from collections import deque
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from typing import ClassVar
 from uuid import UUID, uuid4
 
-from app.config.queue import QueueConnection
+from app.config.database import DatabaseSettings
+from app.config.queue import QueueConnection, QueueSettings
+from app.infrastructure.database.manager import DatabaseManager
 from app.infrastructure.queue.contracts.failed_store import FailedJobRecord
 from app.infrastructure.queue.contracts.provider import QueueBackend
 from app.infrastructure.queue.errors import QueueError
+from app.infrastructure.queue.job import QueueJob
+from app.infrastructure.queue.manager import QueueManager
+
+
+class Codec:
+    def encode(self, job: Job) -> bytes:
+        return str(job.value).encode()
+
+    def decode(self, payload: bytes) -> Job:
+        return Job(int(payload))
+
+
+@dataclass(frozen=True)
+class Job(QueueJob):
+    value: int
+    codec: ClassVar[Codec] = Codec()
+
+    async def handle(self) -> None:
+        pass
 
 
 class RecordingFailedJobStore:
@@ -125,3 +150,18 @@ def queue_backend_factory(backend: FakeQueueBackend) -> Callable[[QueueConnectio
         return backend
 
     return create
+
+
+def create_queue_manager() -> QueueManager:
+    settings = QueueSettings(
+        _env_file=None,
+        default="main",
+        connections={"main": {"driver": "redis", "host": "localhost"}},
+    )
+    backend = FakeQueueBackend()
+    return QueueManager(
+        settings,
+        DatabaseManager(DatabaseSettings(_env_file=None)),
+        failed_jobs=RecordingFailedJobStore(),
+        factory=queue_backend_factory(backend),
+    )

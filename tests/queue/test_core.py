@@ -1,8 +1,5 @@
-from __future__ import annotations
-
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from datetime import UTC, datetime
-from typing import ClassVar
 from uuid import uuid4
 
 import pytest
@@ -14,42 +11,19 @@ from app.infrastructure.database.manager import DatabaseManager
 from app.infrastructure.queue.codecs.envelope_json import EnvelopeJsonCodec
 from app.infrastructure.queue.contracts.message import MessageEnvelope
 from app.infrastructure.queue.errors import InvalidMessageError, QueueConfigurationError, QueueError
-from app.infrastructure.queue.job import QueueJob, describe_job, encode_job, job_reference
+from app.infrastructure.queue.job import describe_job, encode_job, job_reference
 from app.infrastructure.queue.manager import QueueManager
-from tests.queue.fakes import FakeQueueBackend, RecordingFailedJobStore, queue_backend_factory
-
-
-class Codec:
-    def encode(self, job: Job) -> bytes:
-        return str(job.value).encode()
-
-    def decode(self, payload: bytes) -> Job:
-        return Job(int(payload))
-
-
-@dataclass(frozen=True)
-class Job(QueueJob):
-    value: int
-    codec: ClassVar[Codec] = Codec()
-
-    async def handle(self) -> None:
-        pass
+from tests.queue.fakes import (
+    FakeQueueBackend,
+    Job,
+    RecordingFailedJobStore,
+    create_queue_manager,
+    queue_backend_factory,
+)
 
 
 def message() -> MessageEnvelope:
     return MessageEnvelope(uuid4(), job_reference(Job), 1, b"123", datetime(2026, 9, 7))
-
-
-def manager() -> QueueManager:
-    settings = QueueSettings(_env_file=None, default="main", connections={"main": {"driver": "redis", "host": "localhost"}})
-    backend = FakeQueueBackend()
-    queues = QueueManager(
-        settings,
-        DatabaseManager(DatabaseSettings(_env_file=None)),
-        failed_jobs=RecordingFailedJobStore(),
-        factory=queue_backend_factory(backend),
-    )
-    return queues
 
 
 def test_sql_failure_store_rejects_unknown_database_on_use() -> None:
@@ -109,7 +83,7 @@ def test_job_descriptor_encodes_subclass_and_rejects_unknown_type() -> None:
 
 @pytest.mark.asyncio
 async def test_manager_is_lazy_and_dispatches_typed_job() -> None:
-    queues = manager()
+    queues = create_queue_manager()
     assert not queues.is_initialized()
     job_id = await queues.dispatch(Job(42))
     publisher = await queues.get()

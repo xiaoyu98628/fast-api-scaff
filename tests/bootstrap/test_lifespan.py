@@ -2,6 +2,7 @@ import logging
 
 import pytest
 
+from app.bootstrap.build import build_application_container
 from app.bootstrap.http.application import create_app
 from app.bootstrap.http.logging import ApplicationLogEvent
 from app.config.app import AppSettings
@@ -26,6 +27,24 @@ def build_settings() -> Settings:
         cache=CacheSettings(_env_file=None),
         cors=CorsSettings(_env_file=None),
     )
+
+
+@pytest.mark.asyncio
+async def test_http_lifespan_does_not_initialize_queue() -> None:
+    settings = build_settings().model_copy(
+        update={
+            "queue": QueueSettings(
+                _env_file=None,
+                default="main",
+                connections={"main": {"driver": "redis", "host": "localhost"}},
+            )
+        }
+    )
+    container = build_application_container(settings)
+    app = create_app(settings, container_builder=lambda _: container)
+
+    async with app.router.lifespan_context(app):
+        assert not container.queues.is_initialized()
 
 
 @pytest.mark.asyncio

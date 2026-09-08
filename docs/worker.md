@@ -1,6 +1,6 @@
 # 独立 Worker
 
-Worker 与 HTTP 是独立进程，共享 Settings、ApplicationRuntime 和应用服务。HTTP lifespan 不启动消费者，Worker 不启动 FastAPI/Uvicorn。
+Worker 与 HTTP 是独立进程，共享 Settings、组合根和资源生命周期。HTTP lifespan 不启动消费者，Worker 不启动 FastAPI/Uvicorn。
 
 ## 启动
 
@@ -14,6 +14,8 @@ docker compose --profile worker up --build
 
 省略 connection/queue 时采用默认连接和该连接的默认队列。省略 concurrency 时采用 QUEUE_WORKER__CONCURRENCY。
 
+只要默认队列连接配置有效且后端可访问，即使队列当前没有消息、项目也没有预先注册的 Job，Worker 仍可启动并等待。Job 在消息到达后根据类路径动态解析，不存在启动前注册清单。
+
 Compose 中的 `worker` 服务复用应用镜像、`.env` 和网络，不暴露端口，也不配置只适用于 HTTP 的健康检查。镜像本身不声明健康检查，Compose 只为 HTTP 服务检测 `/health`。Worker 不会自动创建队列服务；`.env` 必须配置容器可访问的 Redis、Kafka 或 RabbitMQ 地址。容器内的 `127.0.0.1` 是 Worker 容器自身。
 
 脚手架内置 `LoginSucceededJob` 最小任务。登录接口向默认连接配置的默认队列（`sample.env` 为 `default`）尽力投递，Worker 调用它的 `handle()` 输出“用户登录成功，队列任务已执行。”；任务不含用户凭据。`sample.env` 以 Redis 为默认连接，因此 Worker 可以不带参数启动。
@@ -22,7 +24,9 @@ Compose 中的 `worker` 服务复用应用镜像、`.env` 和网络，不暴露�
 
 一个默认 Worker 可以执行默认队列中的所有合法 QueueJob，但不会动态扫描 Redis Stream、Kafka Topic 或 RabbitMQ Queue。命名队列是用于优先级、并发和扩缩容隔离的可选高级能力，需要时为它单独启动 Worker。
 
-`jobs/` 是当前示例的组织习惯，不是 Worker 约定。Job 可放在应用根包的任意业务模块，Worker 只依据消息携带的类路径解析。类移动后应暂时保留旧模块兼容入口，以便处理已经入队的消息。Application/Domain 不导入 Worker、队列驱动或全局容器；不要在 `handle()` 中绕过应用用例直接操作 ORM。
+`jobs/` 是当前示例的组织习惯，不是 Worker 约定。Job 可放在应用根包的任意业务模块，Worker 只依据消息携带的类路径解析。类移动后应暂时保留旧模块兼容入口，以便处理已经入队的消息。Application/Domain 不导入 Worker、队列驱动或全局容器。
+
+当前 `handle()` 是无参数方法，框架不会向它注入 `ApplicationContainer`、应用服务或其他依赖，因此现有能力适合只依赖自身 payload 的任务。需要调用应用用例或外部能力时，应先扩展显式装配边界并注入上下文定义的窄接口；不要让 Job 导入全局容器，也不要绕过应用用例直接操作 ORM。
 
 ## 重试与超时
 
@@ -44,7 +48,7 @@ SIGINT/SIGTERM 设置停止信号：停止安排新任务，取消等待消息�
 
 队列连接最后装配，先于数据库/缓存/HTTP 出站资源关闭。关闭失败仍尝试剩余资源并聚合异常。
 
-任务完成日志使用事件 `queue.job.finished`，details 中包含 job_id、queue_name、queue_connection、attempts、failure_reason 和 correlation_id，不输出任务数据。
+Worker 执行器的完成日志使用事件 `queue.job.finished`，details 中包含 job_id、queue_name、queue_connection、attempts、failure_reason 和 correlation_id，不输出任务数据。当前这些字段不会自动注入 `handle()` 内部产生的任意业务日志；业务日志只包含其显式提供的上下文。
 
 ## 质量检查
 

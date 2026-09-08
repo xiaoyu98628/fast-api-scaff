@@ -8,7 +8,7 @@
 - [uv](https://docs.astral.sh/uv/)
 - Git
 - 可选：Docker 与 Docker Compose
-- 使用 MySQL、PostgreSQL、Redis 或 Memcached 时，需要对应服务可访问
+- 使用 MySQL、PostgreSQL、Redis、Memcached、Kafka 或 RabbitMQ 时，需要对应服务可访问
 
 安装项目依赖：
 

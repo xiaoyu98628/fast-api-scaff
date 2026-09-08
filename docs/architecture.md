@@ -1,6 +1,6 @@
 # 架构说明
 
-项目采用模块化单体：一个部署单元内按限界上下文划分业务，并在每个上下文内部保持 Domain、Application、Infrastructure 边界。HTTP、Console 与 Worker 是独立宿主，共享组合根、应用用例和资源生命周期。
+项目采用模块化单体：一个部署单元内按限界上下文划分业务，并在每个上下文内部保持 Domain、Application、Infrastructure 边界。HTTP、Console 与 Worker 是独立宿主，共享配置、组合根和资源生命周期；HTTP 与 Console 调用已装配的应用用例，当前 Worker 动态解析并执行自包含 QueueJob。
 
 这不是为了堆叠 DDD 名词，而是解决三个实际问题：业务规则不被框架入口绕过，基础设施可以替换/测试，多入口复用同一用例且不会出现行为分叉。
 
@@ -271,6 +271,6 @@ HTTP 独立定义 `page/limit` 查询协议和 `items + meta` 分页响应，并
 
 共享基础设施 queue 提供 QueueJob、Dispatcher、QueueManager、驱动和 FailedJobStore。ApplicationContainer.queues 与数据库等 Manager 一样按需使用；队列先关闭，数据库后关闭。HTTP 不订阅队列。
 
-独立 `app.worker` 入口由 `app.bootstrap.worker` 完成装配并复用 ApplicationRuntime；`app.interfaces.worker` 只负责 Job 类路径解析、消息执行、重试和消费并发。QueueJob 将可序列化数据与 `handle()` 收敛在同一类，投递时自动把类路径写入消息，Worker 动态导入并验证该类型；框架不扫描 `contexts`、`jobs` 或其他业务目录，不维护业务注册表，应用组合根也不收集 Job。当前示例把任务放在上下文级 `jobs/` 包并按类名使用蛇形命名模块，但这只是组织习惯。Application/Domain 不导入 Worker、具体队列驱动或全局容器，共享 Infrastructure 不导入具体业务。内置 `LoginSucceededJob` 由登录 HTTP 适配器在会话提交后尽力投递，作为默认队列和 `handle()` 日志输出的最小示例，不进入认证 Application/Domain，也不参与登录事务。
+独立 `app.worker` 入口由 `app.bootstrap.worker` 完成装配并复用 ApplicationRuntime；`app.interfaces.worker` 只负责 Job 类路径解析、消息执行、重试和消费并发。QueueJob 将可序列化数据与 `handle()` 收敛在同一类，投递时自动把类路径写入消息，Worker 动态导入并验证该类型；框架不扫描 `contexts`、`jobs` 或其他业务目录，不维护业务注册表，应用组合根也不收集 Job。当前示例把任务放在上下文级 `jobs/` 包并按类名使用蛇形命名模块，但这只是组织习惯。当前无参数 `handle()` 不提供应用服务依赖注入，只适合自包含任务；需要业务依赖时应先设计显式的窄接口装配边界。Application/Domain 不导入 Worker、具体队列驱动或全局容器，共享 Infrastructure 不导入具体业务。内置 `LoginSucceededJob` 由登录 HTTP 适配器在会话提交后尽力投递，作为默认队列和 `handle()` 日志输出的最小示例，不进入认证 Application/Domain，也不参与登录事务。
 
 SQL 失败表属于共享技术能力，在 main metadata 注册；失败写入使用独立短事务，不借用业务 UoW。任务执行和消息确认不是跨系统原子事务。详见[队列](queue.md)、[Worker](worker.md)。
