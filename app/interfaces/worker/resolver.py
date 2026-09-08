@@ -14,14 +14,24 @@ class ExecutableJob(Protocol):
     """JobExecutor 所需的任务策略和 payload 执行能力。"""
 
     @property
-    def policy(self) -> JobPolicy: ...
-    async def execute(self, payload: bytes) -> None: ...
+    def policy(self) -> JobPolicy:
+        """返回 Worker 重试和超时所需的任务策略。"""
+
+        ...
+
+    async def execute(self, payload: bytes) -> None:
+        """解码业务 payload 并执行具体任务。"""
+
+        ...
 
 
 class JobTypeResolver(Protocol):
     """按稳定类型引用和版本查找可执行任务。"""
 
-    def resolve(self, reference: str, version: int) -> ExecutableJob: ...
+    def resolve(self, reference: str, version: int) -> ExecutableJob:
+        """解析匹配类型引用和版本的可执行任务绑定。"""
+
+        ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,6 +42,8 @@ class JobBinding[T: QueueJob]:
 
     @property
     def policy(self) -> JobPolicy:
+        """返回任务类型声明的不可变执行策略。"""
+
         return self.descriptor.policy
 
     async def execute(self, payload: bytes) -> None:
@@ -53,6 +65,8 @@ class JobResolver:
     allowed_packages: tuple[str, ...] = ("app",)
 
     def __post_init__(self) -> None:
+        """确保动态导入白名单至少包含一个有效包名。"""
+
         if not self.allowed_packages or any(not package.strip() for package in self.allowed_packages):
             raise QueueConfigurationError("任务模块范围不合法")
 
@@ -70,6 +84,8 @@ class JobResolver:
         return JobBinding(descriptor)
 
     def _load(self, reference: str) -> type[QueueJob]:
+        """从白名单模块加载模块级 QueueJob 子类。"""
+
         # 类路径来自队列消息，因此导入前必须先限制在可信包前缀内。
         module_name, separator, qualified_name = reference.partition(":")
         if not separator or not module_name or not qualified_name or "<locals>" in qualified_name:

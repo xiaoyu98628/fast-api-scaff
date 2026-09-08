@@ -17,6 +17,12 @@ class DatabaseProvider(Protocol):
     """数据库驱动配置校验和 Engine 配置构建入口。"""
 
     @property
-    def drivers(self) -> tuple[str, ...]: ...
+    def drivers(self) -> tuple[str, ...]:
+        """返回该 Provider 能处理的全部驱动名称。"""
 
-    def prepare(self, raw_config: dict[str, object]) -> DatabaseResourceDefinition: ...
+        ...
+
+    def prepare(self, raw_config: dict[str, object]) -> DatabaseResourceDefinition:
+        """严格校验原始配置，并返回尚未创建 Engine 的资源定义。"""
+
+        ...
