@@ -1,6 +1,6 @@
 import asyncio
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from uuid import UUID, uuid4
 
@@ -9,6 +9,10 @@ from app.infrastructure.queue.codecs.envelope_json import EnvelopeJsonCodec
 from app.infrastructure.queue.contracts.message import MessageEnvelope
 from app.infrastructure.queue.contracts.publisher import QueuePublisher
 from app.infrastructure.queue.errors import QueueError
+
+
+def _always_active() -> None:
+    pass
 
 
 @dataclass(frozen=True, slots=True)
@@ -20,6 +24,7 @@ class Dispatcher:
     publish_timeout: float = 10.0
     clock: Callable[[], datetime] = datetime.now
     new_id: Callable[[], UUID] = uuid4
+    ensure_active: Callable[[], None] = field(default=_always_active, repr=False, compare=False)
 
     async def dispatch(self, job: object, *, queue: str | None = None, correlation_id: str | None = None) -> UUID:
         encoded = self.catalog.encode(job)
@@ -28,9 +33,10 @@ class Dispatcher:
         return message.job_id
 
     async def publish_envelope(self, message: MessageEnvelope, *, queue: str | None = None) -> None:
+        self.ensure_active()
         target = self.default_queue if queue is None else queue
         if not target.strip() or len(target) > 200:
-            raise QueueError("队列名不能为空")
+            raise QueueError("队列名不合法")
         payload = self.codec.encode(message)
         try:
             async with asyncio.timeout(self.publish_timeout):

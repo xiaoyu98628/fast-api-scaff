@@ -8,7 +8,7 @@ from app.config.base import BASE_SETTINGS_CONFIG
 
 class ConnectionSettings(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True, allow_inf_nan=False)
-    default_queue: str = Field(default="default", min_length=1, pattern=r"^\S+$")
+    default_queue: str = Field(default="default", min_length=1, max_length=200, pattern=r"^\S+$")
     publish_timeout: float = Field(default=10.0, gt=0)
 
 

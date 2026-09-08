@@ -21,12 +21,18 @@ class RabbitConsumer:
     def __init__(self, channel: AbstractChannel, iterator: AbstractQueueIterator) -> None:
         self._channel = channel
         self._iterator = iterator
+        self._receive_lock = asyncio.Lock()
         self._closed = False
 
     async def receive(self) -> RabbitDelivery:
-        if self._closed:
-            raise QueueError("RabbitMQ 消费者已关闭")
-        return RabbitDelivery(await self._iterator.__anext__())
+        async with self._receive_lock:
+            if self._closed:
+                raise QueueError("RabbitMQ 消费者已关闭")
+            try:
+                message = await self._iterator.__anext__()
+            except StopAsyncIteration:
+                raise QueueError("RabbitMQ 消费流已结束") from None
+            return RabbitDelivery(message)
 
     async def aclose(self) -> None:
         self._closed = True

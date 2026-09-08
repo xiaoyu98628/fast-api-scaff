@@ -296,7 +296,7 @@ HTTP 不启动消费者。新增配置无队列连接默认值；`QUEUE_DEFAULT`
 | QUEUE_WORKER__CONCURRENCY | 4 | 1–1024 个执行槽，Kafka 同分区仍串行 |
 | QUEUE_WORKER__SHUTDOWN_TIMEOUT_SECONDS | 30 | 取消在途任务前的等待时间 |
 
-所有连接包含 driver、default_queue（default）、publish_timeout（10 秒）。驱动特有字段如下；不支持的额外字段会被拒绝。
+所有连接包含 driver、default_queue（default，1–200 个非空白字符）、publish_timeout（10 秒）。驱动特有字段如下；不支持的额外字段会被拒绝。
 
 | driver | 字段 |
 | --- | --- |

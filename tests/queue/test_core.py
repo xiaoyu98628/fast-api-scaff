@@ -121,6 +121,28 @@ async def test_manager_is_lazy_and_dispatches_typed_job() -> None:
         await publisher.dispatch(Job(43))
 
 
+@pytest.mark.asyncio
+async def test_cached_dispatcher_checks_manager_lifecycle() -> None:
+    class PermissiveBackend(FakeQueueBackend):
+        async def aclose(self) -> None:
+            pass
+
+    settings = QueueSettings(_env_file=None, default="main", connections={"main": {"driver": "redis", "host": "localhost"}})
+    backend = PermissiveBackend()
+    queues = QueueManager(
+        settings,
+        DatabaseManager(DatabaseSettings(_env_file=None)),
+        failed_jobs=RecordingFailedJobStore(),
+        factory=queue_backend_factory(backend),
+    )
+    queues.catalog.register(definition())
+    dispatcher = await queues.get()
+    await queues.aclose()
+
+    with pytest.raises(QueueError, match="队列管理器已关闭"):
+        await dispatcher.dispatch(Job(1))
+
+
 @pytest.mark.parametrize(
     "raw",
     [
@@ -131,6 +153,7 @@ async def test_manager_is_lazy_and_dispatches_typed_job() -> None:
         {"driver": "redis", "url": "redis://localhost"},
         {"driver": "redis", "host": "localhost", "lease_seconds": 0},
         {"driver": "redis", "host": "localhost", "command_timeout": 1.5},
+        {"driver": "redis", "host": "localhost", "default_queue": "q" * 201},
     ],
 )
 def test_strict_driver_configuration(raw: dict[str, object]) -> None:

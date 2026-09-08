@@ -69,12 +69,15 @@ class QueueManager:
         return configs
 
     def resolve_name(self, name: str | None = None) -> str:
-        if self._closed:
-            raise QueueError("队列管理器已关闭")
+        self._ensure_open()
         resolved = self._default if name is None else name
         if resolved is None or resolved not in self._resources:
             raise QueueConfigurationError("队列连接未配置")
         return resolved
+
+    def _ensure_open(self) -> None:
+        if self._closed:
+            raise QueueError("队列管理器已关闭")
 
     def is_initialized(self, name: str | None = None) -> bool:
         return self._resources[self.resolve_name(name)].initialized
@@ -83,7 +86,7 @@ class QueueManager:
         resolved = self.resolve_name(name)
         backend = await self._resources[resolved].get()
         config = self._configs[resolved]
-        return Dispatcher(backend, self.catalog, self.codec, config.default_queue, config.publish_timeout)
+        return Dispatcher(backend, self.catalog, self.codec, config.default_queue, config.publish_timeout, ensure_active=self._ensure_open)
 
     @asynccontextmanager
     async def consume(self, *, connection: str | None = None, queue: str | None = None, concurrency: int = 1) -> AsyncIterator[QueueConsumer]:
