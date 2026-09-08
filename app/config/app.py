@@ -1,3 +1,5 @@
+"""定义应用身份、运行环境和响应服务编码配置。"""
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -17,4 +19,5 @@ class AppSettings(BaseSettings):
     version: str = "3.0.7"
     env: str = "local"
     debug: bool = False
+    # 统一响应码会把三位服务编码作为前缀，固定长度可避免跨服务冲突。
     service_code: str = Field(default="001", pattern=r"^\d{3}$")

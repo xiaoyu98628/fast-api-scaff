@@ -1,3 +1,5 @@
+"""定义 HTTP 跨域资源共享策略。"""
+
 from typing import Self
 
 from pydantic import Field, model_validator
@@ -35,6 +37,9 @@ class CorsSettings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_credential_origins(self) -> Self:
+        """拒绝携带凭证时使用通配来源的无效组合。"""
+
+        # 浏览器不接受凭证响应配合通配来源，必须返回明确的 Origin。
         if self.allow_credentials and "*" in self.allow_origins:
             message = "CORS_ALLOW_ORIGINS cannot contain '*' when CORS_ALLOW_CREDENTIALS is true"
             raise ValueError(message)

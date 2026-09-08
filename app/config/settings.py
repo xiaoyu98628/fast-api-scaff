@@ -1,3 +1,5 @@
+"""聚合各子系统配置并提供进程级加载入口。"""
+
 from functools import lru_cache
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -30,6 +32,8 @@ class Settings(BaseModel):
 @lru_cache(maxsize=1)
 def load_settings() -> Settings:
     """加载并缓存应用配置。"""
+
+    # 同一进程内复用不可变快照，避免不同宿主组件读取到不一致的环境状态。
     return Settings(
         queue=QueueSettings(),
         app=AppSettings(),
