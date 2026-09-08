@@ -1,3 +1,5 @@
+"""声明认证端点在 OpenAPI 中复用的错误响应。"""
+
 from typing import Any
 
 from app.interfaces.http.exceptions.openapi import ValidationErrorDetail

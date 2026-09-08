@@ -1,3 +1,5 @@
+"""提供登录、当前用户查询和退出登录端点。"""
+
 import logging
 from typing import Annotated
 from uuid import UUID
@@ -25,9 +27,12 @@ _logger = logging.getLogger(__name__)
 
 
 async def _publish_login_succeeded(container: ApplicationContainer, user_id: UUID) -> None:
+    """在响应后尽力发布登录成功任务，并记录队列边界失败。"""
+
     try:
         await container.queues.dispatch(LoginSucceededJob(user_id=user_id))
     except QueueError:
+        # 异步副作用失败不能改变已经完成的认证结果，只记录稳定任务类型供诊断。
         _logger.exception(
             "Login succeeded job dispatch failed",
             extra=log_extra("user.login_succeeded.dispatch_failed", job_type=job_reference(LoginSucceededJob)),
@@ -47,12 +52,16 @@ async def login(
     background_tasks: BackgroundTasks,
     container: Annotated[ApplicationContainer, Depends(provide_application_container)],
 ) -> JsonResponse[TokenResponse]:
+    """验证登录请求、签发会话，并安排登录成功任务。"""
+
     try:
         token = await service.login(LoginCommand(username=payload.username, password=payload.password))
     except AuthApplicationError as error:
         raise auth_error_to_http(error) from None
 
+    # 登录响应先返回，队列发布作为 FastAPI BackgroundTask 在响应后执行。
     background_tasks.add_task(_publish_login_succeeded, container, token.user_id)
+    # Token 响应不得被浏览器或中间代理缓存。
     response.headers["Cache-Control"] = "no-store"
     return responses.success(TokenResponse.from_dto(token))
 
@@ -64,6 +73,8 @@ async def current_user(
     responses: JsonResponseFactoryDependency,
     response: Response,
 ) -> JsonResponse[UserResponse]:
+    """根据 Bearer 会话返回当前启用用户。"""
+
     try:
         user = await service.current_user(credential)
     except AuthApplicationError as error:
@@ -75,5 +86,7 @@ async def current_user(
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT, response_class=Response, responses={401: AUTH_REQUIRED_RESPONSE})
 async def logout(credential: SessionCredentialDependency, service: AuthServiceDependency) -> Response:
+    """删除服务器端会话并返回无正文响应。"""
+
     await service.logout(credential)
     return Response(status_code=status.HTTP_204_NO_CONTENT, headers={"Cache-Control": "no-store"})

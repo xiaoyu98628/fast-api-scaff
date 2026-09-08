@@ -1,3 +1,5 @@
+"""注册宿主级路由和版本化业务 API。"""
+
 from fastapi import FastAPI
 from starlette.requests import Request
 
@@ -7,10 +9,14 @@ from app.interfaces.http.shared.response.json import JsonResponse
 
 
 async def health(request: Request, responses: JsonResponseFactoryDependency) -> JsonResponse[dict[str, str]]:
+    """返回进程存活响应，不主动初始化或探测外部资源。"""
+
     return responses.success(data={"message": "ok"})
 
 
 def register_routes(app: FastAPI) -> None:
+    """先注册宿主健康检查，再挂载完整 API 路由树。"""
+
     app.add_api_route(
         path="/health",
         endpoint=health,
