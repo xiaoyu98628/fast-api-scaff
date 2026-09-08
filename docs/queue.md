@@ -93,6 +93,54 @@ uv run python -m app.console queue retry <failure-id>
 uv run python -m app.console queue forget <failure-id>
 ```
 
+### 查看 MySQL 中的失败消息
+
+`queue_failed_jobs.payload` 保存队列收到的完整原始消息信封，因此模型使用 `LargeBinary`，在 MySQL 中对应 `LONGBLOB`。正常消息仍然是 UTF-8 JSON，可以转换为文本查看：
+
+```sql
+SELECT
+    failure_id,
+    reason,
+    CONVERT(payload USING utf8mb4) AS envelope
+FROM queue_failed_jobs
+ORDER BY failed_at DESC;
+```
+
+完整信封中的 `payload` 是经过 Base64 编码的 Job 参数。对于合法信封，可以继续解码为 JSON 文本：
+
+```sql
+SELECT
+    failure_id,
+    reason,
+    CONVERT(
+        FROM_BASE64(
+            JSON_UNQUOTE(
+                JSON_EXTRACT(
+                    CONVERT(payload USING utf8mb4),
+                    '$.payload'
+                )
+            )
+        )
+        USING utf8mb4
+    ) AS job_payload
+FROM queue_failed_jobs
+WHERE failure_id = '<failure-id>'
+  AND reason <> 'invalid_envelope';
+```
+
+`invalid_envelope` 可能包含任意二进制数据，不能假设它是 JSON 或 UTF-8 文本。使用十六进制可以无损查看：
+
+```sql
+SELECT
+    failure_id,
+    reason,
+    HEX(payload) AS payload_hex
+FROM queue_failed_jobs
+WHERE failure_id = '<failure-id>';
+```
+
+Console 的 `queue failed` 命令默认只展示失败元数据，不输出 payload，避免把用户 ID 或未来任务中的敏感业务数据泄漏到终端和命令日志。直接查询 payload 时也应遵守相同的数据访问和脱敏要求。
+
 SQL 使用独立短事务，表名为 `queue_failed_jobs`，迁移归 main 管理。若选择其他数据库连接，必须保证该连接具有同一表结构；框架不会启动时自动建表。迁移 downgrade 会删除失败记录。
 
 retry 生成新 job_id 并保留 replay_of，原失败记录保留；forget 单独删除。重复 retry 可生成多条任务。发布结果不确定时需检查下游，不能宣称人工重放 exactly-once。独立 Console 在 Memory 失败存储下明确报错，不返回误导性的空列表。
