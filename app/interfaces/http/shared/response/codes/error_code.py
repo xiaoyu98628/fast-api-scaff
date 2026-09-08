@@ -1,3 +1,5 @@
+"""声明跨上下文共用的标准错误响应码。"""
+
 from app.interfaces.http.shared.response.codes.contract import CodeDefinition, CodedEnum
 
 

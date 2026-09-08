@@ -1,3 +1,5 @@
+"""把 FastAPI、Starlette 和项目异常转换为统一 JSON 响应。"""
+
 from collections.abc import Mapping
 
 from fastapi import Request
@@ -27,6 +29,7 @@ _HTTP_ERROR_CODES: dict[int, ErrorCode] = {
 
 async def render_exception(request: Request, exception: Exception) -> Response:
     """将 HTTP 请求链路中的异常分派给对应的统一响应处理器。"""
+
     if isinstance(exception, HttpError):
         return await handle_http_error(request, exception)
 
@@ -40,9 +43,12 @@ async def render_exception(request: Request, exception: Exception) -> Response:
 
 
 async def handle_http_error(request: Request, exception: Exception) -> Response:
+    """渲染接口层主动抛出的 HttpError。"""
+
     if not isinstance(exception, HttpError):
         raise TypeError("handle_http_error 只能处理 HttpError")
 
+    # 无论调用方提供了什么内容，5xx 都只返回稳定的通用错误，避免泄露内部信息。
     if exception.code.status_code >= 500:
         return _render_error(request, ErrorCode.INTERNAL_ERROR)
 
@@ -59,6 +65,8 @@ async def handle_request_validation_error(
     request: Request,
     exception: Exception,
 ) -> Response:
+    """把 FastAPI 请求校验失败转换为精简字段列表。"""
+
     if not isinstance(exception, RequestValidationError):
         raise TypeError("handle_request_validation_error 只能处理 RequestValidationError")
 
@@ -70,9 +78,12 @@ async def handle_request_validation_error(
 
 
 async def handle_http_exception(request: Request, exception: Exception) -> Response:
+    """统一处理 Starlette 路由错误及其他 HTTPException。"""
+
     if not isinstance(exception, HTTPException):
         raise TypeError("handle_http_exception 只能处理 HTTPException")
 
+    # 非错误 HTTPException 保留 Starlette 原生语义，不强行包装为失败响应。
     if exception.status_code < 400:
         return await http_exception_handler(request, exception)
 
@@ -89,10 +100,14 @@ async def handle_http_exception(request: Request, exception: Exception) -> Respo
 
 
 async def handle_unexpected_exception(request: Request, _exception: Exception) -> Response:
+    """把未知异常隐藏为不包含内部细节的 500 响应。"""
+
     return _render_error(request, ErrorCode.INTERNAL_ERROR)
 
 
 def _resolve_http_error_code(status_code: int) -> CodeContract:
+    """按 HTTP 状态选择内置码，未知状态使用同类通用定义。"""
+
     code = _HTTP_ERROR_CODES.get(status_code)
     if code is not None:
         return code
@@ -107,6 +122,9 @@ def _resolve_http_error_code(status_code: int) -> CodeContract:
 
 
 def _resolve_http_exception_content(exception: HTTPException) -> tuple[str | None, object | None]:
+    """只保留允许暴露给客户端的 HTTPException 内容。"""
+
+    # 5xx、路由不存在和方法不允许统一使用项目文案，不透传框架或内部详情。
     if exception.status_code >= 500:
         return None, None
 
@@ -120,6 +138,8 @@ def _resolve_http_exception_content(exception: HTTPException) -> tuple[str | Non
 
 
 def _build_validation_data(exception: RequestValidationError) -> list[dict[str, object]]:
+    """提取错误类型、位置和消息，不回显客户端输入值。"""
+
     errors: list[dict[str, object]] = []
 
     for error in exception.errors():
@@ -142,6 +162,8 @@ def _render_error(
     data: object | None = None,
     headers: Mapping[str, str] | None = None,
 ) -> Response:
+    """通过当前应用的响应工厂生成最终 Starlette 响应。"""
+
     responses = provide_json_response_factory(request)
     payload = responses.error(
         code,

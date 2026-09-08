@@ -1,3 +1,5 @@
+"""定义请求校验错误在 OpenAPI 中展示的数据模型。"""
+
 from pydantic import BaseModel, ConfigDict
 
 

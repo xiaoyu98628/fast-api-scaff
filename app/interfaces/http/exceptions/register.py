@@ -1,3 +1,5 @@
+"""集中注册 HTTP 接口层使用的异常处理器。"""
+
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException
@@ -13,6 +15,8 @@ from app.interfaces.http.exceptions.handlers import (
 
 def register_exception_handlers(app: FastAPI) -> None:
     """注册 HTTP 请求链路使用的统一异常处理器。"""
+
+    # 具体异常优先匹配，Exception 只作为无法预期的最后兜底。
     app.add_exception_handler(HttpError, handle_http_error)
     app.add_exception_handler(RequestValidationError, handle_request_validation_error)
     app.add_exception_handler(HTTPException, handle_http_exception)
