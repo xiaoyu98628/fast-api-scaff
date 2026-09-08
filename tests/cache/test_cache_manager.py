@@ -1,3 +1,5 @@
+"""验证缓存管理器的命名资源、并发和关闭语义。"""
+
 import asyncio
 
 import pytest

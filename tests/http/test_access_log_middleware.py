@@ -1,3 +1,5 @@
+"""验证 HTTP 访问日志的状态、耗时和排除规则。"""
+
 import logging
 from asyncio import CancelledError
 

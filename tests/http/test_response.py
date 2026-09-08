@@ -1,3 +1,5 @@
+"""验证统一 JSON 响应和业务响应码构造。"""
+
 import pytest
 from httpx2 import ASGITransport, AsyncClient
 from pydantic import ValidationError

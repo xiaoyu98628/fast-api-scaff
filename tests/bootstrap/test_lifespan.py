@@ -1,3 +1,5 @@
+"""验证 FastAPI lifespan 的容器暴露和日志事件。"""
+
 import logging
 
 import pytest

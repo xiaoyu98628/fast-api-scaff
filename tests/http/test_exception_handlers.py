@@ -1,3 +1,5 @@
+"""验证 HTTP 异常到统一错误响应的映射。"""
+
 import logging
 from typing import Annotated
 

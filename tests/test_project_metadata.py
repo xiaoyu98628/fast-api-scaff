@@ -1,3 +1,5 @@
+"""验证项目元数据、运行时版本和环境模板保持一致。"""
+
 import tomllib
 
 from app.config.app import AppSettings

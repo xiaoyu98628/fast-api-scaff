@@ -1,3 +1,5 @@
+"""验证密码哈希线程隔离、并发限制和取消语义。"""
+
 import asyncio
 import threading
 

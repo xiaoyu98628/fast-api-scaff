@@ -1,3 +1,5 @@
+"""验证 SQLite 路径解析和会话持久化行为。"""
+
 import pytest
 from sqlalchemy import text
 

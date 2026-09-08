@@ -1,3 +1,5 @@
+"""验证 Console 宿主的容器生命周期和操作执行。"""
+
 import pytest
 
 from app.bootstrap.console.application import ConsoleHost

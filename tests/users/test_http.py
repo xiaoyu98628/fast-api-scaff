@@ -1,3 +1,5 @@
+"""验证用户 HTTP CRUD、分页和错误响应契约。"""
+
 from datetime import datetime
 from uuid import uuid7
 

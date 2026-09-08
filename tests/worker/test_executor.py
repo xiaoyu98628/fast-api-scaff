@@ -1,9 +1,14 @@
+"""验证 Worker 任务执行、失败恢复、重试和关闭排空。"""
+
 import asyncio
+import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from unittest.mock import Mock
 
 import pytest
 
+import app.interfaces.worker.executor as worker_executor
 from app.infrastructure.queue.errors import RetryableJobError
 from app.infrastructure.queue.job import job_reference
 from app.infrastructure.queue.policies import JobPolicy
@@ -71,9 +76,11 @@ async def test_retry_and_ack_after_success() -> None:
 
 
 @pytest.mark.asyncio
-async def test_failed_record_recovery_does_not_execute_again_and_replay_retains_original() -> None:
+async def test_failed_record_recovery_does_not_execute_again_and_replay_retains_original(monkeypatch: pytest.MonkeyPatch) -> None:
     queues = create_queue_manager()
     calls: list[int] = []
+    logger = Mock()
+    monkeypatch.setattr(worker_executor, "_logger", logger)
 
     async def handle(job: Job) -> None:
         calls.append(job.value)
@@ -97,6 +104,13 @@ async def test_failed_record_recovery_does_not_execute_again_and_replay_retains_
     async with queues.consume() as consumer:
         await executor.execute(await consumer.receive())
     assert calls == [9]
+    level, message = logger.log.call_args.args
+    details = logger.log.call_args.kwargs["extra"]["details"]
+    assert level == logging.ERROR
+    assert message == "queue.job.finished"
+    assert details["error_type"] == "builtins.ValueError"
+    assert details["stacktrace"]
+    assert "sensitive payload" not in repr(details)
     records = await queues.failed_jobs.list()
     assert len(records) == 1
     assert records[0].reason == "handler_error"

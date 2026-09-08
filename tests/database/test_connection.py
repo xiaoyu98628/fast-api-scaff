@@ -1,3 +1,5 @@
+"""验证数据库连接定义和 Engine 参数映射。"""
+
 import pytest
 
 from app.config.database import DatabaseSettings

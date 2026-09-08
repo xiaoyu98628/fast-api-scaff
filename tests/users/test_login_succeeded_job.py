@@ -1,3 +1,5 @@
+"""验证登录成功任务的编码约束和日志行为。"""
+
 import logging
 from typing import cast
 from uuid import UUID, uuid7

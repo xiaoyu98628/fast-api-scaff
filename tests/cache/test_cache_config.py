@@ -1,3 +1,5 @@
+"""验证缓存驱动配置和跨字段约束。"""
+
 import pytest
 from pydantic import ValidationError
 

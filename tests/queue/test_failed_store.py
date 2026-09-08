@@ -1,3 +1,5 @@
+"""验证 SQL 失败任务存储、分页和幂等写入。"""
+
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path

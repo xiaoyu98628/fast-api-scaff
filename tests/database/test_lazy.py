@@ -1,3 +1,5 @@
+"""验证异步资源的并发懒加载和关闭竞态。"""
+
 import asyncio
 
 import pytest

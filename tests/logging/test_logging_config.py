@@ -1,3 +1,5 @@
+"""验证日志环境配置模型和严格校验。"""
+
 import pytest
 from pydantic import ValidationError
 

@@ -1,3 +1,5 @@
+"""验证结构化日志格式、请求上下文和安全异常诊断。"""
+
 import json
 import logging
 from datetime import datetime
@@ -7,7 +9,7 @@ from starlette_context.header_keys import HeaderKeys
 
 from app.infrastructure.logging.context import RequestContextFilter
 from app.infrastructure.logging.formatter import JsonLogFormatter, TextLogFormatter
-from app.infrastructure.logging.record import log_extra
+from app.infrastructure.logging.record import log_extra, safe_exception_details
 from app.interfaces.http.logging import HttpLogEvent
 
 
@@ -145,6 +147,22 @@ def test_log_extra_builds_standard_event_and_details() -> None:
         "event": HttpLogEvent.REQUEST_COMPLETED,
         "details": {"status_code": 200},
     }
+
+
+def test_safe_exception_details_excludes_message_and_runtime_values() -> None:
+    """安全诊断只保留异常类型和代码位置。"""
+
+    secret = "sensitive runtime value"
+    try:
+        raise ValueError(secret)
+    except ValueError as error:
+        error_type, stacktrace = safe_exception_details(error)
+
+    assert error_type == "builtins.ValueError"
+    assert stacktrace[-1]["module"] == __name__
+    assert stacktrace[-1]["function"] == "test_safe_exception_details_excludes_message_and_runtime_values"
+    assert isinstance(stacktrace[-1]["line"], int)
+    assert secret not in repr((error_type, stacktrace))
 
 
 def _local_timestamp(created: float) -> str:

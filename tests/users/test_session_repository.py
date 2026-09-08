@@ -1,3 +1,5 @@
+"""验证用户会话仓储和事务持久化。"""
+
 from dataclasses import fields
 from datetime import UTC, datetime, timedelta
 from typing import cast

@@ -1,3 +1,5 @@
+"""验证缓存 Provider 注册、替换和配置准备。"""
+
 from functools import partial
 
 import pytest

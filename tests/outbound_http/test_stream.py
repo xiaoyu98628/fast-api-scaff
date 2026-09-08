@@ -1,3 +1,5 @@
+"""验证流式 HTTP 响应读取、异常映射和连接释放。"""
+
 import httpx2
 import pytest
 

@@ -1,3 +1,5 @@
+"""验证 HTTP 分页参数和响应元数据。"""
+
 from dataclasses import dataclass
 
 from pydantic import BaseModel

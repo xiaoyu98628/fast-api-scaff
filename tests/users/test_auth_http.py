@@ -1,3 +1,5 @@
+"""验证认证 HTTP 接口、凭据处理和安全响应头。"""
+
 from collections.abc import AsyncIterator
 from types import SimpleNamespace
 from typing import cast

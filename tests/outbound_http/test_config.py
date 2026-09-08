@@ -1,3 +1,5 @@
+"""验证出站 HTTP 超时、连接池和 TLS 配置约束。"""
+
 import os
 
 import pytest

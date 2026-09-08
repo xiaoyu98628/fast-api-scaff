@@ -1,3 +1,5 @@
+"""验证出站 HTTP 管理器的公共调用和流上下文。"""
+
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 

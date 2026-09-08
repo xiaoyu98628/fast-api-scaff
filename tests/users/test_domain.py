@@ -1,3 +1,5 @@
+"""验证用户聚合、值对象和领域不变量。"""
+
 from datetime import UTC, datetime, timedelta
 from typing import cast
 from uuid import UUID

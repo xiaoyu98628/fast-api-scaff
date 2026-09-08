@@ -1,3 +1,5 @@
+"""验证 main 数据库 ORM 元数据和命名约定。"""
+
 from sqlalchemy import DateTime, String
 
 from app.contexts.user.infrastructure.persistence.models.user import UserModel

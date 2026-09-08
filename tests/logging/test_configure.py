@@ -1,3 +1,5 @@
+"""验证进程日志配置、Handler 约束和命名空间。"""
+
 import logging.config
 
 import pytest

@@ -1,3 +1,5 @@
+"""验证用户工作单元的事务清理和冲突转换。"""
+
 import sqlite3
 from contextlib import AbstractAsyncContextManager
 from datetime import datetime
