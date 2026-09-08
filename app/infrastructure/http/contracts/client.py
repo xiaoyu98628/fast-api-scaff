@@ -11,6 +11,12 @@ from app.infrastructure.http.contracts.stream import HttpStreamResponse
 class HttpClient(Protocol):
     """应用公共的 HTTP 出站客户端契约。"""
 
-    async def request(self, request: HttpRequest) -> HttpResponse: ...
+    async def request(self, request: HttpRequest) -> HttpResponse:
+        """执行请求并返回可脱离连接使用的完整缓冲响应。"""
 
-    def stream(self, request: HttpRequest) -> AbstractAsyncContextManager[HttpStreamResponse]: ...
+        ...
+
+    def stream(self, request: HttpRequest) -> AbstractAsyncContextManager[HttpStreamResponse]:
+        """返回管理流式响应和底层连接的异步上下文。"""
+
+        ...
