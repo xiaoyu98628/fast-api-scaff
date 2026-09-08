@@ -1,3 +1,5 @@
+"""验证 Console 进程入口、退出码和标准流契约。"""
+
 import json
 import os
 import subprocess

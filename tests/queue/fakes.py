@@ -1,3 +1,5 @@
+"""提供队列与 Worker 测试使用的可控替身。"""
+
 from __future__ import annotations
 
 import asyncio

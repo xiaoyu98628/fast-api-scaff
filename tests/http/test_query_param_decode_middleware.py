@@ -1,3 +1,5 @@
+"""验证复合查询参数的编解码和 ASGI 展开。"""
+
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 

@@ -1,3 +1,5 @@
+"""验证受管出站 HTTP 客户端的日志和错误传播。"""
+
 from collections.abc import Callable, Coroutine
 
 import httpx2

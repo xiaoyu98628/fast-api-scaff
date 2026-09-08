@@ -1,3 +1,5 @@
+"""验证应用运行时的启动、清理和异常聚合。"""
+
 import asyncio
 
 import pytest

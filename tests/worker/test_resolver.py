@@ -1,3 +1,5 @@
+"""验证 Worker 对任务类型、版本和导入白名单的解析。"""
+
 import pytest
 
 from app.contexts.user.jobs.login_succeeded import LoginSucceededJob

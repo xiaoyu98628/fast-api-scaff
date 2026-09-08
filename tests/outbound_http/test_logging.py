@@ -1,3 +1,5 @@
+"""验证出站 HTTP 请求、流和连接池结构化日志。"""
+
 import asyncio
 import logging
 from collections.abc import AsyncIterator, Iterator

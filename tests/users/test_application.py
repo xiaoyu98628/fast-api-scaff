@@ -1,3 +1,5 @@
+"""验证用户应用服务的用例编排和错误语义。"""
+
 from datetime import datetime
 from types import TracebackType
 from uuid import UUID

@@ -1,3 +1,5 @@
+"""验证 Alembic 迁移链及数据库结构往返。"""
+
 import json
 import logging
 import os

@@ -1,3 +1,5 @@
+"""验证 OpenAPI 路由、响应模型和安全方案。"""
+
 import pytest
 from httpx2 import ASGITransport, AsyncClient
 

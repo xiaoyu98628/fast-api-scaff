@@ -1,3 +1,5 @@
+"""验证 Redis、Kafka 和 RabbitMQ 队列驱动适配。"""
+
 import asyncio
 from types import SimpleNamespace
 from typing import cast

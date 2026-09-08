@@ -1,3 +1,5 @@
+"""验证队列消息信封、任务策略和管理器核心契约。"""
+
 from dataclasses import replace
 from datetime import UTC, datetime
 from uuid import uuid4

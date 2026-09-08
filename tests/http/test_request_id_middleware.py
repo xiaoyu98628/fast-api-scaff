@@ -1,3 +1,5 @@
+"""验证请求 ID 中间件的上下文、响应头和错误契约。"""
+
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager

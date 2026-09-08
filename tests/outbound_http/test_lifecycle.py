@@ -1,3 +1,5 @@
+"""验证出站 HTTP 资源的懒加载和关闭生命周期。"""
+
 import pytest
 
 import app.infrastructure.http.manager as manager_module

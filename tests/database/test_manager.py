@@ -1,3 +1,5 @@
+"""验证数据库管理器的命名连接和关闭语义。"""
+
 import asyncio
 
 import pytest

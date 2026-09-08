@@ -1,3 +1,5 @@
+"""验证数据库查询日志的脱敏、计时和错误分类。"""
+
 import logging
 
 import pytest

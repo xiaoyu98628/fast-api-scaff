@@ -1,3 +1,5 @@
+"""验证出站 HTTP 驱动资源和响应大小限制。"""
+
 import httpx2
 import pytest
 

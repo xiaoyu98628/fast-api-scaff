@@ -48,7 +48,7 @@ SIGINT/SIGTERM 设置停止信号：停止安排新任务，取消等待消息�
 
 队列连接最后装配，先于数据库/缓存/HTTP 出站资源关闭。关闭失败仍尝试剩余资源并聚合异常。
 
-Worker 执行器的完成日志使用事件 `queue.job.finished`，details 中包含 job_id、queue_name、queue_connection、attempts、failure_reason 和 correlation_id，不输出任务数据。当前这些字段不会自动注入 `handle()` 内部产生的任意业务日志；业务日志只包含其显式提供的上下文。
+Worker 执行器的完成日志使用事件 `queue.job.finished`，details 中包含 job_id、queue_name、queue_connection、attempts、failure_reason 和 correlation_id；捕获到异常的失败任务使用 ERROR 级别，并额外记录异常类型及仅含模块、函数和行号的调用栈位置。Worker 进程级故障使用 `worker.failed` 事件记录相同的安全诊断。两类日志都不记录异常消息、运行时局部变量或任务数据。当前这些字段不会自动注入 `handle()` 内部产生的任意业务日志；业务日志只包含其显式提供的上下文。
 
 ## 质量检查
 

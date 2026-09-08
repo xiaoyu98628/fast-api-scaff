@@ -1,3 +1,5 @@
+"""验证数据库 Provider 注册、替换和配置解析。"""
+
 import pytest
 from sqlalchemy import URL
 

@@ -2,6 +2,8 @@
 
 from enum import StrEnum
 
+type ExceptionStackFrame = dict[str, str | int]
+
 
 def log_extra(
     event: StrEnum | str,
@@ -15,3 +17,24 @@ def log_extra(
         "event": event,
         "details": details,
     }
+
+
+def safe_exception_details(error: BaseException) -> tuple[str, tuple[ExceptionStackFrame, ...]]:
+    """提取异常类型和调用栈位置，不包含异常消息、局部变量或业务数据。"""
+
+    error_type = f"{type(error).__module__}.{type(error).__qualname__}"
+    frames: list[ExceptionStackFrame] = []
+    current_traceback = error.__traceback__
+
+    while current_traceback is not None:
+        frame = current_traceback.tb_frame
+        frames.append(
+            {
+                "module": frame.f_globals.get("__name__", "<unknown>"),
+                "function": frame.f_code.co_qualname,
+                "line": current_traceback.tb_lineno,
+            }
+        )
+        current_traceback = current_traceback.tb_next
+
+    return error_type, tuple(frames)

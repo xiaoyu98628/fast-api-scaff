@@ -1,3 +1,5 @@
+"""验证 Console 结果和错误的展示格式。"""
+
 import json
 from dataclasses import dataclass
 from datetime import datetime

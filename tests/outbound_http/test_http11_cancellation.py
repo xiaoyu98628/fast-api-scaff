@@ -1,3 +1,5 @@
+"""验证 HTTP/1.1 请求取消后的连接清理回归边界。"""
+
 import asyncio
 
 import httpx2

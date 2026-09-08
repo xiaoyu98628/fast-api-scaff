@@ -1,3 +1,5 @@
+"""验证出站 HTTP 连接池压力计数和告警阈值。"""
+
 from app.infrastructure.http.drivers.httpx2.pool import HttpPoolRuntime
 
 

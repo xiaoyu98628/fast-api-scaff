@@ -1,3 +1,5 @@
+"""验证模块依赖方向、绝对导入和基础设施驱动边界。"""
+
 import ast
 from collections.abc import Iterator
 from pathlib import Path

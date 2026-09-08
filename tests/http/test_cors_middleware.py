@@ -1,3 +1,5 @@
+"""验证 CORS 预检、普通请求和错误响应行为。"""
+
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager

@@ -1,3 +1,5 @@
+"""验证 Console 日志统一写入标准错误流。"""
+
 from app.bootstrap.console.logging import build_console_stream_handler
 
 

@@ -1,3 +1,5 @@
+"""验证缓存字节、文本和 JSON 编解码器。"""
+
 import pytest
 
 from app.infrastructure.cache.codecs.bytes import BytesCacheCodec

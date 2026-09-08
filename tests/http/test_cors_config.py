@@ -1,3 +1,5 @@
+"""验证 CORS 配置模型及凭据组合限制。"""
+
 import pytest
 from pydantic import ValidationError
 

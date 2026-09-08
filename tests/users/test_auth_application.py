@@ -1,3 +1,5 @@
+"""验证认证应用服务的登录、会话和并发边界。"""
+
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta

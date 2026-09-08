@@ -1,3 +1,5 @@
+"""验证缓存组件在应用组合根中的装配行为。"""
+
 import pytest
 
 from app.bootstrap.http.application import create_app

@@ -1,3 +1,5 @@
+"""验证统一缓存客户端的 key、TTL 和写入语义。"""
+
 from unittest.mock import AsyncMock, Mock
 
 import pytest

@@ -1,3 +1,5 @@
+"""验证 Console 命令注册、发现和冲突处理。"""
+
 import pytest
 import typer
 

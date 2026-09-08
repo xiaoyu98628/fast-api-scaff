@@ -1,3 +1,5 @@
+"""验证日志 Handler 驱动的注册和配置转换。"""
+
 import pytest
 
 from app.infrastructure.logging.drivers.registry import (

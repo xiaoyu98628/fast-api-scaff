@@ -1,3 +1,5 @@
+"""验证多驱动数据库配置模型和严格字段约束。"""
+
 import os
 
 import pytest
