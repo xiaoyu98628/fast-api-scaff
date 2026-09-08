@@ -25,8 +25,6 @@ services:
       - fast-api-scaff
 
   worker:
-    profiles:
-      - worker
     build:
       context: ./
       dockerfile: Dockerfile

@@ -1,3 +1,5 @@
+"""定义缓存环境变量快照和各驱动的严格配置模型。"""
+
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
@@ -23,6 +25,8 @@ class CacheSettings(BaseSettings):
 
 
 class BaseCacheSettings(BaseModel):
+    """保存所有缓存驱动共享的 key 前缀配置。"""
+
     model_config = ConfigDict(
         frozen=True,
         extra="forbid",
@@ -33,6 +37,8 @@ class BaseCacheSettings(BaseModel):
 
 
 class RedisCacheSettings(BaseCacheSettings):
+    """校验 Redis 连接池、认证和超时参数。"""
+
     driver: Literal["redis"]
     host: str = Field(min_length=1)
     port: int = Field(default=6379, ge=1, le=65535)
@@ -46,6 +52,8 @@ class RedisCacheSettings(BaseCacheSettings):
 
 
 class MemcachedCacheSettings(BaseCacheSettings):
+    """校验 Memcached 连接池、认证和超时参数。"""
+
     driver: Literal["memcached"]
     host: str = Field(min_length=1)
     port: int = Field(default=11211, ge=1, le=65535)
@@ -60,6 +68,8 @@ class MemcachedCacheSettings(BaseCacheSettings):
 
     @model_validator(mode="after")
     def validate_connection(self) -> MemcachedCacheSettings:
+        """校验跨字段连接池范围和认证参数完整性。"""
+
         if self.min_connections > self.max_connections:
             raise ValueError("min_connections 不能大于 max_connections")
 
@@ -70,4 +80,6 @@ class MemcachedCacheSettings(BaseCacheSettings):
 
 
 class MemoryCacheSettings(BaseCacheSettings):
+    """定义不依赖外部服务的单进程缓存连接。"""
+
     driver: Literal["memory"]

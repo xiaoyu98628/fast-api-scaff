@@ -1,3 +1,5 @@
+"""组装 FastAPI 应用及其 HTTP 入站能力。"""
+
 from collections.abc import Callable
 from functools import partial
 
@@ -21,6 +23,8 @@ def create_app(
     *,
     container_builder: ContainerBuilder = build_application_container,
 ) -> FastAPI:
+    """根据显式设置创建一个完整且相互隔离的 FastAPI 实例。"""
+
     active_settings = settings if settings is not None else load_settings()
 
     app = FastAPI(
@@ -37,9 +41,11 @@ def create_app(
         },
     )
 
+    # 响应工厂属于宿主状态，避免 Application 层依赖 HTTP 表现层实现。
     app.state.json_response_factory = JsonResponseFactory(
         code_builder=ResponseCodeBuilder(active_settings.app.service_code),
     )
+    # 异常映射和路由都在应用边界集中注册，保持上下文内部与 FastAPI 解耦。
     register_exception_handlers(app)
     register_routes(app)
 

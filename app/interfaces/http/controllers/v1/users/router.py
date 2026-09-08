@@ -1,3 +1,5 @@
+"""提供用户创建、查询、修改和删除 HTTP 端点。"""
+
 from typing import Annotated
 from uuid import UUID
 
@@ -42,6 +44,8 @@ async def create_user(
     service: UserServiceDependency,
     responses: JsonResponseFactoryDependency,
 ) -> JsonResponse[UserResponse]:
+    """把创建请求转换为应用命令并返回 201 响应。"""
+
     try:
         user = await service.create(
             CreateUserCommand(
@@ -66,6 +70,8 @@ async def list_users(
     responses: JsonResponseFactoryDependency,
     pagination: Annotated[PageParams, Query()],
 ) -> JsonResponse[PageResponse[UserResponse]]:
+    """查询一页用户并转换为统一分页响应。"""
+
     result = await service.list(
         offset=pagination.offset,
         limit=pagination.limit,
@@ -93,6 +99,8 @@ async def get_user(
     service: UserServiceDependency,
     responses: JsonResponseFactoryDependency,
 ) -> JsonResponse[UserResponse]:
+    """按路径 UUID 返回单个用户。"""
+
     try:
         user = await service.get(user_id)
     except UserApplicationError as error:
@@ -116,6 +124,8 @@ async def update_user(
     service: UserServiceDependency,
     responses: JsonResponseFactoryDependency,
 ) -> JsonResponse[UserResponse]:
+    """完整更新用户可编辑的基本资料。"""
+
     try:
         user = await service.update(
             UpdateUserCommand(
@@ -144,6 +154,8 @@ async def change_user_status(
     service: UserServiceDependency,
     responses: JsonResponseFactoryDependency,
 ) -> JsonResponse[UserResponse]:
+    """单独修改用户账户状态。"""
+
     try:
         user = await service.change_status(
             ChangeUserStatusCommand(
@@ -171,6 +183,8 @@ async def reset_user_password(
     payload: ResetUserPasswordRequest,
     service: UserServiceDependency,
 ) -> Response:
+    """重置用户密码并返回无正文响应。"""
+
     try:
         await service.reset_password(
             ResetUserPasswordCommand(
@@ -194,6 +208,8 @@ async def reset_user_password(
     },
 )
 async def delete_user(user_id: UUID, service: UserServiceDependency) -> Response:
+    """删除指定用户并返回无正文响应。"""
+
     try:
         await service.delete(user_id)
     except UserApplicationError as error:

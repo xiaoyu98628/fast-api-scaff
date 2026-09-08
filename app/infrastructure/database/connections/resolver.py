@@ -1,3 +1,5 @@
+"""解析命名数据库连接并交给对应 Provider 严格校验。"""
+
 from pydantic import ValidationError
 
 from app.config.database import DatabaseSettings
@@ -12,6 +14,7 @@ def validate_database_definition(
     providers: DatabaseProviderRegistry = DEFAULT_DATABASE_PROVIDERS,
 ) -> DatabaseResourceDefinition:
     """通过 Provider 延迟校验一个数据库连接的原始配置。"""
+
     try:
         return providers.prepare(raw_config)
     except (ValidationError, DatabaseConfigurationError) as error:
@@ -24,6 +27,7 @@ def resolve_database_definition(
     providers: DatabaseProviderRegistry = DEFAULT_DATABASE_PROVIDERS,
 ) -> DatabaseResourceDefinition:
     """解析并校验默认或指定的数据库连接配置。"""
+
     resolved_name = name if name is not None else settings.default
 
     if resolved_name is None:

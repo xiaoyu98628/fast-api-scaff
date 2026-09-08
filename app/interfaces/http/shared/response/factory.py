@@ -1,3 +1,5 @@
+"""创建携带完整响应码和 Request ID 的统一 JSON 载荷。"""
+
 from dataclasses import dataclass
 
 from starlette_context import context
@@ -24,6 +26,8 @@ class JsonResponseFactory:
         message: str | None = None,
         request_id: str | None = None,
     ) -> JsonResponse[DataT]:
+        """构建使用 2xx 状态定义的成功响应载荷。"""
+
         if not 200 <= code.status_code < 300:
             raise ValueError("成功响应必须使用 2xx 响应码")
 
@@ -43,6 +47,8 @@ class JsonResponseFactory:
         data: object | None = None,
         request_id: str | None = None,
     ) -> JsonResponse[object]:
+        """构建使用 4xx 或 5xx 状态定义的错误响应载荷。"""
+
         if code.status_code < 400:
             raise ValueError("错误响应必须使用 4xx 或 5xx 响应码")
 
@@ -56,6 +62,9 @@ class JsonResponseFactory:
 
 
 def _resolve_request_id(explicit: str | None) -> str | None:
+    """优先使用显式 ID，否则读取当前 Starlette 请求上下文。"""
+
+    # 显式空字符串也属于调用方选择，只有 None 才触发上下文回退。
     if explicit is not None:
         return explicit
 

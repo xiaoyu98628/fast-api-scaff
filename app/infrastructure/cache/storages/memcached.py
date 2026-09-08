@@ -1,3 +1,5 @@
+"""将 Memcached 协议适配为统一字节级 KV Storage。"""
+
 import time
 
 from memcachio import Client
@@ -11,9 +13,13 @@ class MemcachedCacheStorage:
     """通过 Memcached 客户端实现字节级 KV 存储。"""
 
     def __init__(self, client: Client[bytes]) -> None:
+        """绑定已经配置为返回 bytes 的 Memcached 客户端。"""
+
         self._client = client
 
     async def get(self, key: str) -> bytes | None:
+        """读取单个 key，并把未命中统一表示为 None。"""
+
         cache_key = key.encode()
         try:
             items = await self._client.get(cache_key)
@@ -24,6 +30,8 @@ class MemcachedCacheStorage:
         return item.value if item is not None else None
 
     async def set(self, key: str, value: bytes, ttl: int | None) -> bool:
+        """按 Memcached expiry 规则写入字节值。"""
+
         try:
             result = await self._client.set(key.encode(), value, expiry=self._expiry(ttl))
         except Exception as error:
@@ -32,6 +40,8 @@ class MemcachedCacheStorage:
         return result is True
 
     async def delete(self, key: str) -> bool:
+        """删除 key，并返回 Memcached 是否确认删除。"""
+
         try:
             result = await self._client.delete(key.encode())
         except Exception as error:
@@ -40,10 +50,14 @@ class MemcachedCacheStorage:
         return result is True
 
     async def exists(self, key: str) -> bool:
+        """复用读取语义判断 key 是否存在有效值。"""
+
         return await self.get(key) is not None
 
     @staticmethod
     def _expiry(ttl: int | None) -> int:
+        """把超过 30 天的相对 TTL 转换为 Memcached 要求的 Unix 时间。"""
+
         if ttl is None:
             return 0
 

@@ -1,3 +1,5 @@
+"""把 MySQL 配置转换为 asyncmy SQLAlchemy Engine 规格。"""
+
 from sqlalchemy import URL
 
 from app.config.database import MySQLDatabaseSettings
@@ -6,9 +8,13 @@ from app.infrastructure.database.contracts.provider import DatabaseResourceDefin
 
 
 class MySQLDatabaseProvider:
+    """校验 MySQL 配置并组装连接池与字符集参数。"""
+
     drivers = ("mysql",)
 
     def prepare(self, raw_config: dict[str, object]) -> DatabaseResourceDefinition:
+        """生成不会立即建立网络连接的数据库资源定义。"""
+
         settings = MySQLDatabaseSettings.model_validate(raw_config)
         return DatabaseResourceDefinition(
             engine_spec=DatabaseEngineSpec(

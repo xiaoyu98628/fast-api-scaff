@@ -1,3 +1,5 @@
+"""定义缓存 Provider 的扩展契约和延迟创建结果。"""
+
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Protocol
@@ -20,4 +22,7 @@ class CacheProvider(Protocol):
 
     driver: str
 
-    def prepare(self, raw_config: dict[str, object]) -> CacheResourceDefinition: ...
+    def prepare(self, raw_config: dict[str, object]) -> CacheResourceDefinition:
+        """严格校验原始配置，并返回尚未连接的资源定义。"""
+
+        ...

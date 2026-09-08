@@ -1,3 +1,5 @@
+"""定义 Provider 与 Engine 工厂之间的驱动无关资源规格。"""
+
 from collections.abc import Mapping
 from dataclasses import dataclass
 

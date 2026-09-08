@@ -1,3 +1,5 @@
+"""定义驱动无关的 HTTP 请求值对象和未设置哨兵。"""
+
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from urllib.parse import urlsplit
@@ -26,6 +28,8 @@ class HttpRequest:
     timeout: float | None = None
 
     def __post_init__(self) -> None:
+        """规范化 method，并在接触传输驱动前拒绝矛盾请求。"""
+
         method = self.method.strip().upper()
 
         try:

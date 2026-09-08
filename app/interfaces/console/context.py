@@ -1,3 +1,5 @@
+"""定义单次 Console 操作可访问的宿主上下文。"""
+
 from dataclasses import dataclass
 
 from app.config.settings import Settings

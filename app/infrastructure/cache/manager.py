@@ -1,3 +1,5 @@
+"""管理缓存配置校验、命名连接和延迟资源生命周期。"""
+
 from functools import partial
 
 from anyio import CancelScope
@@ -38,23 +40,35 @@ class CacheManager:
 
     @property
     def default_name(self) -> str | None:
+        """返回配置的默认连接名，不创建缓存资源。"""
+
         return self._default
 
     @property
     def connection_names(self) -> tuple[str, ...]:
+        """返回声明顺序稳定的全部命名连接。"""
+
         return tuple(self._resources)
 
     def is_initialized(self, name: str | None = None) -> bool:
+        """报告指定连接资源是否已经实际创建。"""
+
         resource = self._resources.get(self._resolve_name(name))
         return resource.initialized if resource is not None else False
 
     async def get(self, name: str | None = None) -> CacheClient:
+        """延迟创建并返回统一 bytes 缓存客户端。"""
+
         return (await self._get_resource(name)).client
 
     async def ping(self, name: str | None = None) -> bool:
+        """通过指定连接的原生健康检查验证可访问性。"""
+
         return await (await self._get_resource(name)).ping()
 
     async def _get_resource(self, name: str | None = None) -> ManagedCacheResource:
+        """获取生命周期受控的底层资源，关闭开始后拒绝新借用。"""
+
         if self._closed:
             raise RuntimeError("缓存管理器已经关闭")
 
@@ -67,12 +81,16 @@ class CacheManager:
         return await resource.get()
 
     async def aclose(self) -> None:
+        """封锁新获取并释放全部已初始化缓存连接。"""
+
         self._closed = True
+        # 在第一次 await 前同步封锁全部资源，避免关闭期间产生新借用。
         for resource in self._resources.values():
             resource.begin_close()
 
         errors: list[BaseException] = []
 
+        # 外部取消不能中断释放序列，否则部分连接池可能遗留。
         with CancelScope(shield=True):
             for resource in reversed(tuple(self._resources.values())):
                 try:
@@ -84,6 +102,8 @@ class CacheManager:
             raise BaseExceptionGroup("缓存客户端关闭失败", errors)
 
     async def _create(self, definition: CacheResourceDefinition) -> ManagedCacheResource:
+        """组合驱动资源与统一 key、TTL 规则的公共客户端。"""
+
         resource = await definition.factory()
         client = ManagedCacheClient(
             storage=resource.storage,
@@ -97,6 +117,8 @@ class CacheManager:
         )
 
     def _prepare_connections(self, settings: CacheSettings) -> dict[str, CacheResourceDefinition]:
+        """启动时严格校验全部声明连接，但不建立外部连接。"""
+
         if settings.default is not None and settings.default not in settings.connections:
             raise CacheConfigurationError(f"默认缓存连接 {settings.default!r} 未配置")
 
@@ -119,6 +141,8 @@ class CacheManager:
         return definitions
 
     def _resolve_name(self, name: str | None) -> str:
+        """选择显式连接名，否则要求已经配置默认连接。"""
+
         if name is not None:
             return name
 

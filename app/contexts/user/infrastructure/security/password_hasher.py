@@ -1,3 +1,5 @@
+"""使用 pwdlib 在线程池中实现密码哈希协议。"""
+
 import asyncio
 from collections.abc import Callable
 from functools import partial
@@ -13,13 +15,19 @@ class PwdlibPasswordHasher:
     """使用 pwdlib 推荐算法生成密码哈希。"""
 
     def __init__(self, *, max_concurrency: int = 2) -> None:
+        """创建推荐算法实例并限制进程内密码计算并发量。"""
+
         self._hasher = PwdlibPasswordHash.recommended()
         self._limiter = CapacityLimiter(max_concurrency)
 
     async def hash(self, password: Password) -> PasswordHash:
+        """在线程池中计算密码哈希，避免阻塞事件循环。"""
+
         return PasswordHash(await self._run(partial(self._hasher.hash, password.value)))
 
     async def verify(self, password: str, password_hash: PasswordHash) -> bool:
+        """在线程池中校验密码，并隐藏无法识别的原始哈希文本。"""
+
         try:
             return await self._run(partial(self._hasher.verify, password, password_hash.value))
         except UnknownHashError:
@@ -27,6 +35,8 @@ class PwdlibPasswordHasher:
             raise RuntimeError("存储的密码哈希无法识别") from None
 
     async def _run[T](self, operation: Callable[[], T]) -> T:
+        """执行受并发限制的阻塞计算，并等待被取消任务真正结束。"""
+
         work = asyncio.create_task(to_thread.run_sync(operation, limiter=self._limiter))
         try:
             return await asyncio.shield(work)

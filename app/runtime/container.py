@@ -1,3 +1,5 @@
+"""保存跨宿主共享的应用依赖并统一执行生命周期回调。"""
+
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
@@ -27,12 +29,17 @@ class ApplicationContainer:
     shutdown_callbacks: tuple[Callback, ...] = ()
 
     async def start(self) -> None:
+        """按声明顺序执行应用启动回调。"""
+
         for callback in self.startup_callbacks:
             await callback()
 
     async def aclose(self) -> None:
+        """逆序执行全部异步和同步关闭回调，并聚合失败。"""
+
         errors: list[BaseException] = []
 
+        # 关闭过程不接受外部取消，避免只释放部分资源。
         with CancelScope(shield=True):
             for callback in reversed(self.async_shutdown_callbacks):
                 try:
@@ -51,6 +58,8 @@ class ApplicationContainer:
             raise BaseExceptionGroup("Application shutdown callbacks failed", errors)
 
     def close(self) -> None:
+        """逆序执行同步关闭回调，并保留所有错误。"""
+
         errors: list[BaseException] = []
 
         for callback in reversed(self.shutdown_callbacks):

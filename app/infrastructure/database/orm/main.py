@@ -1,3 +1,5 @@
+"""定义 main 数据库所有 ORM Model 共用的声明基类。"""
+
 from sqlalchemy import MetaData
 from sqlalchemy.orm import DeclarativeBase
 

@@ -1,3 +1,5 @@
+"""配置 main 数据库的 Alembic 离线和异步在线迁移环境。"""
+
 import asyncio
 from logging.config import fileConfig
 
@@ -13,10 +15,12 @@ from database.main.model_registry import load_main_database_metadata
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
+# Alembic 在导入 env.py 前注入当前命令对应的 Config。
 config = context.config
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
+# 迁移进程沿用 alembic.ini 中的日志配置。
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
@@ -24,6 +28,7 @@ if config.config_file_name is not None:
 # for 'autogenerate' support
 # from myapp import mymodel
 # target_metadata = mymodel.Base.metadata
+# 统一通过显式模型注册表提供 autogenerate 所需的完整 metadata。
 target_metadata = load_main_database_metadata()
 
 # other values from the config, defined by the needs of env.py,
@@ -58,9 +63,9 @@ def run_migrations_offline() -> None:
     Calls to context.execute() here emit the given string to the
     script output.
 
+    在不建立数据库连接的情况下生成迁移 SQL。
     """
 
-    """在不建立数据库连接的情况下生成迁移 SQL。"""
     spec = load_engine_spec()
 
     context.configure(
@@ -77,6 +82,8 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection: Connection) -> None:
+    """把同步 Connection 交给 Alembic 执行当前迁移链。"""
+
     context.configure(
         connection=connection,
         target_metadata=target_metadata,
@@ -89,13 +96,10 @@ def do_run_migrations(connection: Connection) -> None:
 
 
 async def run_async_migrations() -> None:
-    """In this scenario we need to create an Engine
-    and associate a connection with the context.
-
-    """
-
     """通过 SQLAlchemy 异步 Engine 执行迁移。"""
+
     spec = load_engine_spec()
+    # 迁移进程使用一次性连接，不复用应用运行时连接池。
     engine = create_async_engine(spec.url, poolclass=pool.NullPool)
 
     try:
@@ -106,7 +110,11 @@ async def run_async_migrations() -> None:
 
 
 def run_migrations_online() -> None:
-    """Run migrations in 'online' mode."""
+    """
+    Run migrations in 'online' mode.
+
+    从 Alembic 同步入口启动异步迁移事件循环。
+    """
 
     asyncio.run(run_async_migrations())
 

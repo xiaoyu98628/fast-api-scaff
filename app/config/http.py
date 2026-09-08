@@ -1,3 +1,5 @@
+"""定义 HTTP 出站客户端的超时、连接池和安全默认配置。"""
+
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -26,6 +28,8 @@ class HttpPoolSettings(BaseModel):
 
     @model_validator(mode="after")
     def validate_connections(self) -> HttpPoolSettings:
+        """确保可复用连接数不会超过连接池总容量。"""
+
         if self.max_keepalive_connections > self.max_connections:
             raise ValueError("max_keepalive_connections 不能大于 max_connections")
 
@@ -43,6 +47,7 @@ class HttpSettings(BaseSettings):
     )
 
     timeout: HttpTimeoutSettings = HttpTimeoutSettings()
+    # 普通请求和流式请求使用独立连接池，避免长连接占满短请求容量。
     pool: HttpPoolSettings = HttpPoolSettings()
     stream_pool: HttpPoolSettings = HttpPoolSettings(
         timeout=10.0,

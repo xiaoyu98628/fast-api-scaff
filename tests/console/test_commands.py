@@ -1,7 +1,12 @@
+import pytest
 import typer
 
+from app.bootstrap.build import build_application_container
 from app.bootstrap.console.application import ConsoleHost
+from app.infrastructure.queue.errors import QueueError
 from app.interfaces.console.command import ConsoleCommand
+from app.interfaces.console.commands.queue import list_failures
+from app.interfaces.console.context import ConsoleContext
 from app.interfaces.console.discovery import discover_console_commands
 from app.interfaces.console.registry import ConsoleCommandRegistry
 from tests.console.test_application import build_settings
@@ -24,6 +29,17 @@ class DuplicateCommand(FirstCommand):
 class ConflictingGroupHelpCommand(FirstCommand):
     group_help = "不一致的测试命令说明。"
     name = "second"
+
+
+@pytest.mark.asyncio
+async def test_console_rejects_unconfigured_failure_database() -> None:
+    settings = build_settings()
+    container = build_application_container(settings)
+    try:
+        with pytest.raises(QueueError, match="SQL 失败存储数据库未配置"):
+            await list_failures(ConsoleContext(settings, container), limit=20, offset=0)
+    finally:
+        await container.aclose()
 
 
 def test_discovery_finds_concrete_commands_in_stable_order() -> None:

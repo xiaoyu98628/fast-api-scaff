@@ -1,3 +1,5 @@
+"""根据全局设置构造普通与流式 HTTPX2 客户端资源。"""
+
 import httpx2
 
 from app.config.http import HttpPoolSettings, HttpSettings
@@ -7,6 +9,8 @@ from app.infrastructure.logging.record import log_extra
 
 
 def create_httpx2_resource(settings: HttpSettings) -> Httpx2Resource:
+    """创建相互隔离的普通请求和流式请求连接池。"""
+
     resource = Httpx2Resource(
         standard_client=_create_client(settings, settings.pool),
         stream_client=_create_client(settings, settings.stream_pool),
@@ -23,6 +27,8 @@ def create_httpx2_resource(settings: HttpSettings) -> Httpx2Resource:
 
 
 def _create_client(settings: HttpSettings, pool: HttpPoolSettings) -> httpx2.AsyncClient:
+    """把公共超时、连接池和 TLS 策略映射为 HTTPX2 配置。"""
+
     return httpx2.AsyncClient(
         timeout=httpx2.Timeout(
             connect=settings.timeout.connect,

@@ -1,3 +1,5 @@
+"""组合一个命名连接的 Engine 和 Session 工厂。"""
+
 from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker

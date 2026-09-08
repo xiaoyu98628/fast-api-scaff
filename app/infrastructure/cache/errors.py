@@ -1,3 +1,6 @@
+"""定义缓存基础设施对外暴露的稳定异常类型。"""
+
+
 class CacheError(RuntimeError):
     """缓存基础能力异常基类。"""
 

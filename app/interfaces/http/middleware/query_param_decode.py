@@ -1,3 +1,5 @@
+"""实现约定的复合查询参数编解码及 ASGI 展开中间件。"""
+
 import base64
 import binascii
 import json
@@ -11,6 +13,7 @@ DECODED_F_STATE_KEY = "decoded_f_params"
 
 def encode_query_param(payload: dict[str, object]) -> str:
     """将字典编码为兼容查询参数封装协议的字符串。"""
+
     json_str = json.dumps(
         payload,
         separators=(",", ":"),
@@ -18,14 +21,17 @@ def encode_query_param(payload: dict[str, object]) -> str:
     )
     url_encoded = quote(json_str)
     b64_encoded = base64.b64encode(url_encoded.encode()).decode()
+    # URL 中省略可推导的 Base64 padding，解码时会按长度补回。
     return b64_encoded.rstrip("=")
 
 
 def decode_query_param(value: str) -> dict[str, object] | None:
     """解码兼容 JSON、URL 编码和 Base64 组合格式的查询参数。"""
+
     if not value:
         return None
 
+    # QueryParams 会把加号解释为空格，先恢复标准 Base64 字符。
     encoded = value.replace(" ", "+")
     padding = len(encoded) % 4
     if padding:
@@ -47,6 +53,8 @@ class QueryParamDecodeMiddleware:
     """将查询字符串中的编码参数展开为下游可读取的普通查询参数。"""
 
     def __init__(self, app: ASGIApp, *, param_name: str = "f") -> None:
+        """绑定下游应用并校验待展开的参数名称。"""
+
         if not param_name:
             raise ValueError("编码查询参数名不能为空")
 
@@ -54,6 +62,8 @@ class QueryParamDecodeMiddleware:
         self.param_name = param_name
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        """把有效复合参数替换为下游可直接解析的查询字符串。"""
+
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
@@ -68,10 +78,12 @@ class QueryParamDecodeMiddleware:
             await self.app(scope, receive, send)
             return
 
+        # 复制 Scope 和 state，避免修改同一请求上游中间件持有的数据。
         decoded_scope = dict(scope)
         decoded_scope["query_string"] = urlencode(decoded_params, doseq=True).encode("utf-8")
 
         state = dict(scope.get("state", {}))
+        # 保存原始类型信息，供不能从普通查询字符串还原类型的调用方读取。
         state[DECODED_F_STATE_KEY] = decoded_params
         decoded_scope["state"] = state
 

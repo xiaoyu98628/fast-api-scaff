@@ -1,3 +1,5 @@
+"""构造不包含请求敏感数据的 HTTP 出站结构化日志。"""
+
 import logging
 from enum import StrEnum
 from urllib.parse import urlsplit
@@ -9,6 +11,8 @@ HTTP_LOGGER = logging.getLogger("app.infrastructure.http")
 
 
 class HttpLogEvent(StrEnum):
+    """HTTP 出站资源、请求、流和连接池使用的稳定事件名。"""
+
     REQUEST_COMPLETED = "http.outbound.request.completed"
     REQUEST_FAILED = "http.outbound.request.failed"
     REQUEST_CANCELLED = "http.outbound.request.cancelled"
@@ -23,6 +27,9 @@ class HttpLogEvent(StrEnum):
 
 
 def request_log_details(request: HttpRequest, **details: object) -> dict[str, object]:
+    """只提取 method、origin 和调用方提供的低基数 operation。"""
+
+    # 不记录 path、query、headers 或 body，避免凭据和业务数据进入日志。
     values: dict[str, object] = {
         "method": request.method,
         "origin": _safe_origin(request.url),
@@ -41,10 +48,14 @@ def write_http_log(
     request: HttpRequest,
     **details: object,
 ) -> None:
+    """把安全请求摘要与调用阶段详情写入统一日志。"""
+
     HTTP_LOGGER.log(level, message, extra=log_extra(event, **request_log_details(request, **details)))
 
 
 def _safe_origin(url: str) -> str:
+    """只渲染 scheme、hostname 和显式端口，隐藏其他 URL 内容。"""
+
     try:
         parsed_url = urlsplit(url)
         hostname = parsed_url.hostname

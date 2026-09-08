@@ -296,7 +296,7 @@ HTTP 不启动消费者。新增配置无队列连接默认值；`QUEUE_DEFAULT`
 | QUEUE_WORKER__CONCURRENCY | 4 | 1–1024 个执行槽，Kafka 同分区仍串行 |
 | QUEUE_WORKER__SHUTDOWN_TIMEOUT_SECONDS | 30 | 取消在途任务前的等待时间 |
 
-所有连接包含 driver、default_queue（default）、publish_timeout（10 秒）。驱动特有字段如下；不支持的额外字段会被拒绝。
+所有连接包含 driver、default_queue（default，1–200 个非空白字符）、publish_timeout（10 秒）。驱动特有字段如下；不支持的额外字段会被拒绝。
 
 | driver | 字段 |
 | --- | --- |
@@ -304,6 +304,6 @@ HTTP 不启动消费者。新增配置无队列连接默认值；`QUEUE_DEFAULT`
 | kafka | bootstrap_servers 非空列表；group=workers；security_protocol=PLAINTEXT；sasl_mechanism=PLAIN；username/password 可选；max_poll_interval_ms=300000 |
 | rabbitmq | host 必填；port=5672；virtual_host=/；username/password=guest；ssl=false；connect_timeout=5 |
 
-Kafka security_protocol 可选 PLAINTEXT、SSL、SASL_PLAINTEXT、SASL_SSL；SASL 模式需要 username/password，mechanism 支持 PLAIN、SCRAM-SHA-256、SCRAM-SHA-512。Kafka 保留 bootstrap_servers 列表以支持多个 Broker。Redis 和 RabbitMQ 使用独立的主机、端口及认证字段；ssl=true 时使用系统 CA。Redis command_timeout 控制普通命令与消费阻塞读取的 socket 超时，和仅约束发布调用的 publish_timeout 相互独立。
+Kafka security_protocol 可选 PLAINTEXT、SSL、SASL_PLAINTEXT、SASL_SSL；SASL 模式需要 username/password，mechanism 支持 PLAIN、SCRAM-SHA-256、SCRAM-SHA-512。Kafka 保留 bootstrap_servers 列表以支持多个 Broker。Redis 和 RabbitMQ 使用独立的主机、端口及认证字段；ssl=true 时使用系统 CA。Redis command_timeout 控制普通命令与消费阻塞读取的 socket 超时，和仅约束发布调用的 publish_timeout 相互独立。Redis 工作队列在 QueueJob 的 `handle()` 完成或失败记录落库后原子执行 XACK + XDEL，不保留已完成的 Stream 历史。
 
 完整环境示例见 `sample.env`，其中 `redis`、`kafka` 和 `rabbitmq` 三个命名连接可同时存在，`QUEUE_DEFAULT=redis` 仅指定默认使用 Redis 连接。使用方式见[队列](queue.md)与[Worker](worker.md)。Settings 新增 queue，Worker 参数位于 `queue.worker`，ApplicationContainer 新增 queues。构建容器校验连接字段但不连接；失败存储数据库名称在 Worker 或 Console 使用前校验。资源按使用创建，关闭后不允许重新获取。

@@ -1,3 +1,5 @@
+"""实现 HTTPX2 驱动资源、缓冲上限和连接池关闭。"""
+
 from contextlib import AbstractAsyncContextManager
 
 import httpx2
@@ -41,13 +43,19 @@ class Httpx2Resource:
 
     @property
     def standard_runtime(self) -> HttpPoolRuntime:
+        """暴露普通请求池的应用侧诊断快照。"""
+
         return self._standard_runtime
 
     @property
     def stream_runtime(self) -> HttpPoolRuntime:
+        """暴露流式请求池的应用侧诊断快照。"""
+
         return self._stream_runtime
 
     async def request(self, request: HttpRequest) -> HttpResponse:
+        """完整读取响应并在离开上下文前释放底层连接。"""
+
         async with open_httpx2_stream(
             self._standard_client,
             request,
@@ -61,6 +69,8 @@ class Httpx2Resource:
             )
 
     def stream(self, request: HttpRequest) -> AbstractAsyncContextManager[HttpStreamResponse]:
+        """使用独立流式连接池返回受上下文约束的响应。"""
+
         return open_httpx2_stream(
             self._stream_client,
             request,
@@ -68,6 +78,8 @@ class Httpx2Resource:
         )
 
     async def aclose(self) -> None:
+        """屏蔽外部取消，尝试关闭两套连接池并聚合错误。"""
+
         errors: list[BaseException] = []
 
         with CancelScope(shield=True):
@@ -86,6 +98,8 @@ class Httpx2Resource:
         )
 
     async def _read_limited(self, response: Httpx2StreamResponse) -> bytes:
+        """分块读取普通响应，并在超过全局上限时立即终止。"""
+
         content = bytearray()
 
         async for chunk in response.aiter_bytes():

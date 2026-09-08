@@ -1,3 +1,5 @@
+"""维护数据库 driver 到 Provider 的显式映射。"""
+
 from collections.abc import Iterable
 
 from app.infrastructure.database.contracts.provider import DatabaseProvider, DatabaseResourceDefinition
@@ -14,6 +16,7 @@ class DatabaseProviderRegistry:
         self._registered = tuple(providers)
         self._providers: dict[str, DatabaseProvider] = {}
 
+        # 构建时拒绝空名称和重复注册，使运行期选择保持确定性。
         for provider in self._registered:
             if not provider.drivers:
                 raise DatabaseConfigurationError("数据库 Provider 至少需要一个 driver")
@@ -29,9 +32,13 @@ class DatabaseProviderRegistry:
 
     @property
     def drivers(self) -> tuple[str, ...]:
+        """返回当前注册的全部 driver 名称。"""
+
         return tuple(self._providers)
 
     def prepare(self, raw_config: dict[str, object]) -> DatabaseResourceDefinition:
+        """按原始配置中的 driver 选择 Provider 并完成严格校验。"""
+
         driver = raw_config.get("driver")
         if not isinstance(driver, str) or not driver:
             raise DatabaseConfigurationError("数据库连接没有配置有效的 driver")
@@ -43,6 +50,8 @@ class DatabaseProviderRegistry:
         return provider.prepare(raw_config)
 
     def extended(self, *providers: DatabaseProvider) -> DatabaseProviderRegistry:
+        """返回包含额外 Provider 的新注册表，不修改默认实例。"""
+
         return DatabaseProviderRegistry((*self._registered, *providers))
 
 

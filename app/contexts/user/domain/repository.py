@@ -1,3 +1,5 @@
+"""声明用户聚合在 Domain 层需要的持久化能力。"""
+
 from typing import Protocol
 
 from app.contexts.user.domain.user import User
@@ -7,18 +9,42 @@ from app.contexts.user.domain.values import EmailAddress, UserId, Username
 class UserRepository(Protocol):
     """用户聚合持久化契约。"""
 
-    async def find(self, user_id: UserId) -> User | None: ...
+    async def find(self, user_id: UserId) -> User | None:
+        """按领域 ID 查找用户聚合。"""
 
-    async def find_by_username(self, username: Username) -> User | None: ...
+        ...
 
-    async def exists_by_username(self, username: Username, *, excluding: UserId | None = None) -> bool: ...
+    async def find_by_username(self, username: Username) -> User | None:
+        """按已规范化的用户名查找用户聚合。"""
 
-    async def exists_by_email(self, email: EmailAddress, *, excluding: UserId | None = None) -> bool: ...
+        ...
 
-    async def find_page(self, *, offset: int, limit: int) -> tuple[list[User], int]: ...
+    async def exists_by_username(self, username: Username, *, excluding: UserId | None = None) -> bool:
+        """检查用户名占用情况，并可排除正在更新的用户。"""
 
-    async def add(self, user: User) -> None: ...
+        ...
 
-    async def update(self, user: User) -> bool: ...
+    async def exists_by_email(self, email: EmailAddress, *, excluding: UserId | None = None) -> bool:
+        """检查邮箱占用情况，并可排除正在更新的用户。"""
 
-    async def remove(self, user_id: UserId) -> bool: ...
+        ...
+
+    async def find_page(self, *, offset: int, limit: int) -> tuple[list[User], int]:
+        """返回当前页聚合及未分页的记录总数。"""
+
+        ...
+
+    async def add(self, user: User) -> None:
+        """把新聚合加入当前事务。"""
+
+        ...
+
+    async def update(self, user: User) -> bool:
+        """持久化现有聚合，并返回记录是否仍然存在。"""
+
+        ...
+
+    async def remove(self, user_id: UserId) -> bool:
+        """删除指定聚合，并返回是否删除了记录。"""
+
+        ...

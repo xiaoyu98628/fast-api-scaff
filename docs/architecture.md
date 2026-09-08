@@ -1,6 +1,6 @@
 # 架构说明
 
-项目采用模块化单体：一个部署单元内按限界上下文划分业务，并在每个上下文内部保持 Domain、Application、Infrastructure 边界。HTTP、Console 与 Worker 是独立宿主，共享组合根、应用用例和资源生命周期。
+项目采用模块化单体：一个部署单元内按限界上下文划分业务，并在每个上下文内部保持 Domain、Application、Infrastructure 边界。HTTP、Console 与 Worker 是独立宿主，共享配置、组合根和资源生命周期；HTTP 与 Console 调用已装配的应用用例，当前 Worker 动态解析并执行自包含 QueueJob。
 
 这不是为了堆叠 DDD 名词，而是解决三个实际问题：业务规则不被框架入口绕过，基础设施可以替换/测试，多入口复用同一用例且不会出现行为分叉。
 
@@ -27,7 +27,7 @@ app/
 ├── interfaces/             # 入站协议适配，不负责启动与全局装配
 │   ├── http/               # FastAPI 请求、响应、中间件和路由
 │   ├── console/            # Typer 命令、参数、展示和退出码
-│   └── worker/             # 队列消息执行、Handler 注册和消费并发
+│   └── worker/             # 队列 Job 动态解析、执行和消费并发
 └── runtime/                # 宿主无关的容器、生命周期和进程路径约定
 
 database/main/              # main 数据库的 Alembic 环境与模型注册
@@ -196,7 +196,7 @@ HTTP lifespan、ConsoleHost 和 WorkerHost 都复用 runtime。这样资源的�
 
 ## 11. HTTP、Console 与 Worker 适配器
 
-HTTP 与 Console 都调用 `UserApplicationService`，Worker 则把队列消息交给已绑定的应用 Handler：
+HTTP 与 Console 都调用 `UserApplicationService`，Worker 则解析消息携带的 QueueJob 类型并调用其 `handle()`：
 
 - HTTP 负责 schema、status、统一 JSON 和异常到 HTTP 映射；
 - Console 负责 Typer 参数、JSON stdout、错误 stderr 和退出码；
@@ -269,8 +269,8 @@ HTTP 独立定义 `page/limit` 查询协议和 `items + meta` 分页响应，并
 
 ## 16. 队列与 Worker
 
-共享基础设施新增 queue，提供 Catalog、Dispatcher、QueueManager、驱动和 FailedJobStore。ApplicationContainer.queues 与数据库等 Manager 一样按需使用；队列先关闭，数据库后关闭。HTTP 不订阅队列。
+共享基础设施 queue 提供 QueueJob、Dispatcher、QueueManager、驱动和 FailedJobStore。ApplicationContainer.queues 与数据库等 Manager 一样按需使用；队列先关闭，数据库后关闭。HTTP 不订阅队列。
 
-独立 `app.worker` 入口由 `app.bootstrap.worker` 完成装配并复用 ApplicationRuntime；`app.interfaces.worker` 只负责 Handler 注册结构、消息执行和消费并发。任务数据归业务 Application；业务投递窄协议由上下文 Infrastructure 适配；类型定义由 bootstrap composition 注册到 Catalog，Worker 另行绑定 Handler，HTTP 不依赖 Worker 注册表。共享 Infrastructure 不导入业务或宿主。首版不新增虚构业务 Job。
+独立 `app.worker` 入口由 `app.bootstrap.worker` 完成装配并复用 ApplicationRuntime；`app.interfaces.worker` 只负责 Job 类路径解析、消息执行、重试和消费并发。QueueJob 将可序列化数据与 `handle()` 收敛在同一类，投递时自动把类路径写入消息，Worker 动态导入并验证该类型；框架不扫描 `contexts`、`jobs` 或其他业务目录，不维护业务注册表，应用组合根也不收集 Job。当前示例把任务放在上下文级 `jobs/` 包并按类名使用蛇形命名模块，但这只是组织习惯。当前无参数 `handle()` 不提供应用服务依赖注入，只适合自包含任务；需要业务依赖时应先设计显式的窄接口装配边界。Application/Domain 不导入 Worker、具体队列驱动或全局容器，共享 Infrastructure 不导入具体业务。内置 `LoginSucceededJob` 由登录 HTTP 适配器在会话提交后尽力投递，作为默认队列和 `handle()` 日志输出的最小示例，不进入认证 Application/Domain，也不参与登录事务。
 
 SQL 失败表属于共享技术能力，在 main metadata 注册；失败写入使用独立短事务，不借用业务 UoW。任务执行和消息确认不是跨系统原子事务。详见[队列](queue.md)、[Worker](worker.md)。

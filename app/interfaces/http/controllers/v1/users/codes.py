@@ -1,3 +1,5 @@
+"""定义用户 HTTP API 专用的局部错误码。"""
+
 from app.interfaces.http.shared.response.codes.contract import CodeDefinition, CodedEnum
 
 

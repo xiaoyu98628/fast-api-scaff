@@ -1,3 +1,5 @@
+"""提供创建和分页查询用户的 Console 命令。"""
+
 from functools import partial
 
 import typer
@@ -22,6 +24,8 @@ async def create_user(
     email: str,
     password: str,
 ) -> UserDTO:
+    """把 CLI 原始输入转换为创建用户用例命令。"""
+
     return await context.container.users.service.create(
         CreateUserCommand(
             username=username,
@@ -37,6 +41,8 @@ async def list_users(
     page: int,
     limit: int,
 ) -> UserPageDTO:
+    """把从 1 开始的 CLI 页码转换为应用层偏移量。"""
+
     return await context.container.users.service.list(
         offset=(page - 1) * limit,
         limit=limit,
@@ -44,11 +50,15 @@ async def list_users(
 
 
 def _exit_for_user_error(presenter: ConsolePresenter, error: UserApplicationError | UserDomainError) -> None:
+    """输出预期用户错误并以稳定失败码结束当前命令。"""
+
     presenter.error(error)
     raise typer.Exit(code=ConsoleExitCode.FAILURE) from None
 
 
 class CreateUserConsoleCommand(ConsoleCommand):
+    """注册并处理 ``users create`` 命令。"""
+
     group = "users"
     group_help = "执行用户管理用例。"
     name = "create"
@@ -66,6 +76,8 @@ class CreateUserConsoleCommand(ConsoleCommand):
             help="登录密码，交互输入时不回显。",
         ),
     ) -> None:
+        """收集敏感密码输入，执行用例并输出新用户。"""
+
         try:
             user = self._console.run(partial(create_user, username=username, email=email, password=password))
         except (UserApplicationError, UserDomainError) as error:
@@ -75,6 +87,8 @@ class CreateUserConsoleCommand(ConsoleCommand):
 
 
 class ListUsersConsoleCommand(ConsoleCommand):
+    """注册并处理 ``users list`` 命令。"""
+
     group = "users"
     group_help = "执行用户管理用例。"
     name = "list"
@@ -90,5 +104,7 @@ class ListUsersConsoleCommand(ConsoleCommand):
             help="每页记录数，范围为 1–1000。",
         ),
     ) -> None:
+        """校验分页选项并输出一页用户。"""
+
         result = self._console.run(partial(list_users, page=page, limit=limit))
         self._console.presenter.result(result)

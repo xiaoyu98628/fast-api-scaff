@@ -4,16 +4,16 @@ from typing import cast
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-from aio_pika.abc import AbstractChannel, AbstractConnection, AbstractIncomingMessage
+from aio_pika.abc import AbstractChannel, AbstractConnection, AbstractIncomingMessage, AbstractQueueIterator
 from aiokafka import TopicPartition
 from redis.asyncio import Redis
 from redis.exceptions import ResponseError
 
 from app.config.queue import KafkaQueueSettings, RabbitMQQueueSettings, RedisQueueSettings
 from app.infrastructure.queue.drivers.kafka import KafkaBackend, KafkaConsumer, RebalanceListener
-from app.infrastructure.queue.drivers.rabbitmq import RabbitBackend, RabbitDelivery
+from app.infrastructure.queue.drivers.rabbitmq import RabbitBackend, RabbitConsumer, RabbitDelivery
 from app.infrastructure.queue.drivers.redis import RedisBackend, RedisConsumer, RedisDelivery
-from app.infrastructure.queue.errors import DeliveryLostError
+from app.infrastructure.queue.errors import DeliveryLostError, QueueError
 
 
 @pytest.mark.asyncio
@@ -43,6 +43,63 @@ async def test_rabbit_delivery_does_not_ack_before_execution() -> None:
     message.ack.assert_not_awaited()
     await delivery.acknowledge()
     message.ack.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_rabbit_consumer_serializes_iterator_receives() -> None:
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    messages = [Mock(body=b"one", message_id="one", delivery_tag=1), Mock(body=b"two", message_id="two", delivery_tag=2)]
+
+    class Iterator:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.active = 0
+            self.max_active = 0
+
+        async def __anext__(self) -> AbstractIncomingMessage:
+            self.calls += 1
+            index = self.calls - 1
+            self.active += 1
+            self.max_active = max(self.max_active, self.active)
+            try:
+                if index == 0:
+                    entered.set()
+                    await release.wait()
+                return messages[index]
+            finally:
+                self.active -= 1
+
+        async def close(self) -> None:
+            pass
+
+    iterator = Iterator()
+    channel = Mock(close=AsyncMock())
+    consumer = RabbitConsumer(cast(AbstractChannel, channel), cast(AbstractQueueIterator, iterator))
+    first = asyncio.create_task(consumer.receive())
+    await asyncio.wait_for(entered.wait(), 1)
+    second = asyncio.create_task(consumer.receive())
+    await asyncio.sleep(0)
+    serialized = iterator.calls == 1
+    release.set()
+    deliveries = await asyncio.wait_for(asyncio.gather(first, second), 1)
+    assert serialized
+    assert [delivery.payload for delivery in deliveries] == [b"one", b"two"]
+    assert iterator.max_active == 1
+    await consumer.aclose()
+
+
+@pytest.mark.asyncio
+async def test_rabbit_consumer_translates_ended_iterator_to_queue_error() -> None:
+    iterator = Mock(close=AsyncMock())
+    iterator.__anext__ = AsyncMock(side_effect=StopAsyncIteration)
+    channel = Mock(close=AsyncMock())
+    consumer = RabbitConsumer(cast(AbstractChannel, channel), cast(AbstractQueueIterator, iterator))
+
+    with pytest.raises(QueueError, match="消费流已结束"):
+        await consumer.receive()
+
+    await consumer.aclose()
 
 
 @pytest.mark.asyncio
@@ -91,6 +148,8 @@ async def test_redis_pending_recovery_and_owner_checked_ack() -> None:
     assert delivery.payload == b"old"
     client.xreadgroup.assert_not_awaited()
     await delivery.acknowledge()
+    assert "XACK" in client.eval.call_args.args[0]
+    assert "XDEL" in client.eval.call_args.args[0]
     assert client.eval.call_args.args[2:] == ("jobs", "workers", consumer.name, "1-0")
     with pytest.raises(DeliveryLostError):
         await delivery.acknowledge()

@@ -1,3 +1,6 @@
+"""定义数据库基础设施对外暴露的稳定异常类型。"""
+
+
 class DatabaseError(RuntimeError):
     """数据库基础能力异常基类。"""
 

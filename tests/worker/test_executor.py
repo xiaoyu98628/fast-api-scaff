@@ -1,20 +1,58 @@
 import asyncio
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 
 import pytest
 
 from app.infrastructure.queue.errors import RetryableJobError
+from app.infrastructure.queue.job import job_reference
 from app.infrastructure.queue.policies import JobPolicy
 from app.interfaces.worker.executor import JobExecutor
-from app.interfaces.worker.registry import HandlerRegistry
+from app.interfaces.worker.resolver import ExecutableJob
 from app.interfaces.worker.runner import WorkerRunner
-from tests.queue.fakes import FakeQueueBackend, RecordingFailedJobStore
-from tests.queue.test_core import Job, definition, manager
+from tests.queue.fakes import (
+    Codec,
+    FakeQueueBackend,
+    Job,
+    RecordingFailedJobStore,
+    create_queue_manager,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class StubBinding:
+    handler: Callable[[Job], Awaitable[None]]
+    policy: JobPolicy = JobPolicy()
+
+    async def execute(self, payload: bytes) -> None:
+        await self.handler(Codec().decode(payload))
+
+
+@dataclass(frozen=True, slots=True)
+class StubResolver:
+    binding: ExecutableJob | None = None
+
+    def resolve(self, reference: str, version: int) -> ExecutableJob:
+        if self.binding is None or reference != job_reference(Job) or version != 1:
+            raise KeyError((reference, version))
+        return self.binding
+
+
+async def discard_job(_job: Job) -> None:
+    pass
+
+
+def resolver(
+    handler: Callable[[Job], Awaitable[None]] = discard_job,
+    *,
+    policy: JobPolicy = JobPolicy(),
+) -> StubResolver:
+    return StubResolver(StubBinding(handler, policy))
 
 
 @pytest.mark.asyncio
 async def test_retry_and_ack_after_success() -> None:
-    queues = manager()
-    registry = HandlerRegistry()
+    queues = create_queue_manager()
     attempts: list[int] = []
 
     async def handle(job: Job) -> None:
@@ -22,11 +60,11 @@ async def test_retry_and_ack_after_success() -> None:
         if len(attempts) < 3:
             raise RetryableJobError()
 
-    registry.register(definition(), handle, policy=JobPolicy(backoff_seconds=()))
-    await (await queues.get()).dispatch(Job(8))
+    active_resolver = resolver(handle, policy=JobPolicy(backoff_seconds=()))
+    await queues.dispatch(Job(8))
     async with queues.consume() as consumer:
         delivery = await consumer.receive()
-        await JobExecutor("main", "default", registry, queues.failed_jobs, queues.codec).execute(delivery)
+        await JobExecutor("main", "default", active_resolver, queues.failed_jobs, queues.codec).execute(delivery)
     assert attempts == [8, 8, 8]
     assert await queues.failed_jobs.list() == []
     await queues.aclose()
@@ -34,17 +72,16 @@ async def test_retry_and_ack_after_success() -> None:
 
 @pytest.mark.asyncio
 async def test_failed_record_recovery_does_not_execute_again_and_replay_retains_original() -> None:
-    queues = manager()
-    registry = HandlerRegistry()
+    queues = create_queue_manager()
     calls: list[int] = []
 
     async def handle(job: Job) -> None:
         calls.append(job.value)
         raise ValueError("sensitive payload must not appear in failure reason")
 
-    registry.register(definition(), handle)
-    original_id = await (await queues.get()).dispatch(Job(9))
-    executor = JobExecutor("main", "default", registry, queues.failed_jobs, queues.codec)
+    active_resolver = resolver(handle)
+    original_id = await queues.dispatch(Job(9))
+    executor = JobExecutor("main", "default", active_resolver, queues.failed_jobs, queues.codec)
     async with queues.consume() as consumer:
         original = await consumer.receive()
 
@@ -76,16 +113,16 @@ async def test_failed_record_recovery_does_not_execute_again_and_replay_retains_
 
 @pytest.mark.asyncio
 async def test_malformed_envelope_and_unknown_job_are_recorded() -> None:
-    queues = manager()
-    registry = HandlerRegistry()
+    queues = create_queue_manager()
+    active_resolver = StubResolver()
     backend = FakeQueueBackend()
     await backend.publish("default", b"broken-json")
     async with queues.consume() as unused:
         del unused
         consumer = await backend.consumer("default", 1)
-        executor = JobExecutor("main", "default", registry, queues.failed_jobs, queues.codec)
+        executor = JobExecutor("main", "default", active_resolver, queues.failed_jobs, queues.codec)
         await executor.execute(await consumer.receive())
-        await (await queues.get()).dispatch(Job(1))
+        await queues.dispatch(Job(1))
         async with queues.consume() as source:
             await executor.execute(await source.receive())
         await consumer.aclose()
@@ -96,16 +133,16 @@ async def test_malformed_envelope_and_unknown_job_are_recorded() -> None:
 
 @pytest.mark.asyncio
 async def test_failure_store_error_leaves_delivery_unacknowledged() -> None:
-    queues = manager()
+    queues = create_queue_manager()
 
     class BrokenStore(RecordingFailedJobStore):
         async def save(self, record) -> None:
             raise OSError("database unavailable")
 
-    await (await queues.get()).dispatch(Job(1))
+    await queues.dispatch(Job(1))
     async with queues.consume() as consumer:
         delivery = await consumer.receive()
-        executor = JobExecutor("main", "default", HandlerRegistry(), BrokenStore(), queues.codec)
+        executor = JobExecutor("main", "default", StubResolver(), BrokenStore(), queues.codec)
         with pytest.raises(OSError):
             await executor.execute(delivery)
     async with queues.consume() as consumer:
@@ -118,18 +155,17 @@ async def test_failure_store_error_leaves_delivery_unacknowledged() -> None:
 @pytest.mark.asyncio
 @pytest.mark.parametrize("own_timeout", [False, True])
 async def test_timeout_is_classified_without_confusing_business_timeout(own_timeout: bool) -> None:
-    queues = manager()
-    registry = HandlerRegistry()
+    queues = create_queue_manager()
 
     async def handle(job: Job) -> None:
         if own_timeout:
             raise TimeoutError("upstream")
         await asyncio.Event().wait()
 
-    registry.register(definition(), handle, policy=JobPolicy(max_attempts=1, timeout_seconds=0.01))
-    await (await queues.get()).dispatch(Job(1))
+    active_resolver = resolver(handle, policy=JobPolicy(max_attempts=1, timeout_seconds=0.01))
+    await queues.dispatch(Job(1))
     async with queues.consume() as consumer:
-        await JobExecutor("main", "default", registry, queues.failed_jobs, queues.codec).execute(await consumer.receive())
+        await JobExecutor("main", "default", active_resolver, queues.failed_jobs, queues.codec).execute(await consumer.receive())
     reason = (await queues.failed_jobs.list())[0].reason
     assert reason == ("handler_timeout_error" if own_timeout else "execution_timeout")
     await queues.aclose()
@@ -137,17 +173,16 @@ async def test_timeout_is_classified_without_confusing_business_timeout(own_time
 
 @pytest.mark.asyncio
 async def test_runner_drains_active_job_and_stops_idle_receivers() -> None:
-    queues = manager()
-    registry = HandlerRegistry()
+    queues = create_queue_manager()
     started, release, stop = asyncio.Event(), asyncio.Event(), asyncio.Event()
 
     async def handle(job: Job) -> None:
         started.set()
         await release.wait()
 
-    registry.register(definition(), handle)
-    await (await queues.get()).dispatch(Job(1))
-    executor = JobExecutor("main", "default", registry, queues.failed_jobs, queues.codec)
+    active_resolver = resolver(handle)
+    await queues.dispatch(Job(1))
+    executor = JobExecutor("main", "default", active_resolver, queues.failed_jobs, queues.codec)
     async with queues.consume(concurrency=2) as consumer:
         runner = WorkerRunner(concurrency=2, shutdown_timeout=1)
         task = asyncio.create_task(runner.run(consumer, executor, stop))
@@ -162,19 +197,18 @@ async def test_runner_drains_active_job_and_stops_idle_receivers() -> None:
 
 @pytest.mark.asyncio
 async def test_runner_timeout_cancels_inflight_without_ack() -> None:
-    queues = manager()
-    registry = HandlerRegistry()
+    queues = create_queue_manager()
     started, stop = asyncio.Event(), asyncio.Event()
 
     async def handle(job: Job) -> None:
         started.set()
         await asyncio.Event().wait()
 
-    registry.register(definition(), handle)
-    await (await queues.get()).dispatch(Job(1))
+    active_resolver = resolver(handle)
+    await queues.dispatch(Job(1))
     async with queues.consume() as consumer:
         runner = WorkerRunner(concurrency=1, shutdown_timeout=0.01)
-        task = asyncio.create_task(runner.run(consumer, JobExecutor("main", "default", registry, queues.failed_jobs, queues.codec), stop))
+        task = asyncio.create_task(runner.run(consumer, JobExecutor("main", "default", active_resolver, queues.failed_jobs, queues.codec), stop))
         await asyncio.wait_for(started.wait(), 1)
         stop.set()
         await asyncio.wait_for(task, 1)

@@ -1,3 +1,5 @@
+"""在请求上下文有效期内记录并渲染未处理异常。"""
+
 import logging
 
 from fastapi import Request
@@ -15,10 +17,14 @@ class ExceptionCaptureMiddleware:
     """在请求上下文退出前转换中间件和请求处理异常。"""
 
     def __init__(self, app: ASGIApp, *, debug: bool = False) -> None:
+        """绑定下游应用，并保留是否由调试器接管异常的设置。"""
+
         self.app = app
         self.debug = debug
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        """捕获 HTTP 链路异常，并在可安全响应时渲染统一错误。"""
+
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
@@ -26,6 +32,8 @@ class ExceptionCaptureMiddleware:
         response_started = False
 
         async def send_wrapper(message: Message) -> None:
+            """记录响应头是否已经发送给客户端。"""
+
             nonlocal response_started
 
             if message["type"] == "http.response.start":
@@ -36,6 +44,7 @@ class ExceptionCaptureMiddleware:
         try:
             await self.app(scope, receive, send_wrapper)
         except Exception as exception:
+            # 调试模式保留 FastAPI/Starlette 的原生异常页和调试体验。
             if self.debug:
                 raise
 
@@ -48,6 +57,7 @@ class ExceptionCaptureMiddleware:
                 ),
             )
 
+            # 响应头发送后不能再发送第二个错误响应，只能继续上抛让 Server 终止连接。
             if response_started:
                 raise
 

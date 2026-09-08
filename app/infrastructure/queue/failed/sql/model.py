@@ -1,3 +1,5 @@
+"""定义 SQL 失败任务表的 ORM 映射。"""
+
 from datetime import datetime
 
 from sqlalchemy import DateTime, Integer, LargeBinary, String
@@ -8,6 +10,8 @@ from app.infrastructure.database.orm.main import MainBase
 
 
 class FailedJobModel(MainBase):
+    """持久化失败分类和可用于重放的原始消息信封。"""
+
     __tablename__ = "queue_failed_jobs"
     __table_args__ = {"comment": "队列失败任务记录"}
 
