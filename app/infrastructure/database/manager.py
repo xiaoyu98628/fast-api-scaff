@@ -1,3 +1,5 @@
+"""按连接名管理数据库配置、延迟资源和 Session 生命周期。"""
+
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from functools import partial
@@ -35,17 +37,25 @@ class DatabaseManager:
 
     @property
     def default_name(self) -> str | None:
+        """返回配置的默认连接名，不触发校验或资源创建。"""
+
         return self._default
 
     @property
     def connection_names(self) -> tuple[str, ...]:
+        """返回声明顺序稳定的全部命名连接。"""
+
         return tuple(self._resources)
 
     def is_initialized(self, name: str | None = None) -> bool:
+        """报告连接资源是否已经实际创建。"""
+
         resource = self._resources.get(self._resolve_name(name))
         return resource.initialized if resource is not None else False
 
     async def get(self, name: str | None = None) -> DatabaseResource:
+        """延迟校验并获取连接资源，关闭开始后拒绝新获取。"""
+
         if self._closed:
             raise RuntimeError("数据库管理器已经关闭")
 
@@ -58,22 +68,30 @@ class DatabaseManager:
         return await resource.get()
 
     async def get_engine(self, name: str | None = None) -> AsyncEngine:
+        """获取指定连接的异步 Engine。"""
+
         return (await self.get(name)).engine
 
     @asynccontextmanager
     async def session(self, name: str | None = None) -> AsyncIterator[AsyncSession]:
+        """提供短生命周期 Session；事务提交仍由调用方显式决定。"""
+
         resource = await self.get(name)
 
         async with resource.session_factory() as session:
             yield session
 
     async def aclose(self) -> None:
+        """封锁新获取并释放所有已初始化连接池。"""
+
         self._closed = True
+        # 在第一次 await 前同步封锁全部资源，避免关闭期间产生新借用。
         for resource in self._resources.values():
             resource.begin_close()
 
         errors: list[BaseException] = []
 
+        # 外部取消不能打断释放序列，否则部分连接池可能永久遗留。
         with CancelScope(shield=True):
             for resource in reversed(tuple(self._resources.values())):
                 try:
@@ -89,10 +107,13 @@ class DatabaseManager:
         name: str,
         raw_config: dict[str, object],
     ) -> DatabaseResource:
+        # 原始连接配置直到首次使用才由 Provider 严格校验。
         definition = validate_database_definition(name, raw_config, self._providers)
         return await create_database_resource(name, definition)
 
     def _resolve_name(self, name: str | None) -> str:
+        """选择显式连接名，否则要求已经配置默认连接。"""
+
         if name is not None:
             return name
 

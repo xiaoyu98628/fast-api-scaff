@@ -1,3 +1,5 @@
+"""为 SQLAlchemy Engine 注册脱敏查询计时和资源日志。"""
+
 import logging
 from enum import StrEnum
 from hashlib import sha256
@@ -15,6 +17,8 @@ _QUERY_TIMER_KEY = "application_query_started_at"
 
 
 class DatabaseLogEvent(StrEnum):
+    """数据库资源和查询日志使用的稳定事件名。"""
+
     RESOURCE_CREATED = "database.resource.created"
     RESOURCE_CREATE_FAILED = "database.resource.create_failed"
     RESOURCE_CLOSED = "database.resource.closed"
@@ -31,6 +35,8 @@ def configure_database_logging(
     spec: DatabaseEngineSpec,
 ) -> None:
     """为一个异步 Engine 注册不包含 SQL 参数的执行日志。"""
+
+    # SQLAlchemy 的执行事件挂载在 AsyncEngine 包装的同步 Engine 上。
     sync_engine = engine.sync_engine
 
     @event.listens_for(sync_engine, "before_cursor_execute")
@@ -42,6 +48,7 @@ def configure_database_logging(
         _context: object,
         _executemany: bool,
     ) -> None:
+        # 使用栈而不是单值，兼容同一连接上的嵌套或重入执行事件。
         started_stack = connection.info.setdefault(_QUERY_TIMER_KEY, [])
         if isinstance(started_stack, list):
             started_stack.append(perf_counter())
@@ -98,6 +105,8 @@ def configure_database_logging(
 
 
 def _pop_duration_ms(connection: Connection | None) -> float | None:
+    """弹出最近一次查询计时；缺少开始事件时返回 None。"""
+
     if connection is None:
         return None
 
@@ -113,10 +122,14 @@ def _pop_duration_ms(connection: Connection | None) -> float | None:
 
 
 def _is_slow_query(duration_ms: float | None, threshold_ms: int) -> bool:
+    """阈值为 0 时显式关闭慢查询判定。"""
+
     return threshold_ms > 0 and duration_ms is not None and duration_ms >= threshold_ms
 
 
 def _describe_statement(statement: str | None, *, include_statement: bool) -> dict[str, object]:
+    """生成低基数查询摘要，仅在显式开启时附带 SQL 文本。"""
+
     if statement is None:
         return {}
 
@@ -124,6 +137,7 @@ def _describe_statement(statement: str | None, *, include_statement: bool) -> di
     operation, _separator, _remainder = normalized.partition(" ")
     details: dict[str, object] = {
         "operation": operation.upper(),
+        # 短哈希用于聚合同形 SQL，不包含参数，也不承担安全校验用途。
         "statement_id": sha256(normalized.encode("utf-8")).hexdigest()[:16],
     }
 
@@ -134,6 +148,8 @@ def _describe_statement(statement: str | None, *, include_statement: bool) -> di
 
 
 def _get_database_error_code(exception: BaseException) -> str | int | None:
+    """兼容提取 PostgreSQL SQLSTATE 和 MySQL 数字错误码。"""
+
     for attribute in ("sqlstate", "pgcode"):
         value = getattr(exception, attribute, None)
         if isinstance(value, str) and value:

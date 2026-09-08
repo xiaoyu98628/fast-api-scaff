@@ -1,3 +1,5 @@
+"""定义数据库环境变量快照和各驱动的严格配置模型。"""
+
 from pathlib import Path
 from typing import Literal
 
@@ -23,6 +25,8 @@ class DatabaseSettings(BaseSettings):
 
 
 class BaseDatabaseSettings(BaseModel):
+    """保存所有数据库驱动共享的查询日志配置。"""
+
     model_config = ConfigDict(
         frozen=True,
         extra="forbid",
@@ -34,6 +38,8 @@ class BaseDatabaseSettings(BaseModel):
 
 
 class PooledDatabaseSettings(BaseDatabaseSettings):
+    """保存 MySQL 和 PostgreSQL 共享的连接池配置。"""
+
     pool_size: int = Field(default=10, ge=1)
     max_overflow: int = Field(default=20, ge=0)
     pool_pre_ping: bool = True
@@ -41,6 +47,8 @@ class PooledDatabaseSettings(BaseDatabaseSettings):
 
 
 class MySQLDatabaseSettings(PooledDatabaseSettings):
+    """校验 MySQL/asyncmy 连接参数。"""
+
     driver: Literal["mysql"]
     host: str = Field(min_length=1)
     port: int = Field(default=3306, ge=1, le=65535)
@@ -51,6 +59,8 @@ class MySQLDatabaseSettings(PooledDatabaseSettings):
 
 
 class PostgreSQLDatabaseSettings(PooledDatabaseSettings):
+    """校验 PostgreSQL/asyncpg 连接参数。"""
+
     driver: Literal["postgresql", "pgsql"]
     host: str = Field(min_length=1)
     port: int = Field(default=5432, ge=1, le=65535)
@@ -60,11 +70,15 @@ class PostgreSQLDatabaseSettings(PooledDatabaseSettings):
 
 
 class SQLiteDatabaseSettings(BaseDatabaseSettings):
+    """校验 SQLite 路径，并统一相对路径的解析基准。"""
+
     driver: Literal["sqlite"]
     database: str = Field(min_length=1)
 
     @property
     def resolved_database(self) -> str:
+        """保留内存库和绝对路径，相对路径统一落在 storage 目录。"""
+
         if self.database == ":memory:":
             return self.database
 

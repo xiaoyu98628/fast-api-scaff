@@ -1,3 +1,5 @@
+"""把 PostgreSQL 配置转换为 asyncpg SQLAlchemy Engine 规格。"""
+
 from sqlalchemy import URL
 
 from app.config.database import PostgreSQLDatabaseSettings
@@ -6,9 +8,13 @@ from app.infrastructure.database.contracts.provider import DatabaseResourceDefin
 
 
 class PostgreSQLDatabaseProvider:
+    """同时接受 postgresql 和 pgsql 驱动别名。"""
+
     drivers = ("postgresql", "pgsql")
 
     def prepare(self, raw_config: dict[str, object]) -> DatabaseResourceDefinition:
+        """校验配置并生成共享连接池参数。"""
+
         settings = PostgreSQLDatabaseSettings.model_validate(raw_config)
         return DatabaseResourceDefinition(
             engine_spec=DatabaseEngineSpec(

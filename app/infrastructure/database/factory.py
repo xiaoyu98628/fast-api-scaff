@@ -1,3 +1,5 @@
+"""创建和关闭 SQLAlchemy 异步数据库资源，并记录资源事件。"""
+
 import logging
 
 from sqlalchemy.exc import NoSuchModuleError
@@ -14,9 +16,11 @@ _DATABASE_LOGGER = logging.getLogger("app.infrastructure.database")
 
 async def create_database_resource(connection_name: str, definition: DatabaseResourceDefinition) -> DatabaseResource:
     """创建异步 Engine 和 Session 工厂，不主动建立数据库连接。"""
+
     spec = definition.engine_spec
 
     try:
+        # create_async_engine 只构造连接池；首次实际查询时才连接数据库。
         engine = create_async_engine(spec.url, hide_parameters=True, **dict(spec.options))
     except (ImportError, ModuleNotFoundError, NoSuchModuleError) as error:
         _DATABASE_LOGGER.exception(
@@ -50,6 +54,8 @@ async def create_database_resource(connection_name: str, definition: DatabaseRes
 
 
 async def close_database_resource(resource: DatabaseResource) -> None:
+    """释放 Engine 连接池，并保留关闭失败的原始异常。"""
+
     try:
         await resource.engine.dispose()
     except Exception:

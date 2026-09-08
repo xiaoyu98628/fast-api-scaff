@@ -1,3 +1,5 @@
+"""定义数据库 Provider 的扩展契约和校验结果。"""
+
 from dataclasses import dataclass
 from typing import Protocol
 
