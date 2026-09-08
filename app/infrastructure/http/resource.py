@@ -1,3 +1,5 @@
+"""组合 HTTP 传输驱动和应用公共客户端。"""
+
 from dataclasses import dataclass
 
 from app.infrastructure.http.contracts.client import HttpClient
@@ -12,4 +14,6 @@ class ManagedHttpResource:
     client: HttpClient
 
     async def aclose(self) -> None:
+        """由唯一持有资源的驱动统一释放连接池。"""
+
         await self.driver.aclose()

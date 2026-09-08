@@ -1,3 +1,5 @@
+"""定义公共 HTTP 客户端与具体传输实现之间的驱动契约。"""
+
 from contextlib import AbstractAsyncContextManager
 from typing import Protocol
 

@@ -1,3 +1,5 @@
+"""定义仅在异步上下文内有效的流式 HTTP 响应契约。"""
+
 from collections.abc import AsyncIterator
 from typing import Protocol
 

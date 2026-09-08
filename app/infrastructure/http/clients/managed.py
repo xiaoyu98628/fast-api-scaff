@@ -1,3 +1,5 @@
+"""在传输驱动之上统一请求耗时、取消和结构化日志。"""
+
 import logging
 from collections.abc import AsyncIterator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
@@ -20,6 +22,8 @@ class ManagedHttpClient:
         self._driver = driver
 
     async def request(self, request: HttpRequest) -> HttpResponse:
+        """执行完整缓冲请求，并记录一次最终完成、失败或取消事件。"""
+
         started_at = perf_counter()
 
         try:
@@ -56,10 +60,14 @@ class ManagedHttpClient:
         return response
 
     def stream(self, request: HttpRequest) -> AbstractAsyncContextManager[HttpStreamResponse]:
+        """返回管理连接生命周期和流式日志的异步上下文。"""
+
         return self._stream(request)
 
     @asynccontextmanager
     async def _stream(self, request: HttpRequest) -> AsyncIterator[HttpStreamResponse]:
+        """区分传输错误与调用方在流上下文内抛出的业务异常。"""
+
         started_at = perf_counter()
         status_code: int | None = None
         caller_failed = False
@@ -77,6 +85,7 @@ class ManagedHttpClient:
                 try:
                     yield response
                 except Exception as error:
+                    # 调用方异常不属于 HTTP 传输失败，不能伪装成 stream.failed。
                     caller_failed = not isinstance(error, HttpError)
                     raise
         except get_cancelled_exc_class():
@@ -113,4 +122,6 @@ class ManagedHttpClient:
 
 
 def _duration_ms(started_at: float) -> float:
+    """使用单调计时结果生成毫秒耗时。"""
+
     return round((perf_counter() - started_at) * 1000, 3)

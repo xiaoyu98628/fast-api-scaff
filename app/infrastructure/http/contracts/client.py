@@ -1,3 +1,5 @@
+"""定义应用层和上下文基础设施可依赖的 HTTP 出站客户端。"""
+
 from contextlib import AbstractAsyncContextManager
 from typing import Protocol
 

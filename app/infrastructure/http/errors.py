@@ -1,3 +1,6 @@
+"""定义 HTTP 出站基础设施对外暴露的稳定错误分类。"""
+
+
 class HttpError(RuntimeError):
     """HTTP 出站基础能力异常基类。"""
 
