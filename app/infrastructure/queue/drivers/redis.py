@@ -122,6 +122,8 @@ class RedisConsumer:
             raise
 
     async def aclose(self) -> None:
+        """停止接收和续租，让未确认消息在租约过期后可被接管。"""
+
         self.closed = True
         if self._renewal is not None:
             self._renewal.cancel()
@@ -149,12 +151,18 @@ class RedisBackend:
         )
 
     async def publish(self, queue: str, payload: bytes) -> None:
+        """把信封作为 payload 字段追加到带前缀的 Redis Stream。"""
+
         await self._client.xadd(self._settings.prefix + queue, {"payload": payload})
 
     async def consumer(self, queue: str, concurrency: int) -> RedisConsumer:
+        """为逻辑队列创建并启动独立 Consumer Group 成员。"""
+
         consumer = RedisConsumer(self._client, self._settings.prefix + queue, self._settings)
         await consumer.start()
         return consumer
 
     async def aclose(self) -> None:
+        """关闭后端共享的 Redis 客户端和连接池。"""
+
         await self._client.aclose()

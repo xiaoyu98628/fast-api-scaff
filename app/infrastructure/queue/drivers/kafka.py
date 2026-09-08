@@ -59,6 +59,8 @@ class RebalanceListener(ConsumerRebalanceListener):
         self.source = source
 
     async def on_partitions_revoked(self, revoked: Iterable[TopicPartition]) -> None:
+        """在分区撤销时取消全部旧 generation 的在途执行。"""
+
         # 取消旧 generation 的 handler，避免其完成后提交已经转移的分区。
         self.source.generation += 1
         for delivery in tuple(self.source.pending.values()):
@@ -67,6 +69,8 @@ class RebalanceListener(ConsumerRebalanceListener):
         self.source.pending.clear()
 
     async def on_partitions_assigned(self, assigned: Iterable[TopicPartition]) -> None:
+        """恢复新分配分区的消息拉取。"""
+
         self.source.client.resume(*assigned)
 
 
@@ -104,6 +108,8 @@ class KafkaConsumer:
             return delivery
 
     async def aclose(self) -> None:
+        """标记消费者关闭，并停止客户端的消费组会话。"""
+
         self.closed = True
         await self.client.stop()
 
@@ -122,9 +128,13 @@ class KafkaBackend:
         return cls(settings)
 
     async def publish(self, queue: str, payload: bytes) -> None:
+        """延迟启动 Producer，并等待 Broker 确认消息发送。"""
+
         await (await self._producer.get()).send_and_wait(queue, payload)
 
     async def consumer(self, queue: str, concurrency: int) -> KafkaConsumer:
+        """创建并启动订阅单个逻辑队列的消费组成员。"""
+
         consumer = KafkaConsumer(self._settings, queue)
         try:
             await consumer.client.start()
@@ -134,6 +144,8 @@ class KafkaBackend:
         return consumer
 
     async def aclose(self) -> None:
+        """关闭已经创建的共享 Producer；未使用时不建立连接。"""
+
         await self._producer.aclose()
 
 
@@ -150,4 +162,6 @@ async def _create_producer(settings: KafkaQueueSettings) -> AIOKafkaProducer:
 
 
 async def _close_producer(producer: AIOKafkaProducer) -> None:
+    """停止 Kafka Producer 并释放网络资源。"""
+
     await producer.stop()

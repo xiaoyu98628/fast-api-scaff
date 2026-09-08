@@ -18,6 +18,8 @@ class RabbitDelivery:
         self.identity = message.message_id or f"delivery:{message.delivery_tag}"
 
     async def acknowledge(self) -> None:
+        """向 RabbitMQ 确认当前消息已经处理完毕。"""
+
         await self._message.ack()
 
 
@@ -110,4 +112,6 @@ class RabbitBackend:
             raise
 
     async def aclose(self) -> None:
+        """关闭 RabbitMQ 连接及其所属发布 Channel。"""
+
         await self._connection.close()
