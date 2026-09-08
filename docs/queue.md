@@ -1,72 +1,78 @@
 # 队列
 
-队列基础设施提供 JobCatalog、Dispatcher、QueueManager 和三种后端：Redis Streams、Kafka、RabbitMQ。HTTP 和 Console 可以发布任务；消费由[独立 Worker](worker.md)启动。
+队列基础设施提供 QueueJob、Dispatcher、QueueManager 和三种后端：Redis Streams、Kafka、RabbitMQ。HTTP 和 Console 可以发布任务；消费由[独立 Worker](worker.md)启动。
 
 ## 1. 连接与逻辑队列
 
-`QUEUE_CONNECTIONS__<NAME>` 中的 `<NAME>` 是连接名，用来区分后端、集群、认证信息和消费组；`QUEUE_DEFAULT` 只选择默认连接。`default_queue` 和运行时的 `queue=` 才是逻辑队列名。同一连接可以承载多个逻辑队列并复用连接资源；只有后端、集群、认证信息或消费组不同时，才需要新增命名连接。
+`QUEUE_CONNECTIONS__<NAME>` 中的 `<NAME>` 是连接名，用来区分后端、集群、认证信息和消费组；`QUEUE_DEFAULT` 选择默认连接。每个连接的 `default_queue` 默认为 `default`。普通 Job 都发布到这个默认逻辑队列，因此业务代码不需要知道 Redis、Kafka、RabbitMQ 或具体队列名。
 
-使用 `ApplicationContainer.queues` 获取已绑定连接的 Dispatcher：
+默认发布只需要：
 
 ```python
 from app.runtime.container import ApplicationContainer
 
 async def submit(container: ApplicationContainer, job: object):
-    dispatcher = await container.queues.get("redis")
-    return await dispatcher.dispatch(job, queue="reports", correlation_id="request-123")
+    return await container.queues.dispatch(job)
 ```
 
-`job` 必须先注册到该容器的 `queues.catalog`。`get()` 不启动消费者；构建容器也不连接队列服务。第一次发布时 Kafka 才建立 Producer，RabbitMQ 在第一次 `get()` 时建立发布连接，Redis 客户端在首次命令时连接。Kafka Worker 只消费时不会初始化 Producer。
+只有在任务需要独立优先级、并发或扩缩容时，才覆盖连接或队列：
+
+```python
+await container.queues.dispatch(job, connection="redis", queue="reports", correlation_id="request-123")
+```
+
+`dispatch()` 不启动消费者；构建容器也不连接队列服务。第一次发布时 Kafka 才建立 Producer，RabbitMQ 在第一次获取 Dispatcher 时建立发布连接，Redis 客户端在首次命令时连接。Kafka Worker 只消费时不会初始化 Producer。
 
 队列名映射为 Redis 的 `prefix + queue`、Kafka Topic、RabbitMQ 同名持久队列。RabbitMQ 使用默认 exchange 和同名 routing key；首版不提供自定义 exchange 或绑定。
 
-`sample.env` 同时声明 `redis`、`kafka` 和 `rabbitmq` 三个命名连接，并以 `redis` 为默认连接。Worker 可通过 `--connection redis --queue reports` 独立选择连接和逻辑队列。
+`sample.env` 同时声明 `redis`、`kafka` 和 `rabbitmq` 三个命名连接，并以 `redis` 为默认连接、`default` 为该连接的默认逻辑队列。`uv run python -m app.worker` 直接消费该队列；`--connection` 和 `--queue` 只是高级覆盖。Worker 不会动态扫描所有物理队列；未显式隔离的 Job 都复用默认队列。
 
 配置见[配置参考](configuration.md#队列与-worker)与 `sample.env`。未配置连接时，HTTP/Console 仍可启动；调用队列公共入口才报告未配置错误。连接字段在容器构建时严格校验。
 
-## 2. Job 数据与 Codec
+## 2. QueueJob 与动态解析
 
-业务 Application 定义纯数据类及业务发布窄协议。共享基础设施不能导入业务模块，也不使用 pickle、Python 模块路径或自动反射构造对象。
-
-任务类型和 Codec 由业务上下文定义，并在组合根中显式注册：
+一个业务任务由一个 QueueJob 类表达，数据与执行入口放在同一个类中。项目当前把用户任务组织在 `app/contexts/user/jobs/` 并按类名使用蛇形命名模块，但这是代码组织方式，不是队列框架的扫描规则；Job 可以移动到应用根包内的其他模块。包的 `__init__.py` 保持完全空，调用方从实际定义模块显式导入：
 
 ```python
 from dataclasses import dataclass
 
-from app.infrastructure.queue.catalog import JobDefinition
+from app.infrastructure.queue.job import QueueJob
 
 @dataclass(frozen=True, slots=True)
-class ExampleJob:
+class ExampleJob(QueueJob):
     number: int
 
-class ExampleCodec:
-    def encode(self, job: ExampleJob) -> bytes:
-        return str(job.number).encode()
-
-    def decode(self, payload: bytes) -> ExampleJob:
-        return ExampleJob(int(payload))
-
-definition = JobDefinition("example.number", 1, ExampleJob, ExampleCodec())
-container.queues.catalog.register(definition)
+    async def handle(self) -> None:
+        print(self.number)
 ```
 
-业务将数据类放在上下文 Application，将 Codec、业务发布窄协议的实现放在该上下文 Infrastructure，在上下文组合根中注册任务定义。HTTP 或 Console 通过 Dispatcher 发布，独立 Worker 使用相同连接和逻辑队列消费。Worker 的 `composition.py` 只接收组合根公开的定义/服务来绑定 Handler，不直接导入上下文 Infrastructure。
+投递仍然只有一个入口：
 
-JobDefinition 的同一 Python 类型只能注册一个发布版本；Worker 可注册不同类型的旧版本来兼容历史任务。重复注册报错。Catalog 不持有 Handler，HTTP 不加载执行依赖。
+```python
+await container.queues.dispatch(ExampleJob(number=42))
+```
+
+Dispatcher 自动取得 `类型.__module__:类型.__qualname__`，将类路径、默认版本 1 和 JSON payload 写入消息。Worker 不扫描 `contexts`、`jobs` 或其他业务目录，也没有 Job Catalog 或 Handler 注册表；它按消息中的类路径动态导入类型，确认模块属于应用根包且类型继承 `QueueJob`，解码后直接执行 `await job.handle()`。解析结果会缓存。
+
+普通 dataclass 和 Pydantic Model 默认使用基于 Pydantic schema 的 JSON Codec；需要兼容特殊历史协议时，可以在 Job 类上覆盖 `codec`。重试策略同样通过类级 `policy` 覆盖，版本通过类级 `version` 覆盖。当前 `handle()` 不注入全局容器；需要访问业务能力时，应先定义上下文内的窄接口和明确的装配边界，不能让 Application/Domain 反向依赖 `ApplicationContainer`。
+
+类路径属于队列消息契约。移动或重命名 Job 时，尚未消费的消息仍引用旧路径；应在旧模块暂时保留一个指向新类的显式导入，待旧队列排空后再删除。动态导入以队列服务是内部可信资源为前提，默认拒绝应用根包之外的类路径。
+
+当前内置 `LoginSucceededJob` 作为最小业务示例：登录 HTTP 适配器在会话提交后向默认队列尽力投递固定文案，Worker 调用其 `handle()` 记录该文案。任务不携带用户名、密码、Token 或用户 ID；发布失败不改变登录响应。该通知不具备 Outbox 或 exactly-once 保证，不应用于审计或安全决策。
 
 ## 3. 信封与交付保证
 
-信封包含 `schema_version=1`、`job_id`、`job_name`、`job_version`、`payload`、`enqueued_at`、`correlation_id`、`replay_of`。业务 payload 必须是合法 JSON 字节，在外层 JSON 中采用 Base64 表达；不接受 NaN/Infinity。默认整个信封不超过 1 MiB。时间保持本地无时区，各宿主应使用相同 `TZ`。
+信封包含 `schema_version=2`、`job_id`、`job_type`、`job_version`、`payload`、`enqueued_at`、`correlation_id`、`replay_of`。`job_type` 是可导入的 Job 类路径。业务 payload 必须是合法 JSON 字节，在外层 JSON 中采用 Base64 表达；不接受 NaN/Infinity。默认整个信封不超过 1 MiB。时间保持本地无时区，各宿主应使用相同 `TZ`。旧的 schema version 1 消息会按非法信封写入失败记录，不会尝试执行。
 
 发布成功表示后端接受，不表示业务完成。发布超时或连接故障可能发生在接受之后，因此结果可能不确定，不能盲目重投。消息成功处理后再确认，外部后端恢复未确认消息时可能重复执行；业务幂等不由框架自动提供。数据库提交与发布不是原子操作，首版显式在 UoW 提交后投递，没有 after_commit 包装器或 Outbox。
 
 | 后端 | 行为与边界 |
 | --- | --- |
-| Redis | Streams + Consumer Group，消费时创建组并从 0-0 起读；XAUTOCLAIM 恢复超时 pending；后台续租；Lua 检查所有者后 ACK；command_timeout 独立于发布超时；失败退出后等待租约过期恢复 |
+| Redis | Streams + Consumer Group，消费时创建组并从 0-0 起读；XAUTOCLAIM 恢复超时 pending；后台续租；Lua 检查所有者后原子 XACK + XDEL；command_timeout 独立于发布超时；失败退出后等待租约过期恢复 |
 | Kafka | 禁止自动 offset 提交；每个分区最多一条在途，成功提交 offset+1 后恢复该分区；跨分区并发；再均衡取消当前执行并使旧 delivery 失效，Worker 退出报告故障 |
 | RabbitMQ | 默认 exchange、同名 durable 队列、persistent 消息、发布确认和 mandatory；手动 ACK，prefetch 等于并发数；关闭消费 channel 后未确认消息由服务端恢复 |
 
-Redis 使用 XAUTOCLAIM，需 Redis 6.2+。Redis Stream 不自动裁剪；ACK 只删除 pending 状态，不删除历史条目。保留策略由使用者按所有消费组进度设计，不能裁掉尚未确认的任务。Kafka Topic 及其保留策略由使用者管理，框架不调用管理 API 创建 Topic；保留时间必须覆盖处理与恢复窗口。
+Redis 使用 XAUTOCLAIM，需 Redis 6.2+。执行成功，或失败记录已可靠保存后，所有者检查、XACK 和 XDEL 在同一 Lua 脚本中完成，已处理条目不继续占用 Stream。因此 Redis 适配器是竞争消费的工作队列，不支持在同一 Stream 上用多个消费组做广播；广播需使用独立队列或后端原生事件模型。Kafka Topic 及其保留策略由使用者管理，框架不调用管理 API 创建 Topic；保留时间必须覆盖处理与恢复窗口。
 
 ## 4. 失败存储与重放
 

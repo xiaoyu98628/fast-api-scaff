@@ -11,9 +11,9 @@ from app.infrastructure.queue.errors import InvalidMessageError
 
 class EnvelopeData(BaseModel):
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
-    schema_version: int = Field(default=1, strict=True, ge=1, le=1)
+    schema_version: int = Field(default=2, strict=True, ge=2, le=2)
     job_id: UUID
-    job_name: str = Field(min_length=1, max_length=200)
+    job_type: str = Field(min_length=1, max_length=500)
     job_version: int = Field(strict=True, ge=1)
     payload: str
     enqueued_at: datetime
@@ -27,11 +27,11 @@ class EnvelopeData(BaseModel):
             raise ValueError("队列时间必须为本地无时区时间")
         return value
 
-    @field_validator("job_name")
+    @field_validator("job_type")
     @classmethod
-    def job_name_not_blank(cls, value: str) -> str:
+    def job_type_not_blank(cls, value: str) -> str:
         if not value.strip():
-            raise ValueError("任务名称不能为空")
+            raise ValueError("任务类路径不能为空")
         return value
 
 
@@ -44,7 +44,7 @@ class EnvelopeJsonCodec:
             self._validate_payload(message.payload)
             data = EnvelopeData(
                 job_id=message.job_id,
-                job_name=message.job_name,
+                job_type=message.job_type,
                 job_version=message.job_version,
                 payload=base64.b64encode(message.payload).decode("ascii"),
                 enqueued_at=message.enqueued_at,
@@ -65,7 +65,7 @@ class EnvelopeJsonCodec:
             self._validate_payload(payload)
             return MessageEnvelope(
                 data.job_id,
-                data.job_name,
+                data.job_type,
                 data.job_version,
                 payload,
                 data.enqueued_at,

@@ -6,7 +6,7 @@ from uuid import UUID
 @dataclass(frozen=True, slots=True)
 class MessageEnvelope:
     job_id: UUID
-    job_name: str
+    job_type: str
     job_version: int
     payload: bytes
     enqueued_at: datetime

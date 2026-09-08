@@ -4,11 +4,11 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from app.infrastructure.queue.catalog import JobCatalog
 from app.infrastructure.queue.codecs.envelope_json import EnvelopeJsonCodec
 from app.infrastructure.queue.contracts.message import MessageEnvelope
 from app.infrastructure.queue.contracts.publisher import QueuePublisher
 from app.infrastructure.queue.errors import QueueError
+from app.infrastructure.queue.job import encode_job
 
 
 def _always_active() -> None:
@@ -18,7 +18,6 @@ def _always_active() -> None:
 @dataclass(frozen=True, slots=True)
 class Dispatcher:
     publisher: QueuePublisher
-    catalog: JobCatalog
     codec: EnvelopeJsonCodec
     default_queue: str
     publish_timeout: float = 10.0
@@ -27,8 +26,8 @@ class Dispatcher:
     ensure_active: Callable[[], None] = field(default=_always_active, repr=False, compare=False)
 
     async def dispatch(self, job: object, *, queue: str | None = None, correlation_id: str | None = None) -> UUID:
-        encoded = self.catalog.encode(job)
-        message = MessageEnvelope(self.new_id(), encoded.name, encoded.version, encoded.payload, self.clock(), correlation_id)
+        encoded = encode_job(job)
+        message = MessageEnvelope(self.new_id(), encoded.job_type, encoded.version, encoded.payload, self.clock(), correlation_id)
         await self.publish_envelope(message, queue=queue)
         return message.job_id
 

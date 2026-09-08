@@ -124,7 +124,7 @@ docker compose --profile worker up --build
 
 容器内的 `127.0.0.1` 指向应用容器自身，不是宿主机，也不是另一个服务容器。连接宿主机服务时，macOS/Windows 通常使用 `host.docker.internal`；连接同一 Compose 网络中的服务时使用服务名。具体可达性仍需以你的部署网络为准。
 
-HTTP 容器启动命令带 `--reload`，适合本地开发，不是生产部署配置。Worker 默认没有业务 Handler，完成 JobDefinition 注册与 Handler 绑定后才能持续消费。
+HTTP 容器启动命令带 `--reload`，适合本地开发，不是生产部署配置。脚手架内置登录成功 Job；配置默认队列连接后，`uv run python -m app.worker` 即可消费默认队列中的 QueueJob。
 
 ## 5. 首次运行的正确顺序
 

@@ -148,6 +148,8 @@ async def test_redis_pending_recovery_and_owner_checked_ack() -> None:
     assert delivery.payload == b"old"
     client.xreadgroup.assert_not_awaited()
     await delivery.acknowledge()
+    assert "XACK" in client.eval.call_args.args[0]
+    assert "XDEL" in client.eval.call_args.args[0]
     assert client.eval.call_args.args[2:] == ("jobs", "workers", consumer.name, "1-0")
     with pytest.raises(DeliveryLostError):
         await delivery.acknowledge()

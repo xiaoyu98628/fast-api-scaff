@@ -13,7 +13,7 @@
 - Redis、Memcached、Memory 字节级 KV 缓存；
 - 普通与流式 HTTP 出站请求、独立连接池、阶段超时、池压力诊断和结构化日志；
 - Redis Streams、Kafka、RabbitMQ 队列适配器和独立 Worker；
-- Job 注册与分发、投递内重试、SQL 失败存储及 Console 重放；
+- QueueJob 动态解析与分发、投递内重试、SQL 失败存储及 Console 重放；
 - JSON/Text 结构化日志、request ID、访问日志和数据库查询日志；
 - 架构依赖测试、pytest、Ruff、ty 与 GitHub Actions 质量检查；
 - CI 使用临时 MySQL/PostgreSQL 服务验证 Alembic upgrade、downgrade 和再次 upgrade。
@@ -106,7 +106,7 @@ docker compose --profile worker up --build
 
 默认命令只启动 HTTP 应用；带 `worker` profile 的命令同时启动独立消费容器。Compose 不提供 MySQL、PostgreSQL、Redis、Kafka、RabbitMQ 或 Memcached。容器内 `127.0.0.1` 指向容器自身；应用可以使用 SQLite 与 Memory 缓存，队列 Worker 必须配置容器可访问的 Redis、Kafka 或 RabbitMQ 地址。Compose 使用 Uvicorn reload，仅适合本地开发。
 
-Worker 复用应用镜像、`.env` 和网络且不暴露端口。镜像本身不声明健康检查，Compose 只为 HTTP 服务配置 `/health` 检测。脚手架默认没有业务 Handler，注册 JobDefinition 并在 Worker composition 绑定 Handler 后才能持续消费。
+Worker 复用应用镜像、`.env` 和网络且不暴露端口。镜像本身不声明健康检查，Compose 只为 HTTP 服务配置 `/health` 检测。脚手架内置登录成功日志 Job；Worker 根据消息携带的类路径动态加载并执行它，不扫描业务目录，也不需要在组合根注册。
 
 生产镜像以 UID/GID 1000 的非 root 用户运行。镜像中的应用代码和虚拟环境由 root 持有，运行用户只对 `storage/data`、`storage/logs` 和自己的 home 目录拥有写权限。Compose 会把项目目录挂载到 `/app`；若使用 SQLite 或其他本地文件存储，请确保宿主机对应目录允许该用户写入。需要适配其他运行平台时，可通过 `APP_UID`、`APP_GID` 构建参数覆盖镜像用户。
 
@@ -148,11 +148,13 @@ GitHub Actions 还会在 MySQL 和 PostgreSQL 上执行迁移往返验证。HTTP
 
 ```bash
 uv run python -m app.worker --help
+uv run python -m app.worker
+# 只在需要隔离连接或逻辑队列时显式覆盖
 uv run python -m app.worker --connection redis --queue reports --concurrency 4
 docker compose --profile worker up --build
 ```
 
-先按[队列文档](docs/queue.md)配置连接、注册 JobDefinition，再在 Worker composition 中绑定 Handler；没有业务 Handler 时启动会明确报错。HTTP 与 Console 只负责发布，独立 Worker 通过 Redis、Kafka 或 RabbitMQ 消费。
+内置 `LoginSucceededJob` 由登录接口尽力投递到默认连接配置的默认队列（`sample.env` 为 `default`），Worker 收到后调用它的 `handle()` 记录固定文案且不包含用户凭据。新增任务只需继承 `QueueJob` 并实现 `handle()`，无需注册、扫描目录或修改组合根。HTTP 与 Console 只负责发布，独立 Worker 通过 Redis、Kafka 或 RabbitMQ 消费。
 
 失败任务固定使用 SQL 存储，需配置 QUEUE_FAILED__DATABASE 并执行对应 Alembic migration。外部适配器目前由模拟客户端测试覆盖，未进行真实 Redis/Kafka/RabbitMQ 服务集成验证。重试是投递内重试，不包含持久延迟调度或 exactly-once 保证。
 

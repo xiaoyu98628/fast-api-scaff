@@ -10,7 +10,7 @@ from app.infrastructure.queue.codecs.envelope_json import EnvelopeJsonCodec
 from app.infrastructure.queue.contracts.consumer import Delivery
 from app.infrastructure.queue.contracts.failed_store import FailedJobRecord, FailedJobStore
 from app.infrastructure.queue.errors import InvalidMessageError, RetryableJobError
-from app.interfaces.worker.registry import ExecutableJob, HandlerRegistry
+from app.interfaces.worker.resolver import ExecutableJob, JobTypeResolver
 
 _logger = logging.getLogger(__name__)
 
@@ -52,7 +52,7 @@ async def run_attempts(binding: ExecutableJob, payload: bytes) -> ExecutionResul
 class JobExecutor:
     connection: str
     queue: str
-    registry: HandlerRegistry
+    resolver: JobTypeResolver
     failures: FailedJobStore
     codec: EnvelopeJsonCodec
     clock: Callable[[], datetime] = datetime.now
@@ -74,7 +74,7 @@ class JobExecutor:
             result = ExecutionResult(0, "invalid_envelope")
         else:
             try:
-                binding = self.registry.resolve(message.job_name, message.job_version)
+                binding = self.resolver.resolve(message.job_type, message.job_version)
             except KeyError:
                 result = ExecutionResult(0, "unknown_job")
             else:

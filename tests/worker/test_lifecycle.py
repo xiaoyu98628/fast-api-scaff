@@ -1,7 +1,8 @@
 import asyncio
 import subprocess
 import sys
-from dataclasses import replace
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, replace
 
 import pytest
 from typer.testing import CliRunner
@@ -13,14 +14,35 @@ from app.config.database import DatabaseSettings
 from app.config.queue import QueueSettings
 from app.infrastructure.queue.errors import QueueError
 from app.infrastructure.queue.failed.sql.model import FailedJobModel
+from app.infrastructure.queue.job import job_reference
 from app.infrastructure.queue.manager import QueueManager
+from app.infrastructure.queue.policies import JobPolicy
 from app.interfaces.console.commands.queue import list_failures
 from app.interfaces.console.context import ConsoleContext
-from app.interfaces.worker.registry import HandlerRegistry
+from app.interfaces.worker.resolver import ExecutableJob
 from app.worker import app as worker_cli
 from tests.console.test_application import build_settings
 from tests.queue.fakes import FakeQueueBackend, queue_backend_factory
-from tests.queue.test_core import Job, definition
+from tests.queue.test_core import Codec, Job
+
+
+@dataclass(frozen=True, slots=True)
+class LifecycleBinding:
+    handler: Callable[[Job], Awaitable[None]]
+    policy: JobPolicy = JobPolicy()
+
+    async def execute(self, payload: bytes) -> None:
+        await self.handler(Codec().decode(payload))
+
+
+@dataclass(frozen=True, slots=True)
+class LifecycleResolver:
+    binding: ExecutableJob
+
+    def resolve(self, reference: str, version: int) -> ExecutableJob:
+        if reference != job_reference(Job) or version != 1:
+            raise KeyError((reference, version))
+        return self.binding
 
 
 @pytest.mark.asyncio
@@ -57,6 +79,13 @@ async def test_worker_uses_own_runtime_and_drains_job() -> None:
         }
     )
     base_container = build_application_container(settings)
+    stop = asyncio.Event()
+    values: list[int] = []
+
+    async def handle(job: Job) -> None:
+        values.append(job.value)
+        stop.set()
+
     queues = QueueManager(
         settings.queue,
         base_container.databases,
@@ -70,19 +99,13 @@ async def test_worker_uses_own_runtime_and_drains_job() -> None:
     engine = await container.databases.get_engine("main")
     async with engine.begin() as connection:
         await connection.run_sync(FailedJobModel.metadata.create_all)
-    container.queues.catalog.register(definition())
-    stop = asyncio.Event()
-    values: list[int] = []
-
-    async def handle(job: Job) -> None:
-        values.append(job.value)
-        stop.set()
-
-    registry = HandlerRegistry()
-    registry.register(definition(), handle)
-    await (await container.queues.get()).dispatch(Job(17))
-    application = WorkerHost(settings, container_builder=lambda _: container, registry_builder=lambda _: registry)
-    await asyncio.wait_for(application.serve(connection="main", queue=None, concurrency=2, stop=stop), 1)
+    await container.queues.dispatch(Job(17))
+    application = WorkerHost(
+        settings,
+        container_builder=lambda _: container,
+        resolver_builder=lambda: LifecycleResolver(LifecycleBinding(handle)),
+    )
+    await asyncio.wait_for(application.serve(connection=None, queue=None, concurrency=2, stop=stop), 1)
     assert values == [17]
     with pytest.raises(QueueError):
         await container.queues.get()

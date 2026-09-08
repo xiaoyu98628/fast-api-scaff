@@ -40,6 +40,14 @@ curl -X POST http://127.0.0.1:8000/api/v1/auth/logout \
 
 `/auth/me` 返回统一响应中的用户 DTO，不包含密码或哈希。退出返回 204，没有 JSON 响应体。OpenAPI 的 `SessionBearer` 安全方案可在 Swagger Authorize 中使用。
 
+登录成功并提交会话后，HTTP 适配器通过后台任务向默认连接配置的默认逻辑队列（`sample.env` 为 `default`）投递 `LoginSucceededJob`，消息只包含固定文案“用户登录成功，队列任务已执行。”，不包含用户名、密码、Token 或用户 ID。独立 Worker 消费后调用任务的 `handle()` 记录该文案：
+
+```bash
+uv run python -m app.worker
+```
+
+该通知是尽力而为的示例副作用：Redis 未配置、不可用或发布结果不确定时会记录 `user.login_succeeded.dispatch_failed`，但不改变已经成功的登录响应。数据库会话提交与消息发布不是原子事务，通知可能丢失或重复，不能据此实现审计、计费或安全控制。
+
 ## 输入与错误
 
 - 登录用户名允许 1–128 字符输入，随后按用户值对象规则 trim、转小写和校验。

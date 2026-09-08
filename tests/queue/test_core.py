@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
+from typing import ClassVar
 from uuid import uuid4
 
 import pytest
@@ -8,17 +11,12 @@ from pydantic import ValidationError
 from app.config.database import DatabaseSettings
 from app.config.queue import QueueSettings, parse_connection
 from app.infrastructure.database.manager import DatabaseManager
-from app.infrastructure.queue.catalog import JobCatalog, JobDefinition
 from app.infrastructure.queue.codecs.envelope_json import EnvelopeJsonCodec
 from app.infrastructure.queue.contracts.message import MessageEnvelope
 from app.infrastructure.queue.errors import InvalidMessageError, QueueConfigurationError, QueueError
+from app.infrastructure.queue.job import QueueJob, describe_job, encode_job, job_reference
 from app.infrastructure.queue.manager import QueueManager
 from tests.queue.fakes import FakeQueueBackend, RecordingFailedJobStore, queue_backend_factory
-
-
-@dataclass(frozen=True)
-class Job:
-    value: int
 
 
 class Codec:
@@ -29,12 +27,17 @@ class Codec:
         return Job(int(payload))
 
 
-def definition() -> JobDefinition[Job]:
-    return JobDefinition("test.job", 1, Job, Codec())
+@dataclass(frozen=True)
+class Job(QueueJob):
+    value: int
+    codec: ClassVar[Codec] = Codec()
+
+    async def handle(self) -> None:
+        pass
 
 
 def message() -> MessageEnvelope:
-    return MessageEnvelope(uuid4(), "test.job", 1, b"123", datetime(2026, 9, 7))
+    return MessageEnvelope(uuid4(), job_reference(Job), 1, b"123", datetime(2026, 9, 7))
 
 
 def manager() -> QueueManager:
@@ -46,7 +49,6 @@ def manager() -> QueueManager:
         failed_jobs=RecordingFailedJobStore(),
         factory=queue_backend_factory(backend),
     )
-    queues.catalog.register(definition())
     return queues
 
 
@@ -77,7 +79,10 @@ def test_worker_settings_are_nested_under_queue(monkeypatch: pytest.MonkeyPatch)
 def test_envelope_roundtrip_and_size_and_json_validation() -> None:
     codec = EnvelopeJsonCodec()
     item = message()
-    assert codec.decode(codec.encode(item)) == item
+    raw = codec.encode(item)
+    assert codec.decode(raw) == item
+    with pytest.raises(InvalidMessageError):
+        codec.decode(raw.replace(b'"schema_version":2', b'"schema_version":1'))
     for payload in (b"NaN", b"not-json", b"[Infinity]"):
         with pytest.raises(InvalidMessageError):
             codec.encode(replace(item, payload=payload))
@@ -90,24 +95,24 @@ def test_envelope_roundtrip_and_size_and_json_validation() -> None:
             codec.decode(raw)
 
 
-def test_catalog_rejects_duplicates_and_unknown_type() -> None:
-    catalog = JobCatalog()
-    catalog.register(definition())
-    assert catalog.encode(Job(7)).payload == b"7"
+def test_job_descriptor_encodes_subclass_and_rejects_unknown_type() -> None:
+    descriptor = describe_job(Job)
+    encoded = encode_job(Job(7))
+    assert encoded.job_type == job_reference(Job)
+    assert encoded.version == 1
+    assert encoded.payload == b"7"
     with pytest.raises(QueueConfigurationError):
-        catalog.register(definition())
-    with pytest.raises(QueueConfigurationError):
-        catalog.encode(object())
+        encode_job(object())
     with pytest.raises(TypeError):
-        definition().encode(object())
+        descriptor.encode(object())
 
 
 @pytest.mark.asyncio
 async def test_manager_is_lazy_and_dispatches_typed_job() -> None:
     queues = manager()
     assert not queues.is_initialized()
+    job_id = await queues.dispatch(Job(42))
     publisher = await queues.get()
-    job_id = await publisher.dispatch(Job(42))
     async with queues.consume() as consumer:
         delivery = await consumer.receive()
         item = queues.codec.decode(delivery.payload)
@@ -135,7 +140,6 @@ async def test_cached_dispatcher_checks_manager_lifecycle() -> None:
         failed_jobs=RecordingFailedJobStore(),
         factory=queue_backend_factory(backend),
     )
-    queues.catalog.register(definition())
     dispatcher = await queues.get()
     await queues.aclose()
 

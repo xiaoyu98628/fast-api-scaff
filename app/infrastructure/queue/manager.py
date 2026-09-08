@@ -10,7 +10,6 @@ from pydantic import ValidationError
 
 from app.config.queue import QueueConnection, QueueSettings, parse_connection
 from app.infrastructure.database.manager import DatabaseManager
-from app.infrastructure.queue.catalog import JobCatalog
 from app.infrastructure.queue.codecs.envelope_json import EnvelopeJsonCodec
 from app.infrastructure.queue.contracts.consumer import QueueConsumer
 from app.infrastructure.queue.contracts.failed_store import FailedJobStore
@@ -31,11 +30,9 @@ class QueueManager:
         settings: QueueSettings,
         databases: DatabaseManager,
         *,
-        catalog: JobCatalog | None = None,
         failed_jobs: FailedJobStore | None = None,
         factory: BackendFactory = create_backend,
     ) -> None:
-        self.catalog = catalog if catalog is not None else JobCatalog()
         self.codec = EnvelopeJsonCodec(settings.max_message_bytes)
         self._default = settings.default
         self._closed = False
@@ -86,7 +83,18 @@ class QueueManager:
         resolved = self.resolve_name(name)
         backend = await self._resources[resolved].get()
         config = self._configs[resolved]
-        return Dispatcher(backend, self.catalog, self.codec, config.default_queue, config.publish_timeout, ensure_active=self._ensure_open)
+        return Dispatcher(backend, self.codec, config.default_queue, config.publish_timeout, ensure_active=self._ensure_open)
+
+    async def dispatch(
+        self,
+        job: object,
+        *,
+        connection: str | None = None,
+        queue: str | None = None,
+        correlation_id: str | None = None,
+    ) -> UUID:
+        dispatcher = await self.get(connection)
+        return await dispatcher.dispatch(job, queue=queue, correlation_id=correlation_id)
 
     @asynccontextmanager
     async def consume(self, *, connection: str | None = None, queue: str | None = None, concurrency: int = 1) -> AsyncIterator[QueueConsumer]:

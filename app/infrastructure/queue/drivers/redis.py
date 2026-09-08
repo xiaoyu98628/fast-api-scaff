@@ -15,7 +15,9 @@ _READ_BLOCK_MS = 1000
 _OWNED_ACK = """
 local p = redis.call('XPENDING', KEYS[1], ARGV[1], ARGV[3], ARGV[3], 1)
 if #p == 0 or p[1][2] ~= ARGV[2] then return 0 end
-return redis.call('XACK', KEYS[1], ARGV[1], ARGV[3])
+local acknowledged = redis.call('XACK', KEYS[1], ARGV[1], ARGV[3])
+if acknowledged == 1 then redis.call('XDEL', KEYS[1], ARGV[3]) end
+return acknowledged
 """
 _OWNED_RENEW = """
 local p = redis.call('XPENDING', KEYS[1], ARGV[1], ARGV[3], ARGV[3], 1)
