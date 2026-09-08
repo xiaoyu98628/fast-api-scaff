@@ -1,3 +1,5 @@
+"""定义用户聚合使用的值对象及输入规范化规则。"""
+
 import re
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -14,31 +16,44 @@ _PASSWORD_HASH_MAX_LENGTH = 255
 
 @dataclass(frozen=True, slots=True)
 class UserId:
+    """封装用户 UUID，避免与其他上下文 ID 混用。"""
+
     value: UUID
 
     def __post_init__(self) -> None:
+        """确保领域 ID 的底层值确实是 UUID。"""
+
         if not isinstance(self.value, UUID):
             raise InvalidUserDataError("用户 ID 必须是 UUID")
 
 
 @dataclass(frozen=True, slots=True)
 class Username:
+    """保存去除首尾空白并转换为小写的用户名。"""
+
     value: str
 
     def __post_init__(self) -> None:
+        """规范化用户名并检查应用允许的字符和长度。"""
+
         normalized = self.value.strip().lower()
 
         if not _USERNAME_PATTERN.fullmatch(normalized):
             raise InvalidUserDataError("用户名必须由 3 到 32 位小写字母、数字或下划线组成")
 
+        # frozen dataclass 仍需在构造阶段写回规范化结果。
         object.__setattr__(self, "value", normalized)
 
 
 @dataclass(frozen=True, slots=True)
 class EmailAddress:
+    """保存去除首尾空白并转换为小写的邮箱地址。"""
+
     value: str
 
     def __post_init__(self) -> None:
+        """执行应用所需的基础邮箱格式和长度检查。"""
+
         normalized = self.value.strip().lower()
 
         if len(normalized) > 254 or not _EMAIL_PATTERN.fullmatch(normalized):
@@ -54,6 +69,8 @@ class Password:
     value: str = field(repr=False)
 
     def __post_init__(self) -> None:
+        """限制明文密码类型和长度，不在领域层规定哈希算法。"""
+
         if not isinstance(self.value, str):
             raise InvalidUserDataError("密码必须是字符串")
 
@@ -68,6 +85,8 @@ class PasswordHash:
     value: str = field(repr=False)
 
     def __post_init__(self) -> None:
+        """校验持久化字段能够容纳的非空哈希文本。"""
+
         if not isinstance(self.value, str):
             raise InvalidUserDataError("密码哈希必须是字符串")
 
@@ -76,5 +95,7 @@ class PasswordHash:
 
 
 class UserStatus(StrEnum):
+    """描述账户当前处于启用还是禁用状态。"""
+
     ACTIVE = "active"
     DISABLED = "disabled"
