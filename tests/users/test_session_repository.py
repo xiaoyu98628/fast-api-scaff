@@ -37,7 +37,7 @@ def test_token_and_session_hide_secrets_and_expire_at_boundary() -> None:
     assert not session.is_valid(now=expires_at)
     assert not session.is_valid(now=issued_at - timedelta(microseconds=1))
     assert "secret-password" not in repr(LoginCommand(username="alice", password="secret-password"))
-    assert credential.token not in repr(TokenDTO(access_token=credential.token, expires_in=100))
+    assert credential.token not in repr(TokenDTO(access_token=credential.token, expires_in=100, user_id=uuid7()))
     assert set(UserModel.__table__.columns.keys()) == {"id", "username", "email", "password", "status", "created_at", "updated_at"}
     assert {field.name for field in fields(UserSession)} == {"token_digest", "user_id", "issued_at", "expires_at"}
     assert "user_sessions" in load_main_database_metadata().tables

@@ -154,7 +154,7 @@ uv run python -m app.worker --connection redis --queue reports --concurrency 4
 docker compose --profile worker up --build
 ```
 
-内置 `LoginSucceededJob` 由登录接口尽力投递到默认连接配置的默认队列（`sample.env` 为 `default`），Worker 收到后调用它的 `handle()` 记录固定文案且不包含用户凭据。新增任务只需继承 `QueueJob` 并实现 `handle()`，无需注册、扫描目录或修改组合根。HTTP 与 Console 只负责发布，独立 Worker 通过 Redis、Kafka 或 RabbitMQ 消费。
+内置 `LoginSucceededJob` 由登录接口尽力投递到默认连接配置的默认队列（`sample.env` 为 `default`），消息以 `user_id` 参数标识登录用户，不包含用户名、密码或 Token；Worker 收到后调用它的 `handle()` 记录固定文案和结构化用户 ID。新增任务只需继承 `QueueJob` 并实现 `handle()`，无需注册、扫描目录或修改组合根。HTTP 与 Console 只负责发布，独立 Worker 通过 Redis、Kafka 或 RabbitMQ 消费。
 
 失败任务固定使用 SQL 存储，需配置 QUEUE_FAILED__DATABASE 并执行对应 Alembic migration。外部适配器目前由模拟客户端测试覆盖，未进行真实 Redis/Kafka/RabbitMQ 服务集成验证。重试是投递内重试，不包含持久延迟调度或 exactly-once 保证。
 

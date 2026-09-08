@@ -1,5 +1,6 @@
 import logging
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Response, status
 
@@ -23,9 +24,9 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 _logger = logging.getLogger(__name__)
 
 
-async def _publish_login_succeeded(container: ApplicationContainer) -> None:
+async def _publish_login_succeeded(container: ApplicationContainer, user_id: UUID) -> None:
     try:
-        await container.queues.dispatch(LoginSucceededJob())
+        await container.queues.dispatch(LoginSucceededJob(user_id=user_id))
     except QueueError:
         _logger.exception(
             "Login succeeded job dispatch failed",
@@ -51,7 +52,7 @@ async def login(
     except AuthApplicationError as error:
         raise auth_error_to_http(error) from None
 
-    background_tasks.add_task(_publish_login_succeeded, container)
+    background_tasks.add_task(_publish_login_succeeded, container, token.user_id)
     response.headers["Cache-Control"] = "no-store"
     return responses.success(TokenResponse.from_dto(token))
 

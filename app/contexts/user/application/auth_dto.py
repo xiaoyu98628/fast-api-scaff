@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from uuid import UUID
 
 from app.contexts.user.application.auth_errors import InvalidCredentialsError
 
@@ -19,4 +20,5 @@ class LoginCommand:
 class TokenDTO:
     access_token: str = field(repr=False)
     expires_in: int
+    user_id: UUID
     token_type: str = "bearer"

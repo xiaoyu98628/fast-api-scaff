@@ -1,7 +1,8 @@
 from collections.abc import AsyncIterator
 from types import SimpleNamespace
 from typing import cast
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import ANY, AsyncMock, Mock
+from uuid import UUID, uuid7
 
 import pytest
 import pytest_asyncio
@@ -57,7 +58,7 @@ async def test_http_login_me_logout_and_public_crud(client: AsyncClient, monkeyp
     assert token["token_type"] == "bearer"
     assert token["expires_in"] == 120
     assert len(token["access_token"]) == 43
-    publish_login_succeeded.assert_awaited_once()
+    publish_login_succeeded.assert_awaited_once_with(ANY, UUID(user["id"]))
     headers = {"Authorization": f"Bearer {token['access_token']}"}
 
     me = await client.get("/api/v1/auth/me", headers=headers)
@@ -138,10 +139,11 @@ async def test_login_queue_failure_does_not_change_successful_response(client: A
 async def test_login_publisher_uses_default_queue() -> None:
     queues = Mock(dispatch=AsyncMock())
     container = cast(ApplicationContainer, SimpleNamespace(queues=queues))
+    user_id = uuid7()
 
-    await _publish_login_succeeded(container)
+    await _publish_login_succeeded(container, user_id)
 
-    queues.dispatch.assert_awaited_once_with(LoginSucceededJob())
+    queues.dispatch.assert_awaited_once_with(LoginSucceededJob(user_id=user_id))
 
 
 @pytest.mark.asyncio

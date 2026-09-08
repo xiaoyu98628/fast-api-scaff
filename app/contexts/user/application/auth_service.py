@@ -63,7 +63,11 @@ class AuthApplicationService:
             )
             await uow.commit()
 
-        return TokenDTO(access_token=credential.token, expires_in=self.session_ttl_seconds)
+        return TokenDTO(
+            access_token=credential.token,
+            expires_in=self.session_ttl_seconds,
+            user_id=current.id.value,
+        )
 
     async def current_user(self, credential: SessionCredential) -> UserDTO:
         async with self.unit_of_work_factory() as uow:

@@ -18,7 +18,7 @@ docker compose --profile worker up --build
 
 Compose 中的 `worker` 服务复用应用镜像、`.env` 和网络，不暴露端口，也不配置只适用于 HTTP 的健康检查。镜像本身不声明健康检查，Compose 只为 HTTP 服务检测 `/health`。Worker 不会自动创建队列服务；`.env` 必须配置容器可访问的 Redis、Kafka 或 RabbitMQ 地址。容器内的 `127.0.0.1` 是 Worker 容器自身。
 
-脚手架内置 `LoginSucceededJob` 最小任务。登录接口向默认连接配置的默认队列（`sample.env` 为 `default`）尽力投递，Worker 调用它的 `handle()` 输出“用户登录成功，队列任务已执行。”；任务不含用户凭据。`sample.env` 以 Redis 为默认连接，因此 Worker 可以不带参数启动。
+脚手架内置 `LoginSucceededJob` 最小任务。登录接口向默认连接配置的默认队列（`sample.env` 为 `default`）尽力投递 `user_id` 参数和固定文案，Worker 调用它的 `handle()` 输出“用户登录成功，队列任务已执行。”并记录结构化用户 ID；任务不含用户名、密码或 Token。`user_id` 暂时可空，以兼容队列中已经存在的旧消息。`sample.env` 以 Redis 为默认连接，因此 Worker 可以不带参数启动。
 
 新增任务时，只需继承 `QueueJob`、声明可序列化字段并实现异步 `handle()`。投递端自动把实际类路径写入消息；Worker 收到后动态导入、验证、解码并执行，不扫描业务目录，也不需要修改上下文 composition 或应用组合根。完整示例见[队列](queue.md)。
 

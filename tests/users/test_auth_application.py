@@ -76,6 +76,7 @@ async def test_login_stores_only_digest_and_logout_affects_only_current_session(
 
     assert first.access_token != second.access_token
     assert first.expires_in == 60
+    assert first.user_id == user.id
     assert (await harness.users.auth.current_user(first_credential)).id == user.id
     async with harness.databases.session("main") as session:
         stored = (await session.scalars(select(UserSessionModel))).all()
