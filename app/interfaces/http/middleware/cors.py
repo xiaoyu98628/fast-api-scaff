@@ -1,3 +1,5 @@
+"""根据应用配置创建官方 CORS 中间件。"""
+
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware import Middleware
 from starlette_context.header_keys import HeaderKeys
@@ -7,7 +9,9 @@ from app.config.cors import CorsSettings
 
 def build_cors_middleware(settings: CorsSettings) -> Middleware:
     """根据配置构建官方 CORS 中间件。"""
+
     request_id_header = HeaderKeys.request_id.value
+    # Request ID 是公开响应契约的一部分，同时按大小写不敏感规则避免重复声明。
     expose_headers = [
         request_id_header,
         *(header for header in settings.expose_headers if header.lower() != request_id_header.lower()),

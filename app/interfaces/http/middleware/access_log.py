@@ -1,3 +1,5 @@
+"""记录 HTTP 请求结果、耗时和有限的连接元数据。"""
+
 import logging
 from asyncio import CancelledError
 from time import perf_counter
@@ -15,10 +17,14 @@ class AccessLogMiddleware:
     """为每个进入请求上下文的 HTTP 请求记录一条访问日志。"""
 
     def __init__(self, app: ASGIApp, *, exclude_routes: frozenset[str] = frozenset()) -> None:
+        """绑定下游应用和仅对成功请求生效的排除路由。"""
+
         self.app = app
         self._exclude_routes = exclude_routes
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        """透传非 HTTP Scope，并在 HTTP 请求结束时写一条访问日志。"""
+
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
@@ -30,6 +36,8 @@ class AccessLogMiddleware:
         completed = False
 
         async def send_wrapper(message: Message) -> None:
+            """截获响应起始消息中的最终 HTTP 状态码。"""
+
             nonlocal status_code
 
             if message["type"] == "http.response.start":
@@ -40,6 +48,7 @@ class AccessLogMiddleware:
         try:
             await self.app(scope, receive, send_wrapper)
         except CancelledError:
+            # 取消需要继续传播给 ASGI Server，但仍记录为未完成请求。
             failure_type = "CancelledError"
             cancelled = True
             raise
@@ -68,10 +77,14 @@ class AccessLogMiddleware:
         cancelled: bool,
         completed: bool,
     ) -> None:
+        """根据请求结果构建详情并选择日志级别。"""
+
         route = _get_request_path(scope)
         failed = not completed
+        # 没有响应状态时，用 499 区分客户端取消，其余未完成请求视为服务端失败。
         effective_status = status_code if status_code is not None else (499 if cancelled else 500)
 
+        # 排除规则不隐藏失败请求，便于健康检查等路由异常时仍可诊断。
         if route in self._exclude_routes and effective_status < 400 and not failed:
             return
 
@@ -97,15 +110,21 @@ class AccessLogMiddleware:
 
 
 def build_access_log_middleware(*, exclude_routes: frozenset[str]) -> Middleware:
+    """创建携带排除路由快照的访问日志中间件定义。"""
+
     return Middleware(AccessLogMiddleware, exclude_routes=exclude_routes)
 
 
 def _get_request_path(scope: Scope) -> str | None:
+    """安全读取 ASGI Scope 中的请求路径。"""
+
     path = scope.get("path")
     return path if isinstance(path, str) else None
 
 
 def _get_client_ip(scope: Scope) -> str | None:
+    """读取 ASGI Server 提供的直接对端 IP。"""
+
     client = scope.get("client")
     if client is None:
         return None
@@ -115,6 +134,8 @@ def _get_client_ip(scope: Scope) -> str | None:
 
 
 def _get_log_level(status_code: int, *, failed: bool, cancelled: bool) -> int:
+    """按取消、失败和 HTTP 状态码映射访问日志级别。"""
+
     if cancelled:
         return logging.WARNING
 
