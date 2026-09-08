@@ -1,3 +1,5 @@
+"""把 QueueJob 编码成信封并发布到选定逻辑队列。"""
+
 import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -17,6 +19,8 @@ def _always_active() -> None:
 
 @dataclass(frozen=True, slots=True)
 class Dispatcher:
+    """提供与具体 Redis、Kafka 或 RabbitMQ 驱动无关的投递入口。"""
+
     publisher: QueuePublisher
     codec: EnvelopeJsonCodec
     default_queue: str
@@ -26,12 +30,16 @@ class Dispatcher:
     ensure_active: Callable[[], None] = field(default=_always_active, repr=False, compare=False)
 
     async def dispatch(self, job: object, *, queue: str | None = None, correlation_id: str | None = None) -> UUID:
+        """编码并投递一个 QueueJob，成功时返回新任务 ID。"""
+
         encoded = encode_job(job)
         message = MessageEnvelope(self.new_id(), encoded.job_type, encoded.version, encoded.payload, self.clock(), correlation_id)
         await self.publish_envelope(message, queue=queue)
         return message.job_id
 
     async def publish_envelope(self, message: MessageEnvelope, *, queue: str | None = None) -> None:
+        """发布已经构造的信封，供失败任务重放等内部流程使用。"""
+
         self.ensure_active()
         target = self.default_queue if queue is None else queue
         if not target.strip() or len(target) > 200:
@@ -41,4 +49,5 @@ class Dispatcher:
             async with asyncio.timeout(self.publish_timeout):
                 await self.publisher.publish(target, payload)
         except Exception as error:
+            # 超时或断连可能发生在后端已经接受消息之后，不能宣称发布一定失败。
             raise QueueError("消息发布未获确认，结果可能不确定；请勿盲目重复投递") from error

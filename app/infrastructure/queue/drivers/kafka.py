@@ -1,3 +1,5 @@
+"""使用 Kafka 手动提交 offset 实现至少一次任务消费。"""
+
 import asyncio
 import ssl
 from collections.abc import Iterable
@@ -11,6 +13,8 @@ from app.infrastructure.resources.lazy import AsyncLazy
 
 
 def client_options(settings: KafkaQueueSettings) -> dict[str, object]:
+    """把统一配置转换成生产者和消费者共享的客户端参数。"""
+
     return {
         "bootstrap_servers": settings.bootstrap_servers,
         "security_protocol": settings.security_protocol,
@@ -22,6 +26,8 @@ def client_options(settings: KafkaQueueSettings) -> dict[str, object]:
 
 
 class KafkaDelivery:
+    """绑定一条 Kafka 记录及其所属的消费组 generation。"""
+
     def __init__(self, source: KafkaConsumer, partition: TopicPartition, offset: int, payload: bytes, generation: int) -> None:
         self.source = source
         self.partition = partition
@@ -33,8 +39,11 @@ class KafkaDelivery:
         self.settled = False
 
     async def acknowledge(self) -> None:
+        """提交下一 offset；再均衡后的旧 delivery 禁止继续确认。"""
+
         if self.settled or self.source.closed or self.generation != self.source.generation:
             raise DeliveryLostError("Kafka delivery 已失效")
+        # Kafka 提交值表示下一条要读取的记录，因此确认 offset N 时提交 N + 1。
         await self.source.client.commit({self.partition: self.offset + 1})
         if self.generation != self.source.generation:
             raise DeliveryLostError("Kafka 确认期间发生再均衡")
@@ -44,10 +53,13 @@ class KafkaDelivery:
 
 
 class RebalanceListener(ConsumerRebalanceListener):
+    """在分区所有权变化时让旧的在途执行失效。"""
+
     def __init__(self, source: KafkaConsumer) -> None:
         self.source = source
 
     async def on_partitions_revoked(self, revoked: Iterable[TopicPartition]) -> None:
+        # 取消旧 generation 的 handler，避免其完成后提交已经转移的分区。
         self.source.generation += 1
         for delivery in tuple(self.source.pending.values()):
             if delivery.owner is not None:
@@ -59,6 +71,8 @@ class RebalanceListener(ConsumerRebalanceListener):
 
 
 class KafkaConsumer:
+    """保证同一分区只有一条未确认任务，同时允许跨分区并发。"""
+
     def __init__(self, settings: KafkaQueueSettings, queue: str) -> None:
         self.client = AIOKafkaConsumer(
             **client_options(settings),
@@ -74,6 +88,8 @@ class KafkaConsumer:
         self.client.subscribe(topics=(queue,), listener=RebalanceListener(self))
 
     async def receive(self) -> KafkaDelivery:
+        """读取并暂停消息所属分区，直到 delivery 被确认。"""
+
         async with self._lock:
             if self.closed:
                 raise QueueError("Kafka 消费者已关闭")
@@ -81,6 +97,7 @@ class KafkaConsumer:
             partition = TopicPartition(record.topic, record.partition)
             if partition in self.pending:
                 raise DeliveryLostError("Kafka 分区已有未确认任务")
+            # 暂停当前分区可防止多个执行槽并行处理同一分区的后续消息。
             self.client.pause(partition)
             delivery = KafkaDelivery(self, partition, record.offset, record.value or b"", self.generation)
             self.pending[partition] = delivery
@@ -92,12 +109,16 @@ class KafkaConsumer:
 
 
 class KafkaBackend:
+    """共享一个延迟创建的 Producer，并为每个 Worker 创建 Consumer。"""
+
     def __init__(self, settings: KafkaQueueSettings) -> None:
         self._settings = settings
         self._producer = AsyncLazy(partial(_create_producer, settings), _close_producer)
 
     @classmethod
     async def create(cls, settings: KafkaQueueSettings) -> KafkaBackend:
+        """构建后端但不提前连接 Producer。"""
+
         return cls(settings)
 
     async def publish(self, queue: str, payload: bytes) -> None:
@@ -117,6 +138,8 @@ class KafkaBackend:
 
 
 async def _create_producer(settings: KafkaQueueSettings) -> AIOKafkaProducer:
+    """创建启用幂等和全部副本确认的 Kafka Producer。"""
+
     producer = AIOKafkaProducer(**client_options(settings), enable_idempotence=True, acks="all")
     try:
         await producer.start()

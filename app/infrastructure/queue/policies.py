@@ -1,9 +1,13 @@
+"""定义单次消息投递内的任务执行策略。"""
+
 import math
 from dataclasses import dataclass
 
 
 @dataclass(frozen=True, slots=True)
 class JobPolicy:
+    """限制尝试次数、退避间隔和每次 handler 执行时间。"""
+
     max_attempts: int = 3
     backoff_seconds: tuple[float, ...] = (1.0, 5.0)
     timeout_seconds: float = 30.0
@@ -17,6 +21,8 @@ class JobPolicy:
             raise ValueError("退避必须为有限非负数")
 
     def retry_delay(self, failed_attempt: int) -> float:
+        """返回本次失败后的延迟，超过配置长度时复用最后一项。"""
+
         if not self.backoff_seconds:
             return 0.0
         return self.backoff_seconds[min(failed_attempt - 1, len(self.backoff_seconds) - 1)]

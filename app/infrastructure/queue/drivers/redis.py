@@ -1,3 +1,5 @@
+"""使用 Redis Streams、Consumer Group 和租约实现任务队列。"""
+
 import asyncio
 from contextlib import suppress
 from typing import cast
@@ -28,6 +30,8 @@ return 1
 
 
 class RedisDelivery:
+    """持有一条属于当前 Redis Consumer 的未确认 Stream 消息。"""
+
     def __init__(self, consumer: RedisConsumer, identity: str, payload: bytes) -> None:
         self._consumer = consumer
         self.identity = identity
@@ -36,6 +40,8 @@ class RedisDelivery:
         self.settled = False
 
     async def acknowledge(self) -> None:
+        """仅由当前所有者原子执行 XACK 和 XDEL。"""
+
         source = self._consumer
         if self.settled or source.closed:
             raise DeliveryLostError("Redis delivery 已失效")
@@ -48,6 +54,8 @@ class RedisDelivery:
 
 
 class RedisConsumer:
+    """优先接管过期 pending 消息，并为在途任务持续续租。"""
+
     def __init__(self, client: Redis, stream: str, settings: RedisQueueSettings) -> None:
         self.client = client
         self.stream = stream
@@ -62,6 +70,8 @@ class RedisConsumer:
         self._renewal: asyncio.Task[None] | None = None
 
     async def start(self) -> None:
+        """确保消费组存在，并启动在途任务续租循环。"""
+
         try:
             await self.client.xgroup_create(self.stream, self.group, id="0-0", mkstream=True)
         except ResponseError as error:
@@ -70,9 +80,12 @@ class RedisConsumer:
         self._renewal = asyncio.create_task(self._renew())
 
     async def receive(self) -> RedisDelivery:
+        """先恢复租约过期消息，没有时再阻塞读取新消息。"""
+
         async with self._receive_lock:
             while not self.closed:
                 if self._renewal is not None and self._renewal.done():
+                    # 续租故障必须终止消费，不能继续执行可能已被接管的消息。
                     await self._renewal
                 claimed = await self.client.xautoclaim(self.stream, self.group, self.name, int(self.lease * 1000), self._cursor, count=1)
                 self._cursor = claimed[0]
@@ -91,6 +104,8 @@ class RedisConsumer:
         raise QueueError("Redis 消费者已关闭")
 
     async def _renew(self) -> None:
+        """以租约三分之一为周期刷新当前消费者持有的消息。"""
+
         try:
             while True:
                 await asyncio.sleep(self.lease / 3)
@@ -100,6 +115,7 @@ class RedisConsumer:
                         if result != 1:
                             raise DeliveryLostError("Redis 续租失败或所有权丢失")
         except Exception:
+            # 所有权不再可信时取消对应执行任务，让 Worker 按故障路径退出。
             for delivery in self.pending.values():
                 if delivery.owner is not None:
                     delivery.owner.cancel()
@@ -114,6 +130,8 @@ class RedisConsumer:
 
 
 class RedisBackend:
+    """把逻辑队列映射为带前缀的 Redis Stream。"""
+
     def __init__(self, settings: RedisQueueSettings) -> None:
         self._settings = settings
         self._client = Redis(

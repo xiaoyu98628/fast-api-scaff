@@ -1,3 +1,5 @@
+"""提供登录成功后的最小异步任务示例。"""
+
 import logging
 from dataclasses import dataclass
 from uuid import UUID
@@ -11,6 +13,9 @@ _logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True, slots=True)
 class LoginSucceededJob(QueueJob):
+    """记录固定登录成功事件，不携带用户名、密码或 Token。"""
+
+    # 可空用于兼容增加 user_id 字段前已经进入队列的消息。
     user_id: UUID | None = None
     message: str = LOGIN_SUCCEEDED_MESSAGE
 
@@ -21,6 +26,8 @@ class LoginSucceededJob(QueueJob):
             raise ValueError("登录成功任务消息不合法")
 
     async def handle(self) -> None:
+        """输出固定文案，并把用户 ID 放入结构化日志详情。"""
+
         _logger.info(
             self.message,
             extra=log_extra(

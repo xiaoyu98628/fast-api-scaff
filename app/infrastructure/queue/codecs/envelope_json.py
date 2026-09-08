@@ -1,3 +1,5 @@
+"""在队列传输字节和版本化 JSON 消息信封之间转换。"""
+
 import base64
 import json
 from datetime import datetime
@@ -10,6 +12,8 @@ from app.infrastructure.queue.errors import InvalidMessageError
 
 
 class EnvelopeData(BaseModel):
+    """使用严格字段约束验证外层消息协议。"""
+
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
     schema_version: int = Field(default=2, strict=True, ge=2, le=2)
     job_id: UUID
@@ -36,12 +40,17 @@ class EnvelopeData(BaseModel):
 
 
 class EnvelopeJsonCodec:
+    """编码和校验完整消息信封，并限制传输消息大小。"""
+
     def __init__(self, max_bytes: int = 1_048_576) -> None:
         self.max_bytes = max_bytes
 
     def encode(self, message: MessageEnvelope) -> bytes:
+        """把消息信封编码成后端可以直接传输的 JSON 字节。"""
+
         try:
             self._validate_payload(message.payload)
+            # Job payload 保持原始字节语义，Base64 只负责嵌入外层 JSON。
             data = EnvelopeData(
                 job_id=message.job_id,
                 job_type=message.job_type,
@@ -58,6 +67,8 @@ class EnvelopeJsonCodec:
             raise InvalidMessageError("任务信封编码失败") from error
 
     def decode(self, raw: bytes) -> MessageEnvelope:
+        """严格解码信封，拒绝未知版本、额外字段和非法 payload。"""
+
         try:
             self._check_size(raw)
             data = EnvelopeData.model_validate_json(raw)
@@ -81,6 +92,8 @@ class EnvelopeJsonCodec:
 
     @staticmethod
     def _validate_payload(payload: bytes) -> None:
+        """确保业务 payload 是标准 JSON，不接受 NaN 和 Infinity。"""
+
         def reject_constant(value: str) -> None:
             raise ValueError(f"非法 JSON 常量: {value}")
 

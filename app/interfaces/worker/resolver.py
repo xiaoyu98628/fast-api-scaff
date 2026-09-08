@@ -1,3 +1,5 @@
+"""根据消息中的类路径动态解析并执行 QueueJob。"""
+
 from dataclasses import dataclass
 from functools import cache
 from importlib import import_module
@@ -9,17 +11,23 @@ from app.infrastructure.queue.policies import JobPolicy
 
 
 class ExecutableJob(Protocol):
+    """JobExecutor 所需的任务策略和 payload 执行能力。"""
+
     @property
     def policy(self) -> JobPolicy: ...
     async def execute(self, payload: bytes) -> None: ...
 
 
 class JobTypeResolver(Protocol):
+    """按稳定类型引用和版本查找可执行任务。"""
+
     def resolve(self, reference: str, version: int) -> ExecutableJob: ...
 
 
 @dataclass(frozen=True, slots=True)
 class JobBinding[T: QueueJob]:
+    """绑定已验证的任务描述，并负责 payload 解码和执行。"""
+
     descriptor: JobDescriptor[T]
 
     @property
@@ -27,6 +35,8 @@ class JobBinding[T: QueueJob]:
         return self.descriptor.policy
 
     async def execute(self, payload: bytes) -> None:
+        """恢复准确任务类型后调用其无参数 handle。"""
+
         try:
             job = self.descriptor.codec.decode(payload)
             if type(job) is not self.descriptor.job_type:
@@ -38,6 +48,8 @@ class JobBinding[T: QueueJob]:
 
 @dataclass(frozen=True)
 class JobResolver:
+    """只允许从可信应用包动态导入模块级 QueueJob 类型。"""
+
     allowed_packages: tuple[str, ...] = ("app",)
 
     def __post_init__(self) -> None:
@@ -46,6 +58,8 @@ class JobResolver:
 
     @cache
     def resolve(self, reference: str, version: int) -> ExecutableJob:
+        """解析并缓存任务绑定；未知类型和版本统一表现为 KeyError。"""
+
         try:
             job_type = self._load(reference)
             descriptor = describe_job(job_type)
@@ -56,6 +70,7 @@ class JobResolver:
         return JobBinding(descriptor)
 
     def _load(self, reference: str) -> type[QueueJob]:
+        # 类路径来自队列消息，因此导入前必须先限制在可信包前缀内。
         module_name, separator, qualified_name = reference.partition(":")
         if not separator or not module_name or not qualified_name or "<locals>" in qualified_name:
             raise ValueError("任务类路径不合法")
