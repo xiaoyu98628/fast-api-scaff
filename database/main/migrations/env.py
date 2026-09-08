@@ -96,12 +96,7 @@ def do_run_migrations(connection: Connection) -> None:
 
 
 async def run_async_migrations() -> None:
-    """In this scenario we need to create an Engine
-    and associate a connection with the context.
-    
-    通过 SQLAlchemy 异步 Engine 执行迁移。
-
-    """
+    """通过 SQLAlchemy 异步 Engine 执行迁移。"""
 
     spec = load_engine_spec()
     # 迁移进程使用一次性连接，不复用应用运行时连接池。
