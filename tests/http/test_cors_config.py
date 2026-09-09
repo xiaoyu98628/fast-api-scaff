@@ -4,6 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.config.cors import CorsSettings
+from app.interfaces.http.middleware.cors import build_cors_middleware
 
 
 def test_cors_defaults_are_safe_for_wildcard_origin() -> None:
@@ -52,6 +53,27 @@ def test_explicit_origin_can_be_combined_with_credentials() -> None:
     )
 
     assert settings.allow_credentials is True
+
+
+def test_cors_middleware_copies_mutable_settings() -> None:
+    settings = CorsSettings(
+        allow_origins=["https://app.example.com"],
+        allow_methods=["GET"],
+        allow_headers=["Authorization"],
+        expose_headers=["X-Trace-ID"],
+        _env_file=None,
+    )
+    middleware = build_cors_middleware(settings)
+
+    settings.allow_origins.append("https://other.example.com")
+    settings.allow_methods.append("POST")
+    settings.allow_headers.append("X-Other")
+    settings.expose_headers.append("X-Other")
+
+    assert middleware.kwargs["allow_origins"] == ("https://app.example.com",)
+    assert middleware.kwargs["allow_methods"] == ("GET",)
+    assert middleware.kwargs["allow_headers"] == ("Authorization",)
+    assert middleware.kwargs["expose_headers"] == ("X-Request-ID", "X-Trace-ID")
 
 
 def test_cors_max_age_cannot_be_negative() -> None:

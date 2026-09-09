@@ -35,7 +35,7 @@ class Settings(BaseModel):
 def load_settings() -> Settings:
     """加载并缓存应用配置。"""
 
-    # 同一进程内复用不可变快照，避免不同宿主组件读取到不一致的环境状态。
+    # 同一进程内复用启动时加载的配置，具体组件在装配时提取自身配置。
     return Settings(
         queue=QueueSettings(),
         app=AppSettings(),

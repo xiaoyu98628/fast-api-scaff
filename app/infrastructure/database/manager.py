@@ -2,6 +2,7 @@
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from copy import deepcopy
 from functools import partial
 
 from anyio import CancelScope
@@ -29,12 +30,14 @@ class DatabaseManager:
         self._default = settings.default
         self._closed = False
         self._providers = providers
+        # 数据库定义延迟到首次使用才解析，因此需与调用方仍可修改的原始字典隔离。
+        connections = deepcopy(settings.connections)
         self._resources = {
             name: AsyncLazy(
                 factory=partial(self._create, name, raw_config),
                 closer=close_database_resource,
             )
-            for name, raw_config in settings.connections.items()
+            for name, raw_config in connections.items()
         }
 
     @property
