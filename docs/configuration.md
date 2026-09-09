@@ -45,13 +45,13 @@ LOG_HANDLERS={"stdout":{"driver":"stream","stream":"stdout"}}
 
 会话固定存放在用户上下文的 `main` 数据库，且不使用 `CACHE_DEFAULT_TTL`。详见[认证](authentication.md)。
 
-| 变量 | 类型 | 默认值 | 约束与说明 |
-| --- | --- | --- | --- |
+| 变量 | 类型 | 默认值           | 约束与说明 |
+| --- | --- |------------------| --- |
 | `APP_NAME` | `str` | `fast-api-scaff` | 应用名称 |
-| `APP_VERSION` | `str` | `3.0.3` | 应用版本 |
-| `APP_ENV` | `str` | `local` | 环境标识，不会自动切换其他配置 |
-| `APP_DEBUG` | `bool` | `false` | 应用调试标识；不等同于 Uvicorn `--reload` |
-| `APP_SERVICE_CODE` | `str` | `001` | 必须是 3 位数字，作为统一响应码的服务段 |
+| `APP_VERSION` | `str` | `1.0.0`          | 应用版本 |
+| `APP_ENV` | `str` | `local`          | 环境标识，不会自动切换其他配置 |
+| `APP_DEBUG` | `bool` | `false`          | 应用调试标识；不等同于 Uvicorn `--reload` |
+| `APP_SERVICE_CODE` | `str` | `001`            | 必须是 3 位数字，作为统一响应码的服务段 |
 
 `APP_PORT` 出现在 `sample.env` 和 Compose 端口映射中，但不是 `AppSettings` 字段。直接运行 Uvicorn 时仍由命令行 `--port` 决定监听端口；Compose 使用 `${APP_PORT:-8000}` 映射宿主端口。
 

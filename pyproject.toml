@@ -1,6 +1,6 @@
 [project]
 name = "fast-api-scaff"
-version = "3.0.7"
+version = "1.0.0"
 description = "A modular-monolith FastAPI scaffold for Python 3.14+"
 readme = "README.md"
 license = "MIT"
