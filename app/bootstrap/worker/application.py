@@ -24,6 +24,8 @@ class WorkerHost:
         container_builder: Callable[[Settings], ApplicationContainer] = build_application_container,
         resolver_builder: Callable[[], JobTypeResolver] = JobResolver,
     ) -> None:
+        """保存 Worker 配置以及可替换的容器和任务解析器工厂。"""
+
         self._settings = settings
         self._container_builder = container_builder
         self._resolver_builder = resolver_builder

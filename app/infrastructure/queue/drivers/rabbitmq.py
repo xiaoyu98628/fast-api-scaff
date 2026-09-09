@@ -13,6 +13,8 @@ class RabbitDelivery:
     """适配一条尚未确认的 RabbitMQ 消息。"""
 
     def __init__(self, message: AbstractIncomingMessage) -> None:
+        """包装一条未确认消息，并生成稳定的消费身份。"""
+
         self._message = message
         self.payload = message.body
         self.identity = message.message_id or f"delivery:{message.delivery_tag}"
@@ -27,6 +29,8 @@ class RabbitConsumer:
     """串行读取一个队列迭代器，并拥有独立消费 Channel。"""
 
     def __init__(self, channel: AbstractChannel, iterator: AbstractQueueIterator) -> None:
+        """接管专用消费 Channel 及其队列迭代器。"""
+
         self._channel = channel
         self._iterator = iterator
         self._receive_lock = asyncio.Lock()
@@ -58,6 +62,8 @@ class RabbitBackend:
     """复用发布 Channel，并为每个消费者分配独立 Channel。"""
 
     def __init__(self, connection: AbstractConnection, channel: AbstractChannel) -> None:
+        """接管共享连接和启用发布确认的 Channel。"""
+
         self._connection = connection
         self._channel = channel
         self._declared: set[str] = set()

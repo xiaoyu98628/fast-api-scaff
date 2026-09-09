@@ -20,6 +20,8 @@ class LoginSucceededJob(QueueJob):
     message: str = LOGIN_SUCCEEDED_MESSAGE
 
     def __post_init__(self) -> None:
+        """校验反序列化后的兼容字段和固定消息。"""
+
         if self.user_id is not None and not isinstance(self.user_id, UUID):
             raise ValueError("登录成功任务用户 ID 不合法")
         if self.message != LOGIN_SUCCEEDED_MESSAGE:

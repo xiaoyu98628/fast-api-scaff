@@ -15,6 +15,8 @@ class SqlFailedJobStore:
     """通过 DatabaseManager 访问指定数据库中的失败任务表。"""
 
     def __init__(self, databases: DatabaseManager, database: str = "main") -> None:
+        """保存数据库管理器和失败记录所在的连接名。"""
+
         self._databases = databases
         self._database = database
 

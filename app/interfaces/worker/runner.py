@@ -12,6 +12,8 @@ class WorkerRunner:
     """以固定执行槽消费消息，并区分等待接收与在途执行。"""
 
     def __init__(self, *, concurrency: int, shutdown_timeout: float) -> None:
+        """校验并保存执行槽数量和停止排空等待时间。"""
+
         if type(concurrency) is not int or concurrency < 1:
             raise ValueError("concurrency 必须为正整数")
         if not math.isfinite(shutdown_timeout) or shutdown_timeout <= 0:

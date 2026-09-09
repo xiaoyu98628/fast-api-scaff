@@ -42,7 +42,7 @@ LOG_FORMAT=text
 JSON 示例：
 
 ```json
-{"timestamp":"2026-09-01T10:00:00.000+08:00","level":"INFO","logger":"app.interfaces.http.access","service":"fast-api-scaff","environment":"local","service_version":"3.0.3","message":"HTTP request completed","request_id":"...","event":"http.request.completed","details":{"method":"GET","route":"/api/v1/users","status_code":200,"duration_ms":12.3,"client_ip":"127.0.0.1"}}
+{"timestamp":"2026-09-01T10:00:00.000+08:00","level":"INFO","logger":"app.interfaces.http.access","service":"fast-api-scaff","environment":"local","service_version":"...","message":"HTTP request completed","request_id":"...","event":"http.request.completed","details":{"method":"GET","route":"/api/v1/users","status_code":200,"duration_ms":12.3,"client_ip":"127.0.0.1"}}
 ```
 
 业务和基础设施日志应把稳定分类放在 `event`，把可检索维度放在 `details`，不要把所有信息拼进 message。

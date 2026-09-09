@@ -5,7 +5,6 @@ from collections.abc import Iterable
 from app.infrastructure.cache.contracts.provider import CacheProvider, CacheResourceDefinition
 from app.infrastructure.cache.errors import CacheConfigurationError
 from app.infrastructure.cache.providers.memcached import MemcachedCacheProvider
-from app.infrastructure.cache.providers.memory import MemoryCacheProvider
 from app.infrastructure.cache.providers.redis import RedisCacheProvider
 
 
@@ -13,6 +12,8 @@ class CacheProviderRegistry:
     """显式注册并按 driver 查找缓存 Provider。"""
 
     def __init__(self, providers: Iterable[CacheProvider]) -> None:
+        """注册 Provider，并拒绝空名称或重复的 driver。"""
+
         self._providers: dict[str, CacheProvider] = {}
 
         # 构建时拒绝空名称和重复注册，使运行期选择保持确定性。
@@ -54,6 +55,5 @@ DEFAULT_CACHE_PROVIDERS = CacheProviderRegistry(
     (
         RedisCacheProvider(),
         MemcachedCacheProvider(),
-        MemoryCacheProvider(),
     )
 )

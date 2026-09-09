@@ -18,6 +18,8 @@ class HttpClientManager:
     """管理全局、不具名的 HTTP 出站客户端及其生命周期。"""
 
     def __init__(self, settings: HttpSettings) -> None:
+        """保存配置并建立尚未初始化的 HTTP 资源句柄。"""
+
         self._settings = settings
         self._resource = AsyncLazy(
             factory=self._create,

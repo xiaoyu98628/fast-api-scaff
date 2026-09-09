@@ -14,6 +14,8 @@ class LoggingDriverRegistry:
     """显式注册并按名称查找日志 Driver Builder。"""
 
     def __init__(self, registrations: Iterable[LoggingDriverRegistration]) -> None:
+        """注册 Builder，并拒绝空名称、重复名称和不可调用对象。"""
+
         self._registered = tuple(registrations)
         self._drivers: dict[str, LoggingDriverBuilder] = {}
 

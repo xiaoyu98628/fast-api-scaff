@@ -11,6 +11,8 @@ class ApplicationRuntime:
     """管理非特定宿主的应用容器生命周期。"""
 
     def __init__(self, container_factory: ContainerFactory) -> None:
+        """保存容器工厂；容器在首次启动前保持未创建状态。"""
+
         self._container_factory = container_factory
         self._container: ApplicationContainer | None = None
 
@@ -56,7 +58,11 @@ class ApplicationRuntime:
             await container.aclose()
 
     async def __aenter__(self) -> ApplicationContainer:
+        """启动容器并把所有权交给当前异步上下文。"""
+
         return await self.start()
 
     async def __aexit__(self, _error_type: object, _error: object, _traceback: object) -> None:
+        """离开异步上下文时关闭其拥有的容器。"""
+
         await self.aclose()

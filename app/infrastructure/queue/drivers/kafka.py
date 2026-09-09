@@ -29,6 +29,8 @@ class KafkaDelivery:
     """绑定一条 Kafka 记录及其所属的消费组 generation。"""
 
     def __init__(self, source: KafkaConsumer, partition: TopicPartition, offset: int, payload: bytes, generation: int) -> None:
+        """绑定消息位置、消费代次和负责执行该消息的任务。"""
+
         self.source = source
         self.partition = partition
         self.offset = offset
@@ -56,6 +58,8 @@ class RebalanceListener(ConsumerRebalanceListener):
     """在分区所有权变化时让旧的在途执行失效。"""
 
     def __init__(self, source: KafkaConsumer) -> None:
+        """保存需要响应分区所有权变化的消费者。"""
+
         self.source = source
 
     async def on_partitions_revoked(self, revoked: Iterable[TopicPartition]) -> None:
@@ -78,6 +82,8 @@ class KafkaConsumer:
     """保证同一分区只有一条未确认任务，同时允许跨分区并发。"""
 
     def __init__(self, settings: KafkaQueueSettings, queue: str) -> None:
+        """创建尚未启动的客户端，并订阅指定逻辑队列。"""
+
         self.client = AIOKafkaConsumer(
             **client_options(settings),
             group_id=settings.group,
@@ -118,6 +124,8 @@ class KafkaBackend:
     """共享一个延迟创建的 Producer，并为每个 Worker 创建 Consumer。"""
 
     def __init__(self, settings: KafkaQueueSettings) -> None:
+        """保存连接配置，并建立延迟 Producer 资源。"""
+
         self._settings = settings
         self._producer = AsyncLazy(partial(_create_producer, settings), _close_producer)
 

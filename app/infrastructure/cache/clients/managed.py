@@ -15,6 +15,8 @@ class ManagedCacheClient:
         key_builder: CacheKeyBuilder,
         default_ttl: int | None,
     ) -> None:
+        """组合字节存储、key 构造器和默认过期策略。"""
+
         self._storage = storage
         self._key_builder = key_builder
         self._default_ttl = default_ttl

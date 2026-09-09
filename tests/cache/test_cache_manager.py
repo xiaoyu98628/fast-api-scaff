@@ -8,6 +8,10 @@ from app.config.cache import CacheSettings
 from app.infrastructure.cache.clients.managed import ManagedCacheClient
 from app.infrastructure.cache.errors import CacheConfigurationError
 from app.infrastructure.cache.manager import CacheManager
+from app.infrastructure.cache.providers.registry import DEFAULT_CACHE_PROVIDERS
+from tests.cache.fakes import FakeCacheProvider
+
+TEST_CACHE_PROVIDERS = DEFAULT_CACHE_PROVIDERS.extended(FakeCacheProvider())
 
 
 def test_invalid_connection_is_reported_when_manager_is_built() -> None:
@@ -25,12 +29,12 @@ def test_invalid_connection_is_reported_when_manager_is_built() -> None:
 def test_configured_connection_requires_namespace() -> None:
     settings = CacheSettings(
         default="main",
-        connections={"main": {"driver": "memory"}},
+        connections={"main": {"driver": "fake"}},
         _env_file=None,
     )
 
     with pytest.raises(CacheConfigurationError, match="CACHE_NAMESPACE"):
-        CacheManager(settings)
+        CacheManager(settings, providers=TEST_CACHE_PROVIDERS)
 
 
 def test_default_connection_must_exist() -> None:
@@ -63,12 +67,12 @@ async def test_default_and_named_connections_are_independent() -> None:
         default="session",
         namespace="test",
         connections={
-            "session": {"driver": "memory", "key_prefix": "session"},
-            "page": {"driver": "memory", "key_prefix": "page"},
+            "session": {"driver": "fake", "key_prefix": "session"},
+            "page": {"driver": "fake", "key_prefix": "page"},
         },
         _env_file=None,
     )
-    manager = CacheManager(settings)
+    manager = CacheManager(settings, providers=TEST_CACHE_PROVIDERS)
 
     page = await manager.get("page")
     await page.set("home", b"page")
@@ -90,10 +94,10 @@ async def test_concurrent_get_creates_named_client_once() -> None:
     settings = CacheSettings(
         default="main",
         namespace="test",
-        connections={"main": {"driver": "memory"}},
+        connections={"main": {"driver": "fake"}},
         _env_file=None,
     )
-    manager = CacheManager(settings)
+    manager = CacheManager(settings, providers=TEST_CACHE_PROVIDERS)
 
     first, second = await asyncio.gather(manager.get(), manager.get())
 
@@ -113,7 +117,10 @@ async def test_missing_default_is_reported_when_implicit_connection_is_requested
 @pytest.mark.parametrize("initialize_first", [False, True])
 @pytest.mark.asyncio
 async def test_manager_rejects_gets_as_soon_as_close_starts(monkeypatch: pytest.MonkeyPatch, initialize_first: bool) -> None:
-    manager = CacheManager(CacheSettings(_env_file=None, namespace="test", connections={name: {"driver": "memory"} for name in ("first", "second")}))
+    manager = CacheManager(
+        CacheSettings(_env_file=None, namespace="test", connections={name: {"driver": "fake"} for name in ("first", "second")}),
+        providers=TEST_CACHE_PROVIDERS,
+    )
     if initialize_first:
         await manager.get("first")
     await manager.get("second")
@@ -146,7 +153,10 @@ async def test_manager_rejects_gets_as_soon_as_close_starts(monkeypatch: pytest.
 
 @pytest.mark.asyncio
 async def test_failed_close_keeps_manager_closed_and_cleans_other_resources(monkeypatch: pytest.MonkeyPatch) -> None:
-    manager = CacheManager(CacheSettings(_env_file=None, namespace="test", connections={name: {"driver": "memory"} for name in ("first", "second")}))
+    manager = CacheManager(
+        CacheSettings(_env_file=None, namespace="test", connections={name: {"driver": "fake"} for name in ("first", "second")}),
+        providers=TEST_CACHE_PROVIDERS,
+    )
     await manager.get("first")
     await manager.get("second")
     second_resource = manager._resources["second"]

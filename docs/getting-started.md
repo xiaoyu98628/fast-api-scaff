@@ -1,6 +1,6 @@
 # 快速开始
 
-本章的目标是让你得到一个可迁移、可启动、可调用的环境，而不是只看到 `/health` 返回成功。推荐第一次运行使用 SQLite + Memory；它不依赖外部服务，同时会覆盖用户示例真正依赖的数据库路径。
+本章的目标是让你得到一个可迁移、可启动、可调用的环境，而不是只看到 `/health` 返回成功。推荐第一次运行使用 SQLite + Redis：数据库保持轻量，缓存则与多 worker 部署使用同一种共享后端，避免切换环境后才暴露驱动差异。
 
 ## 1. 环境要求
 
@@ -24,7 +24,7 @@ cp sample.env .env
 
 `.env` 在进程启动时读取并缓存。修改后应重启 HTTP 或重新执行 Console 命令，不能期待运行中的进程自动刷新配置。
 
-## 2. 路径一：SQLite + Memory（推荐首次使用）
+## 2. 路径一：SQLite + Redis（推荐首次使用）
 
 将 `.env` 中数据库与缓存部分调整为下面的最小配置。其他应用、日志和 CORS 配置可继续使用 `sample.env` 的值。
 
@@ -39,11 +39,14 @@ DB_CONNECTIONS__MAIN__DATABASE=data/database.sqlite
 DB_CONNECTIONS__MAIN__ECHO=false
 DB_CONNECTIONS__MAIN__SLOW_QUERY_MS=500
 
-CACHE_DEFAULT=local
+CACHE_DEFAULT=session
 CACHE_NAMESPACE=fast-api-scaff
 CACHE_DEFAULT_TTL=300
-CACHE_CONNECTIONS__LOCAL__DRIVER=memory
-CACHE_CONNECTIONS__LOCAL__KEY_PREFIX=local
+CACHE_CONNECTIONS__SESSION__DRIVER=redis
+CACHE_CONNECTIONS__SESSION__HOST=127.0.0.1
+CACHE_CONNECTIONS__SESSION__PORT=6379
+CACHE_CONNECTIONS__SESSION__DATABASE=0
+CACHE_CONNECTIONS__SESSION__KEY_PREFIX=session
 ```
 
 相对 SQLite 路径不是相对于当前终端目录，而是相对于项目的 `storage/` 目录解析。因此上面的实际文件是 `storage/data/database.sqlite`。
@@ -72,7 +75,7 @@ uv run python -m app.console app info
 uv run python -m app.console users list
 ```
 
-`/health` 只证明 HTTP 应用能够响应，并不主动连接数据库或远程缓存。用户接口和 `users` 命令成功，才说明 `main` 数据库配置、迁移和实际查询链路可用。
+`/health` 只证明 HTTP 应用能够响应，并不主动连接数据库或远程缓存。用户接口和 `users` 命令成功，才说明 `main` 数据库配置、迁移和实际查询链路可用；Redis 仍需通过缓存 `ping` 或真实读写单独验证。
 
 ## 3. 路径二：本机 MySQL + Redis
 
@@ -118,7 +121,7 @@ docker compose --profile worker up --build
 
 默认命令只启动 HTTP 应用；带 `worker` profile 的命令还会启动独立队列消费容器。Compose 不会自动创建 MySQL、PostgreSQL、Redis、Kafka、RabbitMQ 或 Memcached。你需要按使用范围准备依赖：
 
-1. HTTP 应用可以使用 SQLite 与 Memory 缓存，让自身不依赖外部数据库或缓存；
+1. HTTP 应用可以使用 SQLite，但缓存操作必须连接容器可访问的 Redis 或 Memcached；
 2. 使用外部数据库或缓存时，把 `.env` 中的主机名改成容器可访问的地址；
 3. 启动 Worker 时，必须提供 Redis、Kafka 或 RabbitMQ，并配置对应队列连接。
 

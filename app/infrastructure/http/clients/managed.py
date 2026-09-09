@@ -19,6 +19,8 @@ class ManagedHttpClient:
     """统一驱动调用、耗时和结构化日志的公共 HTTP 客户端。"""
 
     def __init__(self, driver: HttpDriver) -> None:
+        """保存负责实际传输和响应生命周期的 HTTP 驱动。"""
+
         self._driver = driver
 
     async def request(self, request: HttpRequest) -> HttpResponse:

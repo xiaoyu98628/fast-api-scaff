@@ -15,7 +15,7 @@
 ## 基础设施
 
 - [数据库](database.md)：多连接、SQLAlchemy、Repository、Unit of Work 和 Alembic。
-- [缓存](cache.md)：Redis、Memcached、Memory、key、TTL、编码与边界。
+- [缓存](cache.md)：Redis、Memcached、key、TTL、编码与边界。
 - [HTTP 出站请求](outbound-http.md)：公共契约、普通/流式请求、连接池、超时和错误语义。
 - [日志](logging.md)：结构化日志、访问日志、字段、输出流和扩展驱动。
 - [队列](queue.md)：QueueJob、三种后端、失败记录和重放。
@@ -35,7 +35,7 @@
 - 用户限界上下文的增、查、改、删示例；
 - 简单会话认证，用户表不增加角色或版本字段；
 - MySQL、PostgreSQL、SQLite 异步数据库连接；
-- Redis、Memcached、进程内 Memory 字节级 KV 缓存；
+- Redis、Memcached 字节级 KV 缓存；
 - 普通与流式 HTTP 出站客户端、独立连接池和统一传输错误；
 - JSON/Text 结构化日志、请求 ID、访问日志和统一 HTTP 响应；
 - Redis Streams、Kafka、RabbitMQ 队列适配器与独立 Worker；

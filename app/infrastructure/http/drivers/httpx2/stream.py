@@ -20,6 +20,8 @@ class Httpx2StreamResponse:
     """隐藏 HTTPX2 Response 的公共流式响应实现。"""
 
     def __init__(self, response: httpx2.Response) -> None:
+        """接管由流式请求上下文约束生命周期的响应对象。"""
+
         self._response = response
 
     @property

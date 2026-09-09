@@ -13,6 +13,8 @@ class DatabaseProviderRegistry:
     """显式注册并按 driver 查找数据库 Provider。"""
 
     def __init__(self, providers: Iterable[DatabaseProvider]) -> None:
+        """注册 Provider，并拒绝空名称或重复的 driver。"""
+
         self._registered = tuple(providers)
         self._providers: dict[str, DatabaseProvider] = {}
 

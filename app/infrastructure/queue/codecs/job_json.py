@@ -7,6 +7,8 @@ class JsonJobCodec[T]:
     """使用任务类型的 Pydantic schema 完成 JSON 编解码。"""
 
     def __init__(self, job_type: type[T]) -> None:
+        """为指定任务类型创建可复用的 Pydantic 适配器。"""
+
         self._adapter = TypeAdapter(job_type)
 
     def encode(self, job: T) -> bytes:

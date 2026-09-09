@@ -143,7 +143,7 @@ Console 的 `queue failed` 命令默认只展示失败元数据，不输出 payl
 
 SQL 使用独立短事务，表名为 `queue_failed_jobs`，迁移归 main 管理。若选择其他数据库连接，必须保证该连接具有同一表结构；框架不会启动时自动建表。迁移 downgrade 会删除失败记录。
 
-retry 生成新 job_id 并保留 replay_of，原失败记录保留；forget 单独删除。重复 retry 可生成多条任务。发布结果不确定时需检查下游，不能宣称人工重放 exactly-once。独立 Console 在 Memory 失败存储下明确报错，不返回误导性的空列表。
+retry 生成新 job_id 并保留 replay_of，原失败记录保留；forget 单独删除。重复 retry 可生成多条任务。发布结果不确定时需检查下游，不能宣称人工重放 exactly-once。独立 Console 只读取配置的 SQL 失败存储；数据库不可访问时明确报错，不返回误导性的空列表。
 
 ## 5. 验证范围
 

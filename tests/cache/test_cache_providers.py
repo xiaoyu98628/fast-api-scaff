@@ -11,43 +11,22 @@ from app.config.cache import CacheSettings
 from app.config.cors import CorsSettings
 from app.config.database import DatabaseSettings
 from app.config.settings import Settings
-from app.infrastructure.cache.connections.memory import MemoryCacheConnection
-from app.infrastructure.cache.contracts.provider import CacheResourceDefinition
 from app.infrastructure.cache.errors import CacheConfigurationError
 from app.infrastructure.cache.manager import CacheManager
-from app.infrastructure.cache.providers.memory import MemoryCacheProvider
 from app.infrastructure.cache.providers.registry import DEFAULT_CACHE_PROVIDERS, CacheProviderRegistry
-from app.infrastructure.cache.resource import CacheResource
-from app.infrastructure.cache.storages.memory import MemoryCacheStorage
-
-
-class CustomCacheProvider:
-    driver = "custom"
-
-    def prepare(self, raw_config: dict[str, object]) -> CacheResourceDefinition:
-        return CacheResourceDefinition(
-            key_prefix=str(raw_config.get("key_prefix", "")),
-            factory=self._create,
-        )
-
-    async def _create(self) -> CacheResource:
-        connection = MemoryCacheConnection()
-        return CacheResource(
-            connection=connection,
-            storage=MemoryCacheStorage(connection),
-        )
+from tests.cache.fakes import FakeCacheProvider
 
 
 def test_default_registry_contains_builtin_drivers() -> None:
-    assert DEFAULT_CACHE_PROVIDERS.drivers == ("redis", "memcached", "memory")
+    assert DEFAULT_CACHE_PROVIDERS.drivers == ("redis", "memcached")
 
 
 def test_registry_rejects_duplicate_driver() -> None:
     with pytest.raises(CacheConfigurationError, match="重复注册"):
-        CacheProviderRegistry((MemoryCacheProvider(), MemoryCacheProvider()))
+        CacheProviderRegistry((FakeCacheProvider(), FakeCacheProvider()))
 
 
-@pytest.mark.parametrize("raw_config", [{}, {"driver": "unknown"}])
+@pytest.mark.parametrize("raw_config", [{}, {"driver": "unknown"}, {"driver": "memory"}])
 def test_registry_rejects_missing_or_unknown_driver(raw_config: dict[str, object]) -> None:
     with pytest.raises(CacheConfigurationError):
         DEFAULT_CACHE_PROVIDERS.prepare(raw_config)
@@ -55,7 +34,7 @@ def test_registry_rejects_missing_or_unknown_driver(raw_config: dict[str, object
 
 @pytest.mark.asyncio
 async def test_manager_accepts_extended_provider_registry() -> None:
-    providers = DEFAULT_CACHE_PROVIDERS.extended(CustomCacheProvider())
+    providers = DEFAULT_CACHE_PROVIDERS.extended(FakeCacheProvider("custom"))
     settings = CacheSettings(
         default="main",
         namespace="test",
@@ -74,7 +53,7 @@ async def test_manager_accepts_extended_provider_registry() -> None:
 
 @pytest.mark.asyncio
 async def test_application_container_accepts_extended_provider_registry() -> None:
-    providers = DEFAULT_CACHE_PROVIDERS.extended(CustomCacheProvider())
+    providers = DEFAULT_CACHE_PROVIDERS.extended(FakeCacheProvider("custom"))
     settings = Settings(
         app=AppSettings(_env_file=None),
         database=DatabaseSettings(_env_file=None),

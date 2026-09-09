@@ -10,6 +10,8 @@ class RedisCacheConnection:
     """创建并管理 Redis 原生异步客户端。"""
 
     def __init__(self, client: Redis) -> None:
+        """接管由调用方创建的 Redis 客户端。"""
+
         self._client = client
 
     @classmethod

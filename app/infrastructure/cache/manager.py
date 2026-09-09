@@ -24,6 +24,8 @@ class CacheManager:
         settings: CacheSettings,
         providers: CacheProviderRegistry = DEFAULT_CACHE_PROVIDERS,
     ) -> None:
+        """校验命名连接，并为每个连接建立延迟资源句柄。"""
+
         self._default = settings.default
         self._closed = False
         self._namespace = settings.namespace
