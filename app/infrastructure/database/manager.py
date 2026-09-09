@@ -24,6 +24,8 @@ class DatabaseManager:
         settings: DatabaseSettings,
         providers: DatabaseProviderRegistry = DEFAULT_DATABASE_PROVIDERS,
     ) -> None:
+        """保存命名配置，并为每个连接建立延迟数据库资源。"""
+
         self._default = settings.default
         self._closed = False
         self._providers = providers

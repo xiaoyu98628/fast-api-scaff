@@ -8,6 +8,8 @@ class MemoryCacheConnection:
     """保存单进程数据；不提供跨进程共享、后台清理或显式并发锁。"""
 
     def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
+        """创建空存储，并保存用于 TTL 计算的单调时钟。"""
+
         self._clock = clock
         self._values: dict[str, tuple[bytes, float | None]] = {}
 

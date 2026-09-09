@@ -181,7 +181,7 @@ CORS 只约束浏览器跨域访问，不是服务端鉴权。默认允许任意
 
 ```dotenv
 CORS_ALLOW_ORIGINS=["https://app.example.com"]
-CORS_ALLOW_METHODS=["GET","POST","PUT","DELETE"]
+CORS_ALLOW_METHODS=["GET","POST","PUT","PATCH","DELETE"]
 CORS_ALLOW_HEADERS=["Content-Type","Authorization","X-Request-ID"]
 CORS_ALLOW_CREDENTIALS=true
 CORS_EXPOSE_HEADERS=["X-Request-ID"]

@@ -13,6 +13,8 @@ class CacheProviderRegistry:
     """显式注册并按 driver 查找缓存 Provider。"""
 
     def __init__(self, providers: Iterable[CacheProvider]) -> None:
+        """注册 Provider，并拒绝空名称或重复的 driver。"""
+
         self._providers: dict[str, CacheProvider] = {}
 
         # 构建时拒绝空名称和重复注册，使运行期选择保持确定性。

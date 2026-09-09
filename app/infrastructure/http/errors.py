@@ -25,5 +25,7 @@ class HttpResponseTooLargeError(HttpError):
     """普通 HTTP 响应超过允许的缓冲大小。"""
 
     def __init__(self, max_response_bytes: int) -> None:
+        """保存触发异常的响应体上限。"""
+
         self.max_response_bytes = max_response_bytes
         super().__init__(f"HTTP 响应体超过 {max_response_bytes} 字节限制")

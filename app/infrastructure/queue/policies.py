@@ -13,6 +13,8 @@ class JobPolicy:
     timeout_seconds: float = 30.0
 
     def __post_init__(self) -> None:
+        """校验尝试次数、超时和退避间隔均可安全执行。"""
+
         if type(self.max_attempts) is not int or self.max_attempts < 1:
             raise ValueError("max_attempts 必须为正整数")
         if not math.isfinite(self.timeout_seconds) or self.timeout_seconds <= 0:

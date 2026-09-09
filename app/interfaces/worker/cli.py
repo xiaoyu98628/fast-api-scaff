@@ -15,7 +15,10 @@ _logger = logging.getLogger(__name__)
 class WorkerOperation(Protocol):
     """Worker CLI 调用的同步宿主入口。"""
 
-    def __call__(self, *, connection: str | None, queue: str | None, concurrency: int | None) -> None: ...
+    def __call__(self, *, connection: str | None, queue: str | None, concurrency: int | None) -> None:
+        """按命令行解析结果启动一次 Worker。"""
+
+        ...
 
 
 type WorkerEntrypoint = Callable[[], None]

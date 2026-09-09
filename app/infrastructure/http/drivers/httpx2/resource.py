@@ -27,6 +27,8 @@ class Httpx2Resource:
         pool_warning_ratio: float = 0.8,
         max_response_bytes: int = 10 * 1024 * 1024,
     ) -> None:
+        """接管两套客户端，并建立各自独立的连接池诊断状态。"""
+
         self._standard_client = standard_client
         self._stream_client = stream_client
         self._max_response_bytes = max_response_bytes

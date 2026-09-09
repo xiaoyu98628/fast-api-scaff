@@ -17,6 +17,8 @@ class CacheKeyBuilder:
     prefix: str = ""
 
     def __post_init__(self) -> None:
+        """在构造时校验 namespace 和可选前缀。"""
+
         self._validate_config_segment(self.namespace, "namespace")
         if self.prefix:
             self._validate_config_segment(self.prefix, "key_prefix")

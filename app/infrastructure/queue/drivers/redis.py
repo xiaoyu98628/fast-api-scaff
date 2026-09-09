@@ -33,6 +33,8 @@ class RedisDelivery:
     """持有一条属于当前 Redis Consumer 的未确认 Stream 消息。"""
 
     def __init__(self, consumer: RedisConsumer, identity: str, payload: bytes) -> None:
+        """绑定消息、当前消费者和负责执行该消息的任务。"""
+
         self._consumer = consumer
         self.identity = identity
         self.payload = payload
@@ -57,6 +59,8 @@ class RedisConsumer:
     """优先接管过期 pending 消息，并为在途任务持续续租。"""
 
     def __init__(self, client: Redis, stream: str, settings: RedisQueueSettings) -> None:
+        """保存 Stream 和消费组配置，并建立独立消费者身份。"""
+
         self.client = client
         self.stream = stream
         self.group = settings.group
@@ -135,6 +139,8 @@ class RedisBackend:
     """把逻辑队列映射为带前缀的 Redis Stream。"""
 
     def __init__(self, settings: RedisQueueSettings) -> None:
+        """根据配置创建延迟建立连接的共享 Redis 客户端。"""
+
         self._settings = settings
         self._client = Redis(
             host=settings.host,

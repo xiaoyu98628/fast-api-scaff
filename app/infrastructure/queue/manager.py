@@ -37,6 +37,8 @@ class QueueManager:
         failed_jobs: FailedJobStore | None = None,
         factory: BackendFactory = create_backend,
     ) -> None:
+        """校验连接配置，并建立后端和失败存储的延迟生命周期。"""
+
         self.codec = EnvelopeJsonCodec(settings.max_message_bytes)
         self._default = settings.default
         self._closed = False

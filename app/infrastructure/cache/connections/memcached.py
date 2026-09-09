@@ -12,6 +12,8 @@ class MemcachedCacheConnection:
     """创建并管理 Memcached 原生异步客户端。"""
 
     def __init__(self, client: Client[bytes]) -> None:
+        """接管由调用方创建的 Memcached 客户端。"""
+
         self._client = client
 
     @classmethod
