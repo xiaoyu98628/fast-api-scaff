@@ -32,7 +32,7 @@ dependencies = [
 
     "typer>=0.21.0",
 
-    "aio-pika>=9.5,<10",
+    "aio-pika>=10.0.1,<11",
     "aiokafka>=0.12,<1",
 ]
 
