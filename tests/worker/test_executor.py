@@ -114,6 +114,9 @@ async def test_failed_record_recovery_does_not_execute_again_and_replay_retains_
     records = await queues.failed_jobs.list()
     assert len(records) == 1
     assert records[0].reason == "handler_error"
+    assert records[0].error_type == "builtins.ValueError"
+    assert records[0].stacktrace
+    assert "sensitive payload" not in repr((records[0].error_type, records[0].stacktrace))
     replay_id = await queues.replay(records[0].failure_id)
     assert replay_id != original_id
     async with queues.consume() as consumer:

@@ -32,6 +32,8 @@ def upgrade() -> None:
         sa.Column("failed_at", sa.DateTime(), nullable=False, comment="最终失败时间"),
         sa.Column("attempts", sa.Integer(), nullable=False, comment="本次投递执行次数"),
         sa.Column("reason", sa.String(length=200), nullable=False, comment="失败原因分类"),
+        sa.Column("error_type", sa.String(length=500), nullable=True, comment="异常类型，不含异常消息"),
+        sa.Column("stacktrace", sa.JSON(), nullable=True, comment="安全调用栈位置"),
         sa.PrimaryKeyConstraint("failure_id", name=op.f("pk_queue_failed_jobs")),
         comment="队列失败任务记录",
     )

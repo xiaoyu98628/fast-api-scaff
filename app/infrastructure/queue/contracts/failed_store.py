@@ -6,10 +6,12 @@ from datetime import datetime
 from typing import Protocol
 from uuid import UUID
 
+from app.infrastructure.logging.record import ExceptionStackFrame
+
 
 @dataclass(frozen=True, slots=True)
 class FailedJobRecord:
-    """保存失败分类和后端交付的完整原始信封。"""
+    """保存失败分类、安全诊断和后端交付的完整原始信封。"""
 
     failure_id: UUID
     payload: bytes
@@ -19,6 +21,8 @@ class FailedJobRecord:
     attempts: int
     reason: str
     job_id: UUID | None = None
+    error_type: str | None = None
+    stacktrace: tuple[ExceptionStackFrame, ...] = ()
 
 
 class FailedJobStore(Protocol):

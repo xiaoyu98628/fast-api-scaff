@@ -23,7 +23,18 @@ async def test_sql_failure_store_survives_new_instance_and_is_idempotent(tmp_pat
     async with engine.begin() as connection:
         await connection.run_sync(FailedJobModel.metadata.create_all)
     first = SqlFailedJobStore(databases)
-    record = FailedJobRecord(uuid4(), b"raw", "main", "jobs", datetime.now(), 3, "handler_error", uuid4())
+    record = FailedJobRecord(
+        uuid4(),
+        b"raw",
+        "main",
+        "jobs",
+        datetime.now(),
+        3,
+        "handler_error",
+        uuid4(),
+        "builtins.ValueError",
+        ({"module": "tests.jobs", "function": "ExampleJob.handle", "line": 27},),
+    )
     await first.save(record)
     await first.save(replace(record, payload=b"different"))
     second = SqlFailedJobStore(databases)

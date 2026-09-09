@@ -110,14 +110,16 @@ class JobExecutor:
             # 保存成功后才能 ACK，否则失败记录和原消息可能同时丢失。
             await self.failures.save(
                 FailedJobRecord(
-                    failure_id,
-                    delivery.payload,
-                    self.connection,
-                    self.queue,
-                    self.clock(),
-                    result.attempts,
-                    result.failure_reason,
-                    message.job_id if message else None,
+                    failure_id=failure_id,
+                    payload=delivery.payload,
+                    connection=self.connection,
+                    queue=self.queue,
+                    failed_at=self.clock(),
+                    attempts=result.attempts,
+                    reason=result.failure_reason,
+                    job_id=message.job_id if message else None,
+                    error_type=result.error_type,
+                    stacktrace=result.stacktrace,
                 )
             )
             # 失败现场已经可靠保存；即使随后 ACK 失败，也必须留下本次执行诊断。

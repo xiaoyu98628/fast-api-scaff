@@ -208,6 +208,7 @@ database/main/
 ```bash
 uv run alembic -c database/main/alembic.ini current
 uv run alembic -c database/main/alembic.ini revision --autogenerate -m "create todos table"
+uv run alembic -c database/main/alembic.ini revision --autogenerate -m "add queue failure diagnostics"
 uv run alembic -c database/main/alembic.ini upgrade head
 uv run alembic -c database/main/alembic.ini downgrade -1
 ```

@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Integer, LargeBinary, String
+from sqlalchemy import JSON, DateTime, Integer, LargeBinary, String
 from sqlalchemy.dialects.mysql import LONGBLOB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -23,3 +23,5 @@ class FailedJobModel(MainBase):
     failed_at: Mapped[datetime] = mapped_column(DateTime(), index=True, comment="最终失败时间")
     attempts: Mapped[int] = mapped_column(Integer(), comment="本次投递执行次数")
     reason: Mapped[str] = mapped_column(String(200), comment="失败原因分类")
+    error_type: Mapped[str | None] = mapped_column(String(500), comment="异常类型，不含异常消息")
+    stacktrace: Mapped[list[dict[str, str | int]] | None] = mapped_column(JSON(), comment="安全调用栈位置")
