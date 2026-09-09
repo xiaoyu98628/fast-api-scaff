@@ -23,7 +23,7 @@ app/
 │       ├── application/    # 用例、Command/DTO、UoW 协议、应用错误
 │       ├── infrastructure/ # SQLAlchemy Repository/UoW/Mapper/Model
 │       └── composition.py  # 用户上下文装配
-├── infrastructure/        # 跨上下文基础设施能力：数据库、缓存、HTTP 出站、日志
+├── infrastructure/        # 跨上下文基础设施：数据库、缓存、向量、HTTP 出站、队列、日志
 ├── interfaces/             # 入站协议适配，不负责启动与全局装配
 │   ├── http/               # FastAPI 请求、响应、中间件和路由
 │   ├── console/            # Typer 命令、参数、展示和退出码
@@ -152,6 +152,7 @@ Application Service 可以做跨聚合的流程编排和权限决策，但不应
 - `CacheManager`；
 - `HttpClientManager`；
 - `QueueManager`；
+- `VectorStoreManager`；
 - 已组装的 `UserContext`；
 - 启动和关闭 callback。
 
@@ -173,7 +174,7 @@ Application Service 可以做跨聚合的流程编排和权限决策，但不应
 - 关闭时先清空当前引用，再聚合资源关闭错误；
 - 支持 `async with`。
 
-HTTP lifespan、ConsoleHost 和 WorkerHost 都复用 runtime。这样资源的初始化、失败清理和关闭顺序不会在不同入口重复实现。数据库、缓存和 HTTP 出站资源都由管理器延迟创建，并由容器 callback 逆序关闭；未初始化资源不会在关闭阶段被创建。关闭进入不可取消清理区间，单个 callback 失败或收到取消后仍会尝试剩余 callback，最后通过异常组保留全部根因。Manager/延迟资源是一次性生命周期对象，关闭开始后拒绝新获取，也不能通过再次调用 `get()` 隐式重建。数据库和缓存 Manager 在第一次等待前统一禁止所有资源获取，再逐个释放；已经开始的初始化允许完成，但结果只交给关闭流程，不再返回调用方。宿主必须先停止使用已经借出的资源，再关闭 Manager。
+HTTP lifespan、ConsoleHost 和 WorkerHost 都复用 runtime。这样资源的初始化、失败清理和关闭顺序不会在不同入口重复实现。数据库、缓存、向量和 HTTP 出站资源都由管理器延迟创建，并由容器 callback 逆序关闭；未初始化资源不会在关闭阶段被创建。关闭进入不可取消清理区间，单个 callback 失败或收到取消后仍会尝试剩余 callback，最后通过异常组保留全部根因。Manager/延迟资源是一次性生命周期对象，关闭开始后拒绝新获取，也不能通过再次调用 `get()` 隐式重建。数据库、缓存和向量 Manager 在第一次等待前统一禁止所有资源获取，再逐个释放；已经开始的初始化允许完成，但结果只交给关闭流程，不再返回调用方。宿主必须先停止使用已经借出的资源，再关闭 Manager。
 
 顶层 HTTP 出站能力只负责驱动无关请求、连接池、超时、传输错误和日志，不知道具体上游协议。上下文若需要调用外部服务，应在自己的 application 层定义业务窄端口，在 infrastructure 层使用公共 HTTP 客户端实现，并由 composition 注入；application service 不应持有整个容器，也不应直接导入 HTTPX2。
 
@@ -260,7 +261,7 @@ HTTP 独立定义 `page/limit` 查询协议和 `items + meta` 分页响应，并
   → application workflow
   → domain invariants
   → repository/UoW/mapper
-  → database/cache/logging
+  → database/cache/vector/logging
   → configuration/lifecycle
   → tests/docs/migrations
 ```

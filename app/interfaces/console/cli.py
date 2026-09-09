@@ -10,6 +10,7 @@ from app.infrastructure.database.errors import DatabaseError
 from app.infrastructure.http.errors import HttpError
 from app.infrastructure.logging.errors import LoggingConfigurationError
 from app.infrastructure.queue.errors import QueueError
+from app.infrastructure.vector.errors import VectorError
 from app.interfaces.console.contracts import ConsoleExecutor
 from app.interfaces.console.discovery import discover_console_commands
 from app.interfaces.console.exit_codes import ConsoleExitCode
@@ -64,7 +65,7 @@ def run_console(entrypoint: ConsoleEntrypoint, presenter: ConsolePresenter) -> N
 
     try:
         entrypoint()
-    except (ValidationError, LoggingConfigurationError, DatabaseError, CacheError, HttpError, QueueError) as error:
+    except (ValidationError, LoggingConfigurationError, DatabaseError, CacheError, HttpError, QueueError, VectorError) as error:
         # 仅转换配置和基础设施边界错误，未知编程错误保留原始堆栈。
         presenter.error(error)
         raise SystemExit(ConsoleExitCode.FAILURE) from None

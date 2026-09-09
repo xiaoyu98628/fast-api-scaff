@@ -8,7 +8,8 @@
 - [uv](https://docs.astral.sh/uv/)
 - Git
 - 可选：Docker 与 Docker Compose
-- 使用 MySQL、PostgreSQL、Redis、Memcached、Kafka 或 RabbitMQ 时，需要对应服务可访问
+- 使用 MySQL、PostgreSQL、Redis、Memcached、Kafka、RabbitMQ、远程 Milvus、Chroma Server 或 Elasticsearch 时，需要对应服务可访问
+- Milvus Lite 与 Chroma 本地模式无需独立服务，但只用于单进程开发和小规模数据
 
 安装项目依赖：
 

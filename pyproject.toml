@@ -34,6 +34,10 @@ dependencies = [
 
     "aio-pika>=10.0.1,<11",
     "aiokafka>=0.12,<1",
+
+    "pymilvus[milvus-lite]>=3.0.1,<4",
+    "chromadb>=1.5.9,<2",
+    "elasticsearch[async]>=9.4.1,<10",
 ]
 
 [project.optional-dependencies]

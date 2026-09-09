@@ -12,6 +12,7 @@ from app.config.database import DatabaseSettings
 from app.config.http import HttpSettings
 from app.config.logging import LoggingSettings
 from app.config.queue import QueueSettings
+from app.config.vector import VectorSettings
 
 
 class Settings(BaseModel):
@@ -24,6 +25,7 @@ class Settings(BaseModel):
     auth: AuthSettings = Field(default_factory=lambda: AuthSettings(_env_file=None))
     database: DatabaseSettings
     cache: CacheSettings
+    vector: VectorSettings = Field(default_factory=lambda: VectorSettings(_env_file=None))
     http: HttpSettings = Field(default_factory=lambda: HttpSettings(_env_file=None))
     cors: CorsSettings
     logging: LoggingSettings = Field(default_factory=lambda: LoggingSettings(_env_file=None))
@@ -40,6 +42,7 @@ def load_settings() -> Settings:
         auth=AuthSettings(),
         database=DatabaseSettings(),
         cache=CacheSettings(),
+        vector=VectorSettings(),
         http=HttpSettings(),
         cors=CorsSettings(),
         logging=LoggingSettings(),

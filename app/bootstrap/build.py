@@ -8,6 +8,8 @@ from app.infrastructure.database.manager import DatabaseManager
 from app.infrastructure.database.providers.registry import DEFAULT_DATABASE_PROVIDERS, DatabaseProviderRegistry
 from app.infrastructure.http.manager import HttpClientManager
 from app.infrastructure.queue.manager import QueueManager
+from app.infrastructure.vector.manager import VectorStoreManager
+from app.infrastructure.vector.providers.registry import DEFAULT_VECTOR_PROVIDERS, VectorProviderRegistry
 from app.runtime.container import ApplicationContainer
 
 
@@ -16,6 +18,7 @@ def build_application_container(
     *,
     database_providers: DatabaseProviderRegistry = DEFAULT_DATABASE_PROVIDERS,
     cache_providers: CacheProviderRegistry = DEFAULT_CACHE_PROVIDERS,
+    vector_providers: VectorProviderRegistry = DEFAULT_VECTOR_PROVIDERS,
 ) -> ApplicationContainer:
     """构建并连接应用所需的组件。"""
 
@@ -23,6 +26,7 @@ def build_application_container(
     databases = DatabaseManager(settings.database, providers=database_providers)
     caches = CacheManager(settings.cache, providers=cache_providers)
     http = HttpClientManager(settings.http)
+    vectors = VectorStoreManager(settings.vector, providers=vector_providers)
     queues = QueueManager(settings.queue, databases)
     # 组合根可以知道具体上下文；用户业务的内部装配仍封装在 composition 模块中。
     users = build_user_context(databases, session_ttl_seconds=settings.auth.session_ttl_seconds)
@@ -32,7 +36,8 @@ def build_application_container(
         databases=databases,
         caches=caches,
         http=http,
+        vectors=vectors,
         users=users,
         queues=queues,
-        async_shutdown_callbacks=(databases.aclose, caches.aclose, http.aclose, queues.aclose),
+        async_shutdown_callbacks=(databases.aclose, caches.aclose, http.aclose, vectors.aclose, queues.aclose),
     )

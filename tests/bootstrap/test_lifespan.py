@@ -14,11 +14,13 @@ from app.config.database import DatabaseSettings
 from app.config.http import HttpSettings
 from app.config.queue import QueueSettings
 from app.config.settings import Settings
+from app.config.vector import VectorSettings
 from app.contexts.user.composition import build_user_context
 from app.infrastructure.cache.manager import CacheManager
 from app.infrastructure.database.manager import DatabaseManager
 from app.infrastructure.http.manager import HttpClientManager
 from app.infrastructure.queue.manager import QueueManager
+from app.infrastructure.vector.manager import VectorStoreManager
 from app.runtime.container import ApplicationContainer
 
 
@@ -79,6 +81,7 @@ async def test_application_startup_failure_is_logged(caplog: pytest.LogCaptureFi
         databases=databases,
         caches=CacheManager(settings.cache),
         http=HttpClientManager(HttpSettings(_env_file=None)),
+        vectors=VectorStoreManager(VectorSettings(_env_file=None)),
         users=build_user_context(databases),
         startup_callbacks=(fail_startup,),
     )

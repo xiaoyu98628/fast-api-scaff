@@ -2,7 +2,7 @@
 
 配置由 `pydantic-settings` 从项目根目录 `.env` 和进程环境变量读取。进程环境变量优先于 `.env`；未知字段会被忽略；配置对象创建后不可变，并由 `load_settings()` 在当前进程内缓存。
 
-导入配置模块不会读取或校验环境变量。HTTP、Console 和 Worker 顶层入口均在导入时通过 `load_settings()` 显式创建各组配置并初始化各自的日志；因此即使 Console 或 Worker 只请求 `--help`，也会先校验完整配置。手动构造 `Settings` 时，未提供的认证、HTTP 和日志配置由默认值工厂在实例化时创建。默认值工厂的 `_env_file=None` 只跳过 `.env`，仍读取进程环境变量；显式注入这些配置时不会调用对应工厂。
+导入配置模块不会读取或校验环境变量。HTTP、Console 和 Worker 顶层入口均在导入时通过 `load_settings()` 显式创建各组配置并初始化各自的日志；因此即使 Console 或 Worker 只请求 `--help`，也会先校验完整配置。手动构造 `Settings` 时，未提供的认证、HTTP、向量和日志配置由默认值工厂在实例化时创建。默认值工厂的 `_env_file=None` 只跳过 `.env`，仍读取进程环境变量；显式注入这些配置时不会调用对应工厂。
 
 ## 1. 命名和嵌套规则
 
@@ -17,6 +17,7 @@
 | HTTP 出站 | `HTTP_` | `HTTP_TIMEOUT__CONNECT` |
 | 数据库 | `DB_` | `DB_CONNECTIONS__MAIN__DRIVER` |
 | 缓存 | `CACHE_` | `CACHE_CONNECTIONS__SESSION__DRIVER` |
+| 向量存储 | `VECTOR_` | `VECTOR_CONNECTIONS__KNOWLEDGE__DRIVER` |
 
 双下划线 `__` 表示嵌套字典。连接名不区分业务语义，由组合根按名字选择：
 
@@ -237,20 +238,85 @@ SQLite 不接受 MySQL/PostgreSQL 的连接池字段。连接模型使用 `extra
 
 完整语义见[缓存](cache.md)。
 
-## 9. 校验与连接时机
+## 9. 向量存储配置
+
+| 变量 | 类型 | 默认值 | 约束与说明 |
+| --- | --- | --- | --- |
+| `VECTOR_DEFAULT` | `str | null` | `null` | 未显式传连接名时使用的默认向量连接 |
+| `VECTOR_CONNECTIONS` | 嵌套对象 | `{}` | 按名称保存连接定义 |
+
+全部向量连接会在 `VectorStoreManager` 构造时按 `DRIVER/MODE` 严格校验，因此无效的未使用定义也会阻止容器构建。SDK 客户端、远程访问和本地文件/目录仍延迟到首次 `get()`。
+
+### 9.1 公共远程字段
+
+| 后缀 | 类型 | 默认值 | 约束与说明 |
+| --- | --- | --- | --- |
+| `HOST` | `str` | 无 | 只允许主机名或 IP，不能包含协议、端口或路径 |
+| `PORT` | `int` | 由驱动决定 | 1–65535 |
+| `USERNAME` / `PASSWORD` | `str | null` | `null` | 必须同时配置或同时省略 |
+| `SSL` | `bool` | `false` | `true` 时使用 HTTPS/TLS |
+
+没有公开 `URL` 字段。配置显式保留 host、port、ssl 和认证，驱动内部才组装 URI 或 SDK node config。
+
+### 9.2 Milvus
+
+| 后缀 | 本地默认值/约束 | 远程默认值/约束 |
+| --- | --- | --- |
+| `DRIVER` | `milvus` | `milvus` |
+| `MODE` | `local` | `remote` |
+| `PATH` | 必填；文件路径，绝对路径或相对 `storage/` | 不支持 |
+| `HOST` / `PORT` | 不支持 | host 必填；port=`19530` |
+| `DATABASE` | 不支持 | `default` |
+| `USERNAME` / `PASSWORD` | 不支持 | 可选，必须成对 |
+| `SSL` | 不支持 | `false` |
+| `TIMEOUT` | `10.0`，正数秒 | `10.0`，正数秒 |
+
+### 9.3 Chroma
+
+| 后缀 | 本地默认值/约束 | 远程默认值/约束 |
+| --- | --- | --- |
+| `DRIVER` | `chroma` | `chroma` |
+| `MODE` | `local` | `remote` |
+| `PATH` | 必填；目录路径，绝对路径或相对 `storage/` | 不支持 |
+| `HOST` / `PORT` | 不支持 | host 必填；port=`8000` |
+| `TENANT` | `default_tenant` | `default_tenant` 或 Cloud tenant |
+| `DATABASE` | `default_database` | `default_database` 或 Cloud database |
+| `USERNAME` / `PASSWORD` | 不支持 | 可选的前置代理 Basic Auth，必须成对 |
+| `API_KEY` | 不支持 | 可选的 Chroma Cloud token，不能与 Basic Auth 同时配置 |
+| `SSL` | 不支持 | `false` |
+
+Chroma 1.x 自托管服务没有内置认证；`USERNAME/PASSWORD` 只用于明确配置了 Basic Auth 的前置代理。当前 Chroma SDK 没有与其他两个驱动等价的客户端请求超时参数，因此 Chroma 配置不接受 `TIMEOUT`，避免出现配置存在但不生效的假契约。
+
+### 9.4 Elasticsearch
+
+Elasticsearch 仅支持 `MODE=remote`，默认端口为 `9200`。除公共远程字段外：
+
+| 后缀 | 类型 | 默认值 | 约束与说明 |
+| --- | --- | --- | --- |
+| `VERIFY_CERTS` | `bool` | `true` | 是否校验证书；生产应保持开启 |
+| `CA_CERTS` | `str | null` | `null` | CA 证书文件路径 |
+| `CONNECTIONS_PER_NODE` | `int` | `10` | 每节点连接数，至少 1 |
+| `MAX_RETRIES` | `int` | `3` | SDK 最大重试次数，至少 0 |
+| `RETRY_ON_TIMEOUT` | `bool` | `true` | 是否重试超时 |
+| `TIMEOUT` | `float` | `10.0` | 请求超时，正数秒 |
+
+完整连接、调用和数据约束见[向量存储](vector.md)。
+
+## 10. 校验与连接时机
 
 | 阶段 | 会发生什么 | 不会发生什么 |
 | --- | --- | --- |
-| `load_settings()` | 读取并校验应用、日志、CORS、HTTP 出站配置，读取数据库/缓存原始字典 | 不创建 HTTP/数据库资源，不连接远程缓存 |
-| 构建容器 | 构建管理器；校验所有缓存定义 | 不访问 HTTP 上游或数据库网络，不主动 ping 缓存 |
+| `load_settings()` | 读取并校验应用、日志、CORS、HTTP 出站配置，读取数据库/缓存/向量原始字典 | 不创建 HTTP、数据库或向量资源，不连接远程缓存 |
+| 构建容器 | 构建管理器；校验所有缓存和向量定义 | 不访问 HTTP 上游或数据库网络，不主动 ping 缓存/向量服务 |
 | 首次 HTTP `request/stream` | 创建普通与流式连接池并访问目标上游 | 不会探测其他上游，不会自动重试 |
 | 首次数据库 `get/session` | 校验目标定义、创建 Engine/Session 工厂 | 不保证每个已配置连接都可用 |
 | 首次缓存 `get/set/ping` | 创建目标缓存资源并访问后端 | 不会自动切换到其他连接或后端 |
+| 首次向量 `get/ping/CRUD/search` | 创建目标 SDK 客户端；本地模式按需创建数据；远程驱动在创建或首次操作时访问服务 | 不会探测其他向量连接或自动切换驱动 |
 | 关闭宿主 | 逆序关闭已初始化资源 | 未初始化资源不会被无意义连接 |
 
 这解释了为什么“应用能启动”不等于“所有依赖都健康”。生产就绪检查应主动验证业务必需的连接，但不要把非关键依赖随意绑进基础 `/health`，否则会改变健康语义。
 
-## 10. 修改配置后的操作
+## 11. 修改配置后的操作
 
 - HTTP：重启 Uvicorn 进程；`--reload` 是否监视 `.env` 取决于运行器行为，不应作为配置热更新契约。
 - Console：每次命令是新进程，重新执行即可。
@@ -258,12 +324,13 @@ SQLite 不接受 MySQL/PostgreSQL 的连接池字段。连接模型使用 `extra
 - 数据库结构：修改模型配置不等于迁移，仍需创建并应用 Alembic revision。
 - `TZ`：视为数据语义变更，不是普通重启配置。
 
-## 11. 配置安全与禁止做法
+## 12. 配置安全与禁止做法
 
 - 不提交真实 `.env`、密码或连接串；`sample.env` 只能放示例值。
 - 不在业务层直接读取 `os.environ`；配置只应在组合根解析并注入。
 - 不用 `APP_ENV` 隐式拼接大量魔法默认值；部署差异应显式可审计。
 - 不依赖 `/health` 推断数据库和缓存已经连接。
+- 不依赖 `/health` 推断向量服务可用，也不把本地向量目录交给多个进程共享。
 - 不通过 `HTTP_VERIFY=false` 长期绕过生产 TLS 证书问题。
 - 不假设基础 HTTP 客户端会自动重试或把 4xx/5xx 转成异常。
 - 不通过改变 `DB_DEFAULT` 猜测用户上下文会切库；当前组合明确指定 `main`。
@@ -272,7 +339,7 @@ SQLite 不接受 MySQL/PostgreSQL 的连接池字段。连接模型使用 `extra
 
 配置报错时，先对照 `sample.env` 和本章字段，再阅读[故障排查](troubleshooting.md)。
 
-## 队列与 Worker
+## 13. 队列与 Worker
 
 HTTP 不启动消费者。新增配置无队列连接默认值；`QUEUE_DEFAULT` 留空应省略该变量，而不是写空字符串。
 

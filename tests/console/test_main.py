@@ -24,6 +24,7 @@ from app.config.http import HttpSettings
 from app.config.logging import LoggingSettings
 from app.config.queue import QueueSettings
 from app.config.settings import Settings
+from app.config.vector import VectorSettings
 from app.contexts.user.application.dto import CreateUserCommand, UserDTO, UserPageDTO
 from app.contexts.user.application.service import UserApplicationService
 from app.contexts.user.composition import build_user_context
@@ -34,6 +35,7 @@ from app.infrastructure.database.manager import DatabaseManager
 from app.infrastructure.http.errors import HttpTransportError
 from app.infrastructure.http.manager import HttpClientManager
 from app.infrastructure.queue.manager import QueueManager
+from app.infrastructure.vector.manager import VectorStoreManager
 from app.interfaces.console.cli import create_console, run_console
 from app.interfaces.console.exit_codes import ConsoleExitCode
 from app.interfaces.console.presentation import ConsolePresenter
@@ -92,13 +94,15 @@ def build_console(service: FakeUserService) -> tuple[CliRunner, typer.Typer]:
         databases = DatabaseManager(settings.database)
         caches = CacheManager(settings.cache)
         http = HttpClientManager(HttpSettings(_env_file=None))
+        vectors = VectorStoreManager(VectorSettings(_env_file=None))
         return ApplicationContainer(
             queues=QueueManager(QueueSettings(_env_file=None), databases),
             databases=databases,
             caches=caches,
             http=http,
+            vectors=vectors,
             users=replace(build_user_context(databases), service=cast(UserApplicationService, service)),
-            async_shutdown_callbacks=(databases.aclose, caches.aclose, http.aclose),
+            async_shutdown_callbacks=(databases.aclose, caches.aclose, http.aclose, vectors.aclose),
         )
 
     console = ConsoleHost(
@@ -133,6 +137,7 @@ def test_app_info_displays_runtime_configuration() -> None:
         "debug": False,
         "database_connections": [],
         "cache_connections": [],
+        "vector_connections": [],
     }
     assert timezone
 
