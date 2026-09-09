@@ -55,7 +55,18 @@ def test_failed_table_migration_roundtrip(tmp_path: Path) -> None:
     run_migration(path, "upgrade", "head")
     with sqlite3.connect(path) as connection:
         columns = {row[1] for row in connection.execute("PRAGMA table_info(queue_failed_jobs)")}
-    assert columns == {"failure_id", "job_id", "payload", "connection", "queue", "failed_at", "attempts", "reason"}
+    assert columns == {
+        "failure_id",
+        "job_id",
+        "payload",
+        "connection",
+        "queue",
+        "failed_at",
+        "attempts",
+        "reason",
+        "error_type",
+        "stacktrace",
+    }
     run_migration(path, "downgrade", "base")
     with sqlite3.connect(path) as connection:
         assert connection.execute("SELECT name FROM sqlite_master WHERE name='queue_failed_jobs'").fetchone() is None
