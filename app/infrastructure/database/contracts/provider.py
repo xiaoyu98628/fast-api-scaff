@@ -1,9 +1,14 @@
 """定义数据库 Provider 的扩展契约和校验结果。"""
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
 
+from sqlalchemy.ext.asyncio import AsyncEngine
+
 from app.infrastructure.database.connections.spec import DatabaseEngineSpec
+
+type DatabaseEngineConfigurator = Callable[[AsyncEngine], None]
 
 
 @dataclass(frozen=True, slots=True)
@@ -11,6 +16,7 @@ class DatabaseResourceDefinition:
     """已经完成配置校验、等待延迟创建的数据库资源定义。"""
 
     engine_spec: DatabaseEngineSpec
+    configure_engine: DatabaseEngineConfigurator | None = None
 
 
 class DatabaseProvider(Protocol):

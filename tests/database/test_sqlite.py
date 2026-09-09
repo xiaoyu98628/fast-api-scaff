@@ -21,3 +21,21 @@ async def test_sqlite_session_executes_query() -> None:
 
     assert result.scalar_one() == 1
     await manager.aclose()
+
+
+@pytest.mark.asyncio
+async def test_sqlite_enables_foreign_keys_for_every_connection() -> None:
+    settings = DatabaseSettings(
+        default="main",
+        connections={"main": {"driver": "sqlite", "database": ":memory:"}},
+        _env_file=None,
+    )
+    manager = DatabaseManager(settings)
+
+    try:
+        async with manager.session() as session:
+            enabled = await session.scalar(text("PRAGMA foreign_keys"))
+
+        assert enabled == 1
+    finally:
+        await manager.aclose()

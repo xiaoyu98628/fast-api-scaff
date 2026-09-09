@@ -23,7 +23,7 @@ uv run uvicorn app.main:app --reload
 
 相对数据库路径解析到 `storage/`。`:memory:` 只适合受控测试：不同连接的内存数据库生命周期和可见性容易与预期不一致，不建议作为常规开发配置。
 
-认证模型定义独立的 `user_sessions` 表，保存 `token_digest/user_id/issued_at/expires_at`；后两个字段使用本地无时区 `DateTime()`，`users` 模型保持不变。会话表迁移已由维护者手动生成；检查迁移后执行 `upgrade head`，再使用认证接口。会话外键声明 `ON DELETE CASCADE`，SQLite 是否执行级联取决于连接的 `foreign_keys` 设置；认证用例始终检查用户是否存在，因此残留会话不会让已删除用户通过认证。过期会话不会自动清理，退出会删除指定会话。
+认证模型定义独立的 `user_sessions` 表，保存 `token_digest/user_id/issued_at/expires_at`；后两个字段使用本地无时区 `DateTime()`，`users` 模型保持不变。会话表迁移已由维护者手动生成；检查迁移后执行 `upgrade head`，再使用认证接口。会话外键声明 `ON DELETE CASCADE`，SQLite Provider 会为连接池创建的每个连接启用 `PRAGMA foreign_keys=ON`，因此删除用户会级联删除其会话。每次成功登录会在写入新会话的同一事务中清理全局已过期会话；退出只删除指定会话。
 
 ## 2. 命名连接
 
@@ -141,7 +141,7 @@ Repository 的 `update()` 和 `remove()` 使用带主键条件的单条 DML，�
 
 ## 8. 唯一性与异常映射
 
-应用服务会先查询用户名和邮箱是否存在，以提供快速、可读的冲突结果。但“先查再写”不能替代数据库唯一约束：两个并发事务都可能通过预检查。
+创建用户时，应用服务会在 Argon2 哈希前查询用户名和邮箱是否存在，使已知重复请求不占用昂贵计算资源；哈希完成后会在写入事务中再次检查。更新用户同样在写入前预检查。但“先查再写”不能替代数据库唯一约束：两个并发事务都可能通过预检查。
 
 唯一性最终由数据库约束保证。UoW 在 commit 和事务体退出两个阶段识别 `IntegrityError`，因此 UPDATE 在 `session.execute()` 时抛出的冲突也会转换，HTTP 返回对应的 409。两条路径复用同一约束识别函数，先确认错误类别，再精确匹配约束：
 

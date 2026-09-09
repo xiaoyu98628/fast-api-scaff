@@ -99,16 +99,17 @@ curl -X POST http://127.0.0.1:8000/api/v1/auth/login \
 
 登录用户不存在时直接返回 404 和“用户不存在”，不执行密码验证；密码错误或账户禁用返回 401。
 
-认证使用独立的 `user_sessions` 表，签发时间和过期时间采用与用户资料一致的本地无时区 `datetime`，用户表不增加角色或版本字段。密码重置保留已有会话；禁用期间会话不可用，再启用后未过期会话仍可使用。详细契约见[认证](docs/authentication.md)。
+认证使用独立的 `user_sessions` 表，签发时间和过期时间采用与用户资料一致的本地无时区 `datetime`，用户表不增加角色或版本字段。每次成功登录会清理已过期会话；密码重置保留已有会话，禁用期间会话不可用，再启用后未过期会话仍可使用。详细契约见[认证](docs/authentication.md)。
 
 ## Docker
 
 ```bash
 docker compose up --build
-docker compose --profile worker up --build
+# 只启动 HTTP 应用
+docker compose up --build service
 ```
 
-默认命令只启动 HTTP 应用；带 `worker` profile 的命令同时启动独立消费容器。Compose 不提供 MySQL、PostgreSQL、Redis、Kafka、RabbitMQ、Memcached、Milvus、Chroma Server 或 Elasticsearch。容器内 `127.0.0.1` 指向容器自身；应用可以使用 SQLite、Milvus Lite 或 Chroma 本地持久化，但缓存必须配置容器可访问的 Redis 或 Memcached，队列 Worker 必须配置容器可访问的 Redis、Kafka 或 RabbitMQ 地址。Compose 使用 Uvicorn reload，仅适合本地开发。
+默认命令同时启动 HTTP 应用和独立 Worker；指定 `service` 时只启动 HTTP 应用。Compose 不提供 MySQL、PostgreSQL、Redis、Kafka、RabbitMQ、Memcached、Milvus、Chroma Server 或 Elasticsearch。容器内 `127.0.0.1` 指向容器自身；应用可以使用 SQLite、Milvus Lite 或 Chroma 本地持久化，但缓存必须配置容器可访问的 Redis 或 Memcached，队列 Worker 必须配置容器可访问的 Redis、Kafka 或 RabbitMQ 地址。Compose 使用 Uvicorn reload，仅适合本地开发。
 
 Worker 复用应用镜像、`.env` 和网络且不暴露端口。镜像本身不声明健康检查，Compose 只为 HTTP 服务配置 `/health` 检测。脚手架内置登录成功日志 Job；Worker 根据消息携带的类路径动态加载并执行它，不扫描业务目录，也不需要在组合根注册。
 
@@ -156,7 +157,7 @@ uv run python -m app.worker --help
 uv run python -m app.worker
 # 只在需要隔离连接或逻辑队列时显式覆盖
 uv run python -m app.worker --connection redis --queue reports --concurrency 4
-docker compose --profile worker up --build
+docker compose up --build worker
 ```
 
 内置 `LoginSucceededJob` 由登录接口尽力投递到默认连接配置的默认队列（`sample.env` 为 `default`），消息以 `user_id` 参数标识登录用户，不包含用户名、密码或 Token；Worker 收到后调用它的 `handle()` 记录固定文案和结构化用户 ID。新增任务只需继承 `QueueJob` 并实现 `handle()`，无需注册、扫描目录或修改组合根。HTTP 与 Console 只负责发布，独立 Worker 通过 Redis、Kafka 或 RabbitMQ 消费。

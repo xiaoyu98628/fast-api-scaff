@@ -18,7 +18,7 @@ from app.contexts.user.application.password_hasher import PasswordHasher
 from app.contexts.user.application.unit_of_work import UserUnitOfWorkFactory
 from app.contexts.user.domain.repository import UserRepository
 from app.contexts.user.domain.user import User
-from app.contexts.user.domain.values import Password, UserId
+from app.contexts.user.domain.values import EmailAddress, Password, UserId, Username
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,18 +30,27 @@ class UserApplicationService:
     clock: Callable[[], datetime] = datetime.now
 
     async def create(self, command: CreateUserCommand) -> UserDTO:
-        """创建用户，并在写入前检查用户名和邮箱唯一性。"""
+        """先廉价检查唯一性，再哈希密码并完成并发安全的写入。"""
 
-        # 密码哈希可能是慢操作，先在事务外完成以缩短数据库占用时间。
-        password_hash = await self.password_hasher.hash(Password(command.password))
+        username = Username(command.username)
+        email = EmailAddress(command.email)
+        password = Password(command.password)
+
+        # 先拒绝已知冲突，避免重复请求占用受限的 Argon2 计算额度。
+        async with self.unit_of_work_factory() as unit_of_work:
+            await self._ensure_unique_values(unit_of_work.users, username=username, email=email)
+
+        # 慢哈希仍在事务外执行，避免计算期间占用数据库连接和事务。
+        password_hash = await self.password_hasher.hash(password)
         user = User.create(
-            username=command.username,
-            email=command.email,
+            username=username.value,
+            email=email.value,
             password_hash=password_hash,
             now=self.clock(),
         )
 
         async with self.unit_of_work_factory() as unit_of_work:
+            # 哈希期间可能出现并发写入，最终检查和数据库唯一约束仍负责正确性。
             await self._ensure_unique(unit_of_work.users, user)
             await unit_of_work.users.add(user)
             await unit_of_work.commit()
@@ -114,12 +123,20 @@ class UserApplicationService:
         return UserDTO.from_domain(user)
 
     async def reset_password(self, command: ResetUserPasswordCommand) -> None:
-        """在事务外生成新哈希，再替换目标用户密码。"""
+        """确认目标存在后在事务外生成新哈希，再替换用户密码。"""
 
         user_id = UserId(command.user_id)
-        password_hash = await self.password_hasher.hash(Password(command.password))
+        password = Password(command.password)
+
+        # 不存在的目标无需占用受限的 Argon2 计算额度。
+        async with self.unit_of_work_factory() as unit_of_work:
+            if await unit_of_work.users.find(user_id) is None:
+                raise UserNotFoundError(command.user_id)
+
+        password_hash = await self.password_hasher.hash(password)
 
         async with self.unit_of_work_factory() as unit_of_work:
+            # 哈希期间目标可能被删除，因此写入事务必须重新读取。
             user = await unit_of_work.users.find(user_id)
             if user is None:
                 raise UserNotFoundError(command.user_id)
@@ -145,8 +162,25 @@ class UserApplicationService:
     async def _ensure_unique(repository: UserRepository, user: User) -> None:
         """排除当前用户后检查用户名和邮箱占用情况。"""
 
-        if await repository.exists_by_username(user.username, excluding=user.id):
+        await UserApplicationService._ensure_unique_values(
+            repository,
+            username=user.username,
+            email=user.email,
+            excluding=user.id,
+        )
+
+    @staticmethod
+    async def _ensure_unique_values(
+        repository: UserRepository,
+        *,
+        username: Username,
+        email: EmailAddress,
+        excluding: UserId | None = None,
+    ) -> None:
+        """用已规范化值检查用户名和邮箱占用情况。"""
+
+        if await repository.exists_by_username(username, excluding=excluding):
             raise UserConflictError("username")
 
-        if await repository.exists_by_email(user.email, excluding=user.id):
+        if await repository.exists_by_email(email, excluding=excluding):
             raise UserConflictError("email")

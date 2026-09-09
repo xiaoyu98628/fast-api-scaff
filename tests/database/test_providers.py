@@ -133,6 +133,7 @@ def test_sqlite_provider_builds_supported_engine_spec() -> None:
     assert definition.engine_spec.options == {}
     assert definition.engine_spec.log_queries is True
     assert definition.engine_spec.slow_query_ms == 500
+    assert definition.configure_engine is not None
 
 
 @pytest.mark.asyncio

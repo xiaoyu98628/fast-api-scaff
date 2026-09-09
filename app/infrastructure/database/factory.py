@@ -33,6 +33,8 @@ async def create_database_resource(connection_name: str, definition: DatabaseRes
         )
         raise DatabaseDriverError(f"数据库驱动 {spec.url.drivername!r} 无法加载") from error
 
+    if definition.configure_engine is not None:
+        definition.configure_engine(engine)
     configure_database_logging(engine, connection_name=connection_name, spec=spec)
 
     session_factory = async_sessionmaker(

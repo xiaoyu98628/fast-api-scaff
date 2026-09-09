@@ -9,14 +9,15 @@ uv run python -m app.worker --help
 uv run python -m app.worker
 # 可选：为隔离的业务队列单独启动 Worker
 uv run python -m app.worker --connection redis --queue reports --concurrency 4
-docker compose --profile worker up --build
+# 只启动 Compose 中的 Worker 服务
+docker compose up --build worker
 ```
 
 省略 connection/queue 时采用默认连接和该连接的默认队列。省略 concurrency 时采用 QUEUE_WORKER__CONCURRENCY。
 
 只要默认队列连接配置有效且后端可访问，即使队列当前没有消息、项目也没有预先注册的 Job，Worker 仍可启动并等待。Job 在消息到达后根据类路径动态解析，不存在启动前注册清单。
 
-Compose 中的 `worker` 服务复用应用镜像、`.env` 和网络，不暴露端口，也不配置只适用于 HTTP 的健康检查。镜像本身不声明健康检查，Compose 只为 HTTP 服务检测 `/health`。Worker 不会自动创建队列服务；`.env` 必须配置容器可访问的 Redis、Kafka 或 RabbitMQ 地址。容器内的 `127.0.0.1` 是 Worker 容器自身。
+`docker compose up --build` 默认同时启动 `service` 和 `worker`；只需要 HTTP 时使用 `docker compose up --build service`。Compose 中的 `worker` 服务复用应用镜像、`.env` 和网络，不暴露端口，也不配置只适用于 HTTP 的健康检查。镜像本身不声明健康检查，Compose 只为 HTTP 服务检测 `/health`。Worker 不会自动创建队列服务；`.env` 必须配置容器可访问的 Redis、Kafka 或 RabbitMQ 地址。容器内的 `127.0.0.1` 是 Worker 容器自身。
 
 脚手架内置 `LoginSucceededJob` 最小任务。登录接口向默认连接配置的默认队列（`sample.env` 为 `default`）尽力投递 `user_id` 参数和固定文案，Worker 调用它的 `handle()` 输出“用户登录成功，队列任务已执行。”并记录结构化用户 ID；任务不含用户名、密码或 Token。`user_id` 暂时可空，以兼容队列中已经存在的旧消息。`sample.env` 以 Redis 为默认连接，因此 Worker 可以不带参数启动。
 

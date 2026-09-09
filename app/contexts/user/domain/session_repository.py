@@ -1,5 +1,6 @@
 """声明用户会话在 Domain 层需要的持久化能力。"""
 
+from datetime import datetime
 from typing import Protocol
 
 from app.contexts.user.domain.session import UserSession
@@ -20,4 +21,10 @@ class SessionRepository(Protocol):
 
     async def remove(self, token_digest: str) -> None:
         """幂等删除；不存在时也视为成功。"""
+
+        ...
+
+    async def remove_expired(self, *, now: datetime) -> int:
+        """删除到指定时间已经失效的会话，并返回删除数量。"""
+
         ...

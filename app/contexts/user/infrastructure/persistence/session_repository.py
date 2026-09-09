@@ -1,8 +1,11 @@
 """使用 SQLAlchemy 实现服务器端用户会话仓储。"""
 
+from datetime import datetime
+from typing import cast
 from uuid import UUID
 
 from sqlalchemy import delete
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.contexts.user.domain.session import UserSession
@@ -47,3 +50,10 @@ class SqlAlchemySessionRepository:
         """按令牌摘要幂等删除会话。"""
 
         await self._session.execute(delete(UserSessionModel).where(UserSessionModel.token_digest == token_digest))
+
+    async def remove_expired(self, *, now: datetime) -> int:
+        """批量删除到指定本地时间已经过期的会话。"""
+
+        statement = delete(UserSessionModel).where(UserSessionModel.expires_at <= now).execution_options(synchronize_session=False)
+        result = cast(CursorResult[tuple[object, ...]], await self._session.execute(statement))
+        return result.rowcount

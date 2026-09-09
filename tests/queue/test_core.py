@@ -1,5 +1,6 @@
 """验证队列消息信封、任务策略和管理器核心契约。"""
 
+import asyncio
 from dataclasses import replace
 from datetime import UTC, datetime
 from uuid import uuid4
@@ -8,7 +9,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.config.database import DatabaseSettings
-from app.config.queue import QueueSettings, parse_connection
+from app.config.queue import QueueConnection, QueueSettings, parse_connection
 from app.infrastructure.database.manager import DatabaseManager
 from app.infrastructure.queue.codecs.envelope_json import EnvelopeJsonCodec
 from app.infrastructure.queue.contracts.message import MessageEnvelope
@@ -17,6 +18,7 @@ from app.infrastructure.queue.job import describe_job, encode_job, job_reference
 from app.infrastructure.queue.manager import QueueManager
 from tests.queue.fakes import (
     FakeQueueBackend,
+    FakeQueueConsumer,
     Job,
     RecordingFailedJobStore,
     create_queue_manager,
@@ -121,6 +123,69 @@ async def test_cached_dispatcher_checks_manager_lifecycle() -> None:
 
     with pytest.raises(QueueError, match="队列管理器已关闭"):
         await dispatcher.dispatch(Job(1))
+
+
+@pytest.mark.asyncio
+async def test_manager_wraps_backend_creation_failure() -> None:
+    async def fail_creation(_settings: QueueConnection) -> FakeQueueBackend:
+        raise OSError("connection refused")
+
+    settings = QueueSettings(_env_file=None, default="main", connections={"main": {"driver": "redis", "host": "localhost"}})
+    queues = QueueManager(
+        settings,
+        DatabaseManager(DatabaseSettings(_env_file=None)),
+        failed_jobs=RecordingFailedJobStore(),
+        factory=fail_creation,
+    )
+
+    with pytest.raises(QueueError, match="队列连接 'main' 创建失败") as captured:
+        await queues.dispatch(Job(1))
+
+    assert isinstance(captured.value.__cause__, OSError)
+    await queues.aclose()
+
+
+@pytest.mark.asyncio
+async def test_manager_wraps_consumer_creation_failure() -> None:
+    class FailingConsumerBackend(FakeQueueBackend):
+        async def consumer(self, queue: str, concurrency: int) -> FakeQueueConsumer:
+            del queue, concurrency
+            raise OSError("connection refused")
+
+    settings = QueueSettings(_env_file=None, default="main", connections={"main": {"driver": "redis", "host": "localhost"}})
+    backend = FailingConsumerBackend()
+    queues = QueueManager(
+        settings,
+        DatabaseManager(DatabaseSettings(_env_file=None)),
+        failed_jobs=RecordingFailedJobStore(),
+        factory=queue_backend_factory(backend),
+    )
+
+    with pytest.raises(QueueError, match="队列连接 'main' 创建消费者失败") as captured:
+        async with queues.consume():
+            pass
+
+    assert isinstance(captured.value.__cause__, OSError)
+    await queues.aclose()
+
+
+@pytest.mark.asyncio
+async def test_manager_does_not_wrap_backend_creation_cancellation() -> None:
+    async def cancel_creation(_settings: QueueConnection) -> FakeQueueBackend:
+        raise asyncio.CancelledError()
+
+    settings = QueueSettings(_env_file=None, default="main", connections={"main": {"driver": "redis", "host": "localhost"}})
+    queues = QueueManager(
+        settings,
+        DatabaseManager(DatabaseSettings(_env_file=None)),
+        failed_jobs=RecordingFailedJobStore(),
+        factory=cancel_creation,
+    )
+
+    with pytest.raises(asyncio.CancelledError):
+        await queues.get()
+
+    await queues.aclose()
 
 
 @pytest.mark.parametrize(

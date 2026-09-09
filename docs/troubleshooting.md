@@ -279,7 +279,7 @@ uv run python -m app.console users list 1>result.json 2>error.log
 
 ## 12. Docker 问题
 
-当前 `compose.yml` 默认只启动 HTTP 服务；启用 `worker` profile 后还会启动独立消费服务。它们：
+当前 `compose.yml` 执行 `docker compose up` 时默认同时启动 HTTP 服务和独立消费服务；只需要 HTTP 时显式执行 `docker compose up service`。它们：
 
 - 从 `.env` 读取配置；
 - 复用应用镜像、源码挂载和 Compose 网络；
