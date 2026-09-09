@@ -16,7 +16,7 @@ class AppSettings(BaseSettings):
     )
 
     name: str = "fast-api-scaff"
-    version: str = "3.0.7"
+    version: str = "1.0.0"
     env: str = "local"
     debug: bool = False
     # 统一响应码会把三位服务编码作为前缀，固定长度可避免跨服务冲突。
