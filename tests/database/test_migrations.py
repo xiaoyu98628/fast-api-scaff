@@ -84,6 +84,8 @@ def test_main_migration_upgrade_creates_users_table(
     assert expected_revision is not None
     assert revision == (expected_revision,)
 
+    # head 必须完整覆盖当前 ORM metadata，防止模型变更遗漏迁移。
+    run_migration(database_path, "check")
     run_migration(database_path, "downgrade", "base")
 
     with sqlite3.connect(database_path) as connection:
