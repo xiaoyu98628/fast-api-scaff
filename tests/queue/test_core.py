@@ -9,7 +9,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.config.database import DatabaseSettings
-from app.config.queue import QueueConnection, QueueSettings, parse_connection
+from app.config.queue import QueueConnection, QueueSettings, RabbitMQQueueSettings, RedisQueueSettings, parse_connection
 from app.infrastructure.database.manager import DatabaseManager
 from app.infrastructure.queue.codecs.envelope_json import EnvelopeJsonCodec
 from app.infrastructure.queue.contracts.message import MessageEnvelope
@@ -52,6 +52,14 @@ def test_worker_settings_are_nested_under_queue(monkeypatch: pytest.MonkeyPatch)
 
     assert settings.worker.concurrency == 8
     assert settings.worker.shutdown_timeout_seconds == 45
+
+
+@pytest.mark.parametrize("raw", [{"driver": "redis"}, {"driver": "rabbitmq"}])
+def test_queue_driver_defaults_host_to_loopback(raw: dict[str, object]) -> None:
+    connection = parse_connection(raw)
+
+    assert isinstance(connection, RedisQueueSettings | RabbitMQQueueSettings)
+    assert connection.host == "127.0.0.1"
 
 
 def test_envelope_roundtrip_and_size_and_json_validation() -> None:
@@ -192,7 +200,6 @@ async def test_manager_does_not_wrap_backend_creation_cancellation() -> None:
     "raw",
     [
         {"driver": "memory"},
-        {"driver": "rabbitmq"},
         {"driver": "rabbitmq", "url": "amqp://guest:guest@localhost/"},
         {"driver": "kafka", "bootstrap_servers": []},
         {"driver": "redis", "url": "redis://localhost"},

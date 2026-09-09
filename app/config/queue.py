@@ -20,7 +20,7 @@ class RedisQueueSettings(ConnectionSettings):
     """校验 Redis Streams 连接、消费组和租约参数。"""
 
     driver: Literal["redis"]
-    host: str = Field(min_length=1)
+    host: str = Field(default="127.0.0.1", min_length=1)
     port: int = Field(default=6379, ge=1, le=65535)
     database: int = Field(default=0, ge=0)
     username: str | None = Field(default=None, min_length=1)
@@ -59,7 +59,7 @@ class RabbitMQQueueSettings(ConnectionSettings):
     """校验 RabbitMQ 连接和虚拟主机参数。"""
 
     driver: Literal["rabbitmq"]
-    host: str = Field(min_length=1)
+    host: str = Field(default="127.0.0.1", min_length=1)
     port: int = Field(default=5672, ge=1, le=65535)
     virtual_host: str = Field(default="/", min_length=1)
     username: str = Field(default="guest", min_length=1)

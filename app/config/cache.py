@@ -40,7 +40,7 @@ class RedisCacheSettings(BaseCacheSettings):
     """校验 Redis 连接池、认证和超时参数。"""
 
     driver: Literal["redis"]
-    host: str = Field(min_length=1)
+    host: str = Field(default="127.0.0.1", min_length=1)
     port: int = Field(default=6379, ge=1, le=65535)
     database: int = Field(default=0, ge=0)
     username: str | None = Field(default=None, min_length=1)
@@ -55,7 +55,7 @@ class MemcachedCacheSettings(BaseCacheSettings):
     """校验 Memcached 连接池、认证和超时参数。"""
 
     driver: Literal["memcached"]
-    host: str = Field(min_length=1)
+    host: str = Field(default="127.0.0.1", min_length=1)
     port: int = Field(default=11211, ge=1, le=65535)
     username: str | None = Field(default=None, min_length=1)
     password: SecretStr | None = Field(default=None, min_length=1)

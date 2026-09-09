@@ -52,7 +52,7 @@ class LocalVectorConnectionSettings(BaseVectorConnectionSettings):
 class RemoteVectorConnectionSettings(BaseVectorConnectionSettings):
     """保存远程向量服务共用的地址和认证。"""
 
-    host: str = Field(min_length=1)
+    host: str = Field(default="127.0.0.1", min_length=1)
     username: str | None = Field(default=None, min_length=1)
     password: SecretStr | None = Field(default=None, min_length=1)
     ssl: bool = False

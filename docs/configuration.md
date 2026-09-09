@@ -155,7 +155,7 @@ HTTP 出站配置在 `load_settings()` 时严格校验，普通请求和流式�
 
 | 变量 | 类型 | 默认值 | 约束 |
 | --- | --- | --- | --- |
-| `DB_CONNECTIONS__MAIN__HOST` | `str` | 无 | 非空 |
+| `DB_CONNECTIONS__MAIN__HOST` | `str` | `127.0.0.1` | 非空 |
 | `...__PORT` | `int` | `3306` | 1–65535 |
 | `...__DATABASE` | `str` | 无 | 非空 |
 | `...__USERNAME` | `str` | 无 | 非空 |
@@ -211,7 +211,7 @@ SQLite 不接受 MySQL/PostgreSQL 的连接池字段。连接模型使用 `extra
 | 后缀 | 类型 | 默认值 | 约束 |
 | --- | --- | --- | --- |
 | `DRIVER` | 字面值 | 无 | `redis` |
-| `HOST` | `str` | 无 | 非空 |
+| `HOST` | `str` | `127.0.0.1` | 非空 |
 | `PORT` | `int` | `6379` | 1–65535 |
 | `DATABASE` | `int` | `0` | 至少 0 |
 | `USERNAME` | `str | null` | `null` | 有值时非空 |
@@ -226,7 +226,7 @@ SQLite 不接受 MySQL/PostgreSQL 的连接池字段。连接模型使用 `extra
 | 后缀 | 类型 | 默认值 | 约束 |
 | --- | --- | --- | --- |
 | `DRIVER` | 字面值 | 无 | `memcached` |
-| `HOST` | `str` | 无 | 非空 |
+| `HOST` | `str` | `127.0.0.1` | 非空 |
 | `PORT` | `int` | `11211` | 1–65535 |
 | `USERNAME` / `PASSWORD` | `str | null` | `null` | 必须同时配置或同时省略 |
 | `SSL` | `bool` | `false` | 是否使用 TLS |
@@ -251,7 +251,7 @@ SQLite 不接受 MySQL/PostgreSQL 的连接池字段。连接模型使用 `extra
 
 | 后缀 | 类型 | 默认值 | 约束与说明 |
 | --- | --- | --- | --- |
-| `HOST` | `str` | 无 | 只允许主机名或 IP，不能包含空白、协议、端口或路径；IPv6 使用不带方括号的完整地址 |
+| `HOST` | `str` | `127.0.0.1` | 只允许主机名或 IP，不能包含空白、协议、端口或路径；IPv6 使用不带方括号的完整地址 |
 | `PORT` | `int` | 由驱动决定 | 1–65535 |
 | `USERNAME` / `PASSWORD` | `str | null` | `null` | 必须同时配置或同时省略 |
 | `SSL` | `bool` | `false` | `true` 时使用 HTTPS/TLS |
@@ -265,7 +265,7 @@ SQLite 不接受 MySQL/PostgreSQL 的连接池字段。连接模型使用 `extra
 | `DRIVER` | `milvus` | `milvus` |
 | `MODE` | `local` | `remote` |
 | `PATH` | 必填；文件路径，绝对路径或相对 `storage/` | 不支持 |
-| `HOST` / `PORT` | 不支持 | host 必填；port=`19530` |
+| `HOST` / `PORT` | 不支持 | host=`127.0.0.1`；port=`19530` |
 | `DATABASE` | 不支持 | `default` |
 | `USERNAME` / `PASSWORD` | 不支持 | 可选，必须成对 |
 | `SSL` | 不支持 | `false` |
@@ -278,7 +278,7 @@ SQLite 不接受 MySQL/PostgreSQL 的连接池字段。连接模型使用 `extra
 | `DRIVER` | `chroma` | `chroma` |
 | `MODE` | `local` | `remote` |
 | `PATH` | 必填；目录路径，绝对路径或相对 `storage/` | 不支持 |
-| `HOST` / `PORT` | 不支持 | host 必填；port=`8000` |
+| `HOST` / `PORT` | 不支持 | host=`127.0.0.1`；port=`8000` |
 | `TENANT` | `default_tenant` | `default_tenant` 或 Cloud tenant |
 | `DATABASE` | `default_database` | `default_database` 或 Cloud database |
 | `USERNAME` / `PASSWORD` | 不支持 | 可选的前置代理 Basic Auth，必须成对 |
@@ -359,9 +359,9 @@ HTTP 不启动消费者。新增配置无队列连接默认值；`QUEUE_DEFAULT`
 
 | driver | 字段 |
 | --- | --- |
-| redis | host 必填；port=6379；database=0；username/password 可选；ssl=false；max_connections=10；connect_timeout=5；group=workers；prefix=queue:；lease_seconds=120（至少 3 秒）；command_timeout=10（至少 2 秒） |
+| redis | host=127.0.0.1；port=6379；database=0；username/password 可选；ssl=false；max_connections=10；connect_timeout=5；group=workers；prefix=queue:；lease_seconds=120（至少 3 秒）；command_timeout=10（至少 2 秒） |
 | kafka | bootstrap_servers 非空列表；group=workers；security_protocol=PLAINTEXT；sasl_mechanism=PLAIN；username/password 可选；max_poll_interval_ms=300000 |
-| rabbitmq | host 必填；port=5672；virtual_host=/；username/password=guest；ssl=false；connect_timeout=5 |
+| rabbitmq | host=127.0.0.1；port=5672；virtual_host=/；username/password=guest；ssl=false；connect_timeout=5 |
 
 Kafka security_protocol 可选 PLAINTEXT、SSL、SASL_PLAINTEXT、SASL_SSL；SASL 模式需要 username/password，mechanism 支持 PLAIN、SCRAM-SHA-256、SCRAM-SHA-512。Kafka 保留 bootstrap_servers 列表以支持多个 Broker。Redis 和 RabbitMQ 使用独立的主机、端口及认证字段；ssl=true 时使用系统 CA。Redis command_timeout 控制普通命令与消费阻塞读取的 socket 超时，和仅约束发布调用的 publish_timeout 相互独立。Redis 工作队列在 QueueJob 的 `handle()` 完成或失败记录落库后原子执行 XACK + XDEL，不保留已完成的 Stream 历史。
 

@@ -75,6 +75,21 @@ def test_parser_supports_every_builtin_mode(raw_config: dict[str, object], expec
     assert isinstance(parse_vector_connection(raw_config), expected_type)
 
 
+@pytest.mark.parametrize(
+    "raw_config",
+    [
+        {"driver": "milvus", "mode": "remote"},
+        {"driver": "chroma", "mode": "remote"},
+        {"driver": "elasticsearch", "mode": "remote"},
+    ],
+)
+def test_remote_vector_driver_defaults_host_to_loopback(raw_config: dict[str, object]) -> None:
+    settings = parse_vector_connection(raw_config)
+
+    assert isinstance(settings, MilvusRemoteVectorSettings | ChromaRemoteVectorSettings | ElasticsearchVectorSettings)
+    assert settings.host == "127.0.0.1"
+
+
 def test_chroma_remote_timeout_and_ipv6_url_host_are_normalized() -> None:
     chroma = parse_vector_connection({"driver": "chroma", "mode": "remote", "host": "chroma", "timeout": 2.5})
     milvus = parse_vector_connection({"driver": "milvus", "mode": "remote", "host": "::1"})
