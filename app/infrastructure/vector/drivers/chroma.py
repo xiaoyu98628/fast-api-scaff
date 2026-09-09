@@ -7,7 +7,7 @@ from typing import cast
 
 import chromadb
 import httpx
-from anyio import CapacityLimiter, to_thread
+from anyio import CapacityLimiter, fail_after, to_thread
 from chromadb.api import AsyncClientAPI, ClientAPI
 from chromadb.errors import ChromaError, NotFoundError, UniqueConstraintError
 
@@ -29,7 +29,9 @@ from app.infrastructure.vector.models import (
     VectorPoint,
     validate_collection_name,
     validate_filters,
+    validate_ids,
     validate_limit,
+    validate_points,
     validate_query_vector,
 )
 from app.infrastructure.vector.resource import VectorResource
@@ -49,11 +51,12 @@ _METRICS: dict[VectorMetric, str] = {
 class _ChromaBackend:
     """把同步本地和异步远程 Chroma API 收敛为等待接口。"""
 
-    def __init__(self, client: ClientAPI | AsyncClientAPI, *, local: bool) -> None:
+    def __init__(self, client: ClientAPI | AsyncClientAPI, *, local: bool, timeout: float | None = None) -> None:
         """保存客户端，并为本地同步模式配置串行线程限制器。"""
 
         self._client = client
         self._local = local
+        self._timeout = timeout
         self._limiter = CapacityLimiter(1) if local else None
 
     async def client_call(self, method: str, /, **kwargs: object) -> ChromaResult:
@@ -69,7 +72,18 @@ class _ChromaBackend:
         return await self._call(operation, **kwargs)
 
     async def aclose(self) -> None:
-        """完成统一关闭入口；Chroma 当前客户端没有公开 close 方法。"""
+        """关闭本地客户端；远程异步 SDK 当前没有公开关闭入口。"""
+
+        if not self._local:
+            return
+        close = getattr(self._client, "close", None)
+        if not callable(close):
+            return
+        assert self._limiter is not None
+        try:
+            await to_thread.run_sync(close, abandon_on_cancel=False, limiter=self._limiter)
+        except Exception as error:
+            raise VectorOperationError("Chroma 本地客户端关闭失败") from error
 
     async def _call(self, operation: object, /, **kwargs: object) -> ChromaResult:
         try:
@@ -82,14 +96,18 @@ class _ChromaBackend:
                     limiter=self._limiter,
                 )
             async_operation = cast(Callable[..., Awaitable[ChromaResult]], operation)
-            return await async_operation(**kwargs)
+            assert self._timeout is not None
+            with fail_after(self._timeout):
+                return await async_operation(**kwargs)
         except NotFoundError as error:
             raise VectorCollectionNotFoundError("Chroma Collection 不存在") from error
         except UniqueConstraintError as error:
             raise VectorCollectionConflictError("Chroma Collection 已存在") from error
-        except (httpx.ConnectError, httpx.TimeoutException, OSError) as error:
+        except (TimeoutError, httpx.RequestError, OSError) as error:
             raise VectorConnectionError("Chroma 客户端无法访问目标存储") from error
         except ChromaError as error:
+            raise VectorOperationError("Chroma 操作失败") from error
+        except Exception as error:
             raise VectorOperationError("Chroma 操作失败") from error
 
 
@@ -160,6 +178,7 @@ class ChromaVectorClient:
         """写入调用方提供的向量和标量元数据。"""
 
         validate_collection_name(collection)
+        validate_points(points)
         if not points:
             return
         target = await self._require_collection(collection)
@@ -175,6 +194,7 @@ class ChromaVectorClient:
         """读取 Chroma 向量，并按调用方 ID 顺序返回存在项。"""
 
         validate_collection_name(collection)
+        validate_ids(ids)
         if not ids:
             return ()
         target = await self._require_collection(collection)
@@ -189,6 +209,7 @@ class ChromaVectorClient:
         """按 ID 幂等删除 Chroma 向量。"""
 
         validate_collection_name(collection)
+        validate_ids(ids)
         if not ids:
             return
         target = await self._require_collection(collection)
@@ -216,7 +237,7 @@ class ChromaVectorClient:
                 "query",
                 query_embeddings=[list(vector)],
                 n_results=limit,
-                where=dict(filters) if filters else None,
+                where=_chroma_filter(filters),
                 include=["metadatas", "distances"],
             ),
         )
@@ -263,7 +284,7 @@ async def _create_local_resource(settings: ChromaLocalVectorSettings) -> VectorR
             abandon_on_cancel=False,
             limiter=limiter,
         )
-    except (ChromaError, OSError) as error:
+    except Exception as error:
         raise VectorConnectionError(f"无法打开 Chroma 本地目录 {path}") from error
     return VectorResource(ChromaVectorClient(_ChromaBackend(client, local=True)))
 
@@ -271,17 +292,18 @@ async def _create_local_resource(settings: ChromaLocalVectorSettings) -> VectorR
 async def _create_remote_resource(settings: ChromaRemoteVectorSettings) -> VectorResource:
     headers = _chroma_headers(settings)
     try:
-        client = await chromadb.AsyncHttpClient(
-            host=settings.host,
-            port=settings.port,
-            ssl=settings.ssl,
-            headers=headers or None,
-            tenant=settings.tenant,
-            database=settings.database,
-        )
-    except (ChromaError, httpx.HTTPError, OSError) as error:
+        with fail_after(settings.timeout):
+            client = await chromadb.AsyncHttpClient(
+                host=settings.url_host,
+                port=settings.port,
+                ssl=settings.ssl,
+                headers=headers or None,
+                tenant=settings.tenant,
+                database=settings.database,
+            )
+    except Exception as error:
         raise VectorConnectionError(f"无法创建远程 Chroma 客户端 {settings.host}:{settings.port}") from error
-    return VectorResource(ChromaVectorClient(_ChromaBackend(client, local=False)))
+    return VectorResource(ChromaVectorClient(_ChromaBackend(client, local=False, timeout=settings.timeout)))
 
 
 def _chroma_headers(settings: ChromaRemoteVectorSettings) -> dict[str, str]:
@@ -291,6 +313,13 @@ def _chroma_headers(settings: ChromaRemoteVectorSettings) -> dict[str, str]:
         return {}
     credentials = f"{settings.username}:{settings.password.get_secret_value()}".encode()
     return {"Authorization": f"Basic {b64encode(credentials).decode()}"}
+
+
+def _chroma_filter(filters: VectorFilters | None) -> dict[str, object] | None:
+    if not filters:
+        return None
+    predicates: list[dict[str, object]] = [{key: {"$eq": value}} for key, value in filters.items()]
+    return predicates[0] if len(predicates) == 1 else {"$and": predicates}
 
 
 def _chroma_points(result: Mapping[str, object]) -> tuple[VectorPoint, ...]:

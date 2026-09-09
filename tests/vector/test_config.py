@@ -17,7 +17,7 @@ from app.config.vector import (
 )
 from app.infrastructure.vector.errors import VectorConfigurationError
 from app.infrastructure.vector.manager import VectorStoreManager
-from app.infrastructure.vector.models import VectorCollectionSpec, VectorPoint
+from app.infrastructure.vector.models import VectorCollectionSpec, VectorPoint, validate_limit
 from app.runtime.paths import PROJECT_ROOT, STORAGE_DIR
 
 
@@ -75,6 +75,16 @@ def test_parser_supports_every_builtin_mode(raw_config: dict[str, object], expec
     assert isinstance(parse_vector_connection(raw_config), expected_type)
 
 
+def test_chroma_remote_timeout_and_ipv6_url_host_are_normalized() -> None:
+    chroma = parse_vector_connection({"driver": "chroma", "mode": "remote", "host": "chroma", "timeout": 2.5})
+    milvus = parse_vector_connection({"driver": "milvus", "mode": "remote", "host": "::1"})
+
+    assert isinstance(chroma, ChromaRemoteVectorSettings)
+    assert chroma.timeout == 2.5
+    assert isinstance(milvus, MilvusRemoteVectorSettings)
+    assert milvus.url_host == "[::1]"
+
+
 @pytest.mark.parametrize(
     ("model", "driver"),
     [(MilvusLocalVectorSettings, "milvus"), (ChromaLocalVectorSettings, "chroma")],
@@ -92,6 +102,8 @@ def test_local_relative_path_is_resolved_under_storage(
     "raw_config",
     [
         {"driver": "milvus", "mode": "remote", "host": "https://milvus.example.com"},
+        {"driver": "milvus", "mode": "remote", "host": "milvus.example.com:19530"},
+        {"driver": "chroma", "mode": "remote", "host": " chroma.example.com"},
         {"driver": "milvus", "mode": "remote", "host": "milvus", "username": "root"},
         {"driver": "chroma", "mode": "remote", "host": "chroma", "password": "secret"},
         {
@@ -124,6 +136,19 @@ def test_point_metadata_rejects_reserved_or_nonportable_keys(key: str) -> None:
 def test_point_vector_rejects_boolean_and_non_finite_values() -> None:
     with pytest.raises(VectorConfigurationError):
         VectorPoint(id="doc-1", vector=(True, float("nan")))
+
+
+@pytest.mark.parametrize("value", [-(2**63) - 1, 2**63])
+def test_point_metadata_rejects_integers_outside_signed_64_bit(value: int) -> None:
+    with pytest.raises(VectorConfigurationError, match="64 位"):
+        VectorPoint(id="doc-1", vector=(1.0,), metadata={"sequence": value})
+
+
+def test_boolean_dimension_and_limit_are_rejected() -> None:
+    with pytest.raises(VectorConfigurationError, match="维度"):
+        VectorCollectionSpec(name="knowledge", dimension=True)
+    with pytest.raises(VectorConfigurationError, match="limit"):
+        validate_limit(True)
 
 
 def test_point_id_uses_cross_driver_utf8_byte_limit() -> None:

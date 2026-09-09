@@ -58,6 +58,7 @@ VECTOR_CONNECTIONS__CHROMA_REMOTE__DATABASE=default_database
 VECTOR_CONNECTIONS__CHROMA_REMOTE__USERNAME=reader
 VECTOR_CONNECTIONS__CHROMA_REMOTE__PASSWORD=secret
 VECTOR_CONNECTIONS__CHROMA_REMOTE__SSL=false
+VECTOR_CONNECTIONS__CHROMA_REMOTE__TIMEOUT=10
 ```
 
 此处按照前置代理使用 HTTP Basic Auth 配置，适配器会生成 `Authorization` 请求头。Chroma 1.x 自托管服务没有内置认证；没有认证代理时，应同时删除 `USERNAME` 和 `PASSWORD`。
@@ -75,7 +76,7 @@ VECTOR_CONNECTIONS__CHROMA_CLOUD__API_KEY=token
 VECTOR_CONNECTIONS__CHROMA_CLOUD__SSL=true
 ```
 
-`your-chroma-cloud-host` 需要替换为平台提供的主机名。`API_KEY` 不能与 `USERNAME/PASSWORD` 同时配置。远程模式使用 `AsyncHttpClient`；本地 `PersistentClient` 的同步调用会在线程中串行执行。Chroma SDK 当前没有公开客户端关闭方法，因此统一 `aclose()` 不执行额外关闭动作。
+`your-chroma-cloud-host` 需要替换为平台提供的主机名。`API_KEY` 不能与 `USERNAME/PASSWORD` 同时配置。远程模式使用 `AsyncHttpClient`，适配器通过 `TIMEOUT` 限制客户端创建和每次操作的等待时间；本地 `PersistentClient` 的同步调用和关闭会在线程中串行执行。Chroma 1.5 的远程异步客户端没有公开关闭方法，因此远程 `aclose()` 只封锁管理器入口，不调用 SDK 私有清理接口；进程退出时由运行时释放其剩余资源。
 
 ### 2.3 Elasticsearch
 
@@ -147,7 +148,9 @@ async def index_documents(container: ApplicationContainer) -> None:
 
 Collection 名称必须是 3–63 位小写字母、数字、下划线或连字符，首尾为字母或数字。维度范围是 1–4096，采用三个驱动的共同上限；支持 `cosine`、`dot_product` 和 `l2`。
 
-`VectorPoint` 由字符串 ID、调用方生成的有限浮点向量和元数据组成。ID 的 UTF-8 长度为 1–512 字节。元数据只接受字符串、整数、有限浮点数和布尔值；字段名只能包含字母、数字和下划线且不能以数字开头。`id`、`vector` 和 `_vector_*` 是内部保留字段。
+`VectorPoint` 由字符串 ID、调用方生成的有限浮点向量和元数据组成。ID 的 UTF-8 长度为 1–512 字节。元数据只接受字符串、有符号 64 位整数、有限浮点数和布尔值；字段名只能包含字母、数字和下划线且不能以数字开头。`id`、`vector` 和 `_vector_*` 是内部保留字段。
+
+同一次 `upsert/get/delete` 中的 ID 必须唯一，重复 ID 会在访问后端前抛出 `VectorConfigurationError`。`VectorPoint` 的向量和元数据会在写入时重新校验，防止构造后修改可变元数据而绕过公共约束。
 
 过滤器是顶层元数据字段的 AND 等值匹配。公共接口不承诺范围、全文、嵌套布尔表达式或驱动专有过滤语法。公共 `dot_product` 在 Milvus/Chroma 使用 IP，在 Elasticsearch 使用无需单位向量的 `max_inner_product`。检索结果按相关度降序返回，`score` 越大越相关；不同驱动或不同 metric 的 score 数值不可直接比较。
 
@@ -168,7 +171,7 @@ Collection 名称必须是 3–63 位小写字母、数字、下划线或连字�
 
 ## 6. 生命周期与错误
 
-`VectorStoreManager` 在容器构建时严格校验全部命名连接，但不会创建本地数据、连接远程服务或执行 ping。首次 `get(name)` 并发安全地创建一次客户端；关闭开始后拒绝新获取，并逆序关闭已初始化资源。`/health` 不主动探测向量存储。
+`VectorStoreManager` 在容器构建时严格校验全部命名连接，但不会创建本地数据、连接远程服务或执行 ping。首次 `get(name)` 并发安全地创建一次客户端；关闭开始后拒绝新获取，并逆序关闭已初始化资源。本地 Chroma、Milvus 和 Elasticsearch 客户端会释放其公开资源；远程 Chroma 的 SDK 限制见 2.2 节。`/health` 不主动探测向量存储。
 
 公共异常：
 

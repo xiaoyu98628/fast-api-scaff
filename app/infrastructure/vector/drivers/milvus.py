@@ -29,7 +29,9 @@ from app.infrastructure.vector.models import (
     VectorPoint,
     validate_collection_name,
     validate_filters,
+    validate_ids,
     validate_limit,
+    validate_points,
     validate_query_vector,
 )
 from app.infrastructure.vector.resource import VectorResource
@@ -208,6 +210,7 @@ class MilvusVectorClient:
         """把公共 Point 转换为 Milvus 动态字段实体。"""
 
         validate_collection_name(collection)
+        validate_points(points)
         if not points:
             return
         await self._require_collection(collection)
@@ -218,6 +221,7 @@ class MilvusVectorClient:
         """读取 Milvus 实体并恢复调用方 ID 顺序。"""
 
         validate_collection_name(collection)
+        validate_ids(ids)
         if not ids:
             return ()
         await self._require_collection(collection)
@@ -238,6 +242,7 @@ class MilvusVectorClient:
         """按主键幂等删除 Milvus 实体。"""
 
         validate_collection_name(collection)
+        validate_ids(ids)
         if not ids:
             return
         await self._require_collection(collection)
@@ -315,7 +320,7 @@ async def _create_local_resource(settings: MilvusLocalVectorSettings) -> VectorR
 
 
 async def _create_remote_resource(settings: MilvusRemoteVectorSettings) -> VectorResource:
-    uri = f"{'https' if settings.ssl else 'http'}://{settings.host}:{settings.port}"
+    uri = f"{'https' if settings.ssl else 'http'}://{settings.url_host}:{settings.port}"
     sdk = await to_thread.run_sync(_load_milvus_sdk, abandon_on_cancel=False)
     try:
         client = sdk.async_client(

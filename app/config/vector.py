@@ -1,5 +1,6 @@
 """定义向量存储命名连接及各驱动的严格配置模型。"""
 
+from ipaddress import IPv6Address
 from pathlib import Path
 from typing import Literal
 
@@ -59,11 +60,24 @@ class RemoteVectorConnectionSettings(BaseVectorConnectionSettings):
     @field_validator("host")
     @classmethod
     def validate_host(cls, host: str) -> str:
-        """要求只配置主机名，协议和端口由独立字段表达。"""
+        """要求只配置主机名或裸 IPv6，协议和端口由独立字段表达。"""
 
+        if host != host.strip() or any(character.isspace() for character in host):
+            raise ValueError("host 不能包含空白字符")
         if "://" in host or "/" in host:
             raise ValueError("host 只能包含主机名或 IP，不能包含协议、端口或路径")
+        if ":" in host:
+            try:
+                IPv6Address(host)
+            except ValueError as error:
+                raise ValueError("host 中不能包含端口；IPv6 地址应使用不带方括号的完整地址") from error
         return host
+
+    @property
+    def url_host(self) -> str:
+        """返回适合拼接 URL 的主机表示，并为 IPv6 添加方括号。"""
+
+        return f"[{self.host}]" if ":" in self.host else self.host
 
     @model_validator(mode="after")
     def validate_basic_auth(self) -> RemoteVectorConnectionSettings:
@@ -110,6 +124,7 @@ class ChromaRemoteVectorSettings(RemoteVectorConnectionSettings):
     tenant: str = Field(default="default_tenant", min_length=1)
     database: str = Field(default="default_database", min_length=1)
     api_key: SecretStr | None = Field(default=None, min_length=1)
+    timeout: float = Field(default=10.0, gt=0)
 
     @model_validator(mode="after")
     def validate_authentication(self) -> ChromaRemoteVectorSettings:

@@ -251,7 +251,7 @@ SQLite 不接受 MySQL/PostgreSQL 的连接池字段。连接模型使用 `extra
 
 | 后缀 | 类型 | 默认值 | 约束与说明 |
 | --- | --- | --- | --- |
-| `HOST` | `str` | 无 | 只允许主机名或 IP，不能包含协议、端口或路径 |
+| `HOST` | `str` | 无 | 只允许主机名或 IP，不能包含空白、协议、端口或路径；IPv6 使用不带方括号的完整地址 |
 | `PORT` | `int` | 由驱动决定 | 1–65535 |
 | `USERNAME` / `PASSWORD` | `str | null` | `null` | 必须同时配置或同时省略 |
 | `SSL` | `bool` | `false` | `true` 时使用 HTTPS/TLS |
@@ -284,8 +284,9 @@ SQLite 不接受 MySQL/PostgreSQL 的连接池字段。连接模型使用 `extra
 | `USERNAME` / `PASSWORD` | 不支持 | 可选的前置代理 Basic Auth，必须成对 |
 | `API_KEY` | 不支持 | 可选的 Chroma Cloud token，不能与 Basic Auth 同时配置 |
 | `SSL` | 不支持 | `false` |
+| `TIMEOUT` | 不支持 | `10.0`，正数秒 |
 
-Chroma 1.x 自托管服务没有内置认证；`USERNAME/PASSWORD` 只用于明确配置了 Basic Auth 的前置代理。当前 Chroma SDK 没有与其他两个驱动等价的客户端请求超时参数，因此 Chroma 配置不接受 `TIMEOUT`，避免出现配置存在但不生效的假契约。
+Chroma 1.x 自托管服务没有内置认证；`USERNAME/PASSWORD` 只用于明确配置了 Basic Auth 的前置代理。当前 Chroma SDK 没有公开客户端请求超时参数，适配器通过取消作用域限制远程客户端创建和每次操作的等待时间，并把超时转换为 `VectorConnectionError`。
 
 ### 9.4 Elasticsearch
 

@@ -1,5 +1,6 @@
 """验证三种内置驱动的配置映射、数据转换和本地持久化。"""
 
+import asyncio
 import os
 import subprocess
 import sys
@@ -12,6 +13,7 @@ import app.infrastructure.vector.drivers.chroma as chroma_driver
 import app.infrastructure.vector.drivers.elasticsearch as elasticsearch_driver
 import app.infrastructure.vector.drivers.milvus as milvus_driver
 from app.config.vector import VectorSettings
+from app.infrastructure.vector.errors import VectorConfigurationError, VectorConnectionError
 from app.infrastructure.vector.manager import VectorStoreManager
 from app.infrastructure.vector.models import VectorCollectionInfo, VectorCollectionSpec, VectorMetric, VectorPoint
 from app.runtime.paths import PROJECT_ROOT
@@ -218,8 +220,8 @@ async def test_chroma_local_persists_and_searches_without_an_embedding_function(
         )
     )
     client = await manager.get()
-    first = VectorPoint(id="doc-1", vector=(1.0, 0.0), metadata={"kind": "guide"})
-    second = VectorPoint(id="doc-2", vector=(0.0, 1.0), metadata={"kind": "note"})
+    first = VectorPoint(id="doc-1", vector=(1.0, 0.0), metadata={"kind": "guide", "published": True})
+    second = VectorPoint(id="doc-2", vector=(0.0, 1.0), metadata={"kind": "guide", "published": False})
 
     await client.create_collection(VectorCollectionSpec(name="knowledge", dimension=2))
     await client.upsert("knowledge", (first, second))
@@ -230,10 +232,20 @@ async def test_chroma_local_persists_and_searches_without_an_embedding_function(
         metric=VectorMetric.COSINE,
     )
     assert await client.get("knowledge", ("doc-2", "missing", "doc-1")) == (second, first)
-    matches = await client.search("knowledge", (1.0, 0.0), limit=2, filters={"kind": "guide"})
+    matches = await client.search("knowledge", (1.0, 0.0), limit=2, filters={"kind": "guide", "published": True})
     assert tuple(match.id for match in matches) == ("doc-1",)
 
+    with pytest.raises(VectorConfigurationError, match="不能重复"):
+        await client.upsert("knowledge", (first, first))
+    with pytest.raises(VectorConfigurationError, match="不能重复"):
+        await client.get("knowledge", ("doc-1", "doc-1"))
+    with pytest.raises(VectorConfigurationError, match="不能重复"):
+        await client.delete("knowledge", ("doc-1", "doc-1"))
+
+    raw_client = cast(chroma_driver.ChromaVectorClient, client)._backend._client
+    assert getattr(raw_client, "_closed") is False
     await manager.aclose()
+    assert getattr(raw_client, "_closed") is True
 
 
 @pytest.mark.asyncio
@@ -265,6 +277,58 @@ async def test_chroma_remote_maps_basic_auth_to_proxy_header(monkeypatch: pytest
 
     assert captured["host"] == "chroma.internal"
     assert captured["headers"] == {"Authorization": "Basic cmVhZGVyOnNlY3JldA=="}
+    await manager.aclose()
+
+
+@pytest.mark.asyncio
+async def test_chroma_remote_creation_failure_is_mapped(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def create_client(**kwargs: object) -> object:
+        del kwargs
+        raise RuntimeError("SDK 初始化失败")
+
+    monkeypatch.setattr(chroma_driver.chromadb, "AsyncHttpClient", create_client)
+    manager = VectorStoreManager(
+        VectorSettings(
+            default="remote",
+            connections={"remote": {"driver": "chroma", "mode": "remote", "host": "chroma.internal"}},
+            _env_file=None,
+        )
+    )
+
+    with pytest.raises(VectorConnectionError, match="无法创建"):
+        await manager.get()
+    await manager.aclose()
+
+
+@pytest.mark.asyncio
+async def test_chroma_remote_operation_timeout_is_mapped(monkeypatch: pytest.MonkeyPatch) -> None:
+    class SlowChromaClient:
+        async def heartbeat(self) -> None:
+            await asyncio.Event().wait()
+
+    async def create_client(**kwargs: object) -> object:
+        del kwargs
+        return SlowChromaClient()
+
+    monkeypatch.setattr(chroma_driver.chromadb, "AsyncHttpClient", create_client)
+    manager = VectorStoreManager(
+        VectorSettings(
+            default="remote",
+            connections={
+                "remote": {
+                    "driver": "chroma",
+                    "mode": "remote",
+                    "host": "chroma.internal",
+                    "timeout": 0.01,
+                }
+            },
+            _env_file=None,
+        )
+    )
+    client = await manager.get()
+
+    with pytest.raises(VectorConnectionError, match="无法访问"):
+        await client.ping()
     await manager.aclose()
 
 

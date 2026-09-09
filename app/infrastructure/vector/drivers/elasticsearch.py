@@ -27,7 +27,9 @@ from app.infrastructure.vector.models import (
     VectorPoint,
     validate_collection_name,
     validate_filters,
+    validate_ids,
     validate_limit,
+    validate_points,
     validate_query_vector,
 )
 from app.infrastructure.vector.resource import VectorResource
@@ -127,6 +129,7 @@ class ElasticsearchVectorClient:
         """使用 Bulk API 按文档 ID 插入或覆盖向量。"""
 
         validate_collection_name(collection)
+        validate_points(points)
         if not points:
             return
         await self._require_collection(collection)
@@ -141,6 +144,7 @@ class ElasticsearchVectorClient:
         """通过 Multi Get 读取向量，并恢复调用方 ID 顺序。"""
 
         validate_collection_name(collection)
+        validate_ids(ids)
         if not ids:
             return ()
         await self._require_collection(collection)
@@ -155,6 +159,7 @@ class ElasticsearchVectorClient:
         """通过 Bulk API 幂等删除一批向量文档。"""
 
         validate_collection_name(collection)
+        validate_ids(ids)
         if not ids:
             return
         await self._require_collection(collection)
