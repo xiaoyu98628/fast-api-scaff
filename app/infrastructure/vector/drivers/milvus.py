@@ -9,6 +9,7 @@ from importlib import import_module
 from threading import Lock
 from typing import Protocol, cast
 
+import httpx
 from anyio import CapacityLimiter, to_thread
 
 from app.config.vector import MilvusLocalVectorSettings, MilvusRemoteVectorSettings, parse_vector_connection
@@ -320,7 +321,7 @@ async def _create_local_resource(settings: MilvusLocalVectorSettings) -> VectorR
 
 
 async def _create_remote_resource(settings: MilvusRemoteVectorSettings) -> VectorResource:
-    uri = f"{'https' if settings.ssl else 'http'}://{settings.url_host}:{settings.port}"
+    uri = str(httpx.URL(scheme="https" if settings.ssl else "http", host=settings.host, port=settings.port))
     sdk = await to_thread.run_sync(_load_milvus_sdk, abandon_on_cancel=False)
     try:
         client = sdk.async_client(

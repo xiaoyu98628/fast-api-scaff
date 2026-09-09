@@ -18,7 +18,7 @@ def test_invalid_connection_is_reported_when_manager_is_built() -> None:
     settings = CacheSettings(
         default="broken",
         namespace="test",
-        connections={"broken": {"driver": "redis"}},
+        connections={"broken": {"driver": "redis", "port": 0}},
         _env_file=None,
     )
 

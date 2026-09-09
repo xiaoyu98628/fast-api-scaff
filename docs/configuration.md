@@ -251,7 +251,7 @@ SQLite 不接受 MySQL/PostgreSQL 的连接池字段。连接模型使用 `extra
 
 | 后缀 | 类型 | 默认值 | 约束与说明 |
 | --- | --- | --- | --- |
-| `HOST` | `str` | `127.0.0.1` | 只允许主机名或 IP，不能包含空白、协议、端口或路径；IPv6 使用不带方括号的完整地址 |
+| `HOST` | `str` | `127.0.0.1` | 非空；具体地址格式由对应 SDK 处理 |
 | `PORT` | `int` | 由驱动决定 | 1–65535 |
 | `USERNAME` / `PASSWORD` | `str | null` | `null` | 必须同时配置或同时省略 |
 | `SSL` | `bool` | `false` | `true` 时使用 HTTPS/TLS |

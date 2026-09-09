@@ -90,14 +90,14 @@ def test_remote_vector_driver_defaults_host_to_loopback(raw_config: dict[str, ob
     assert settings.host == "127.0.0.1"
 
 
-def test_chroma_remote_timeout_and_ipv6_url_host_are_normalized() -> None:
+def test_chroma_remote_timeout_and_ipv6_host_are_preserved() -> None:
     chroma = parse_vector_connection({"driver": "chroma", "mode": "remote", "host": "chroma", "timeout": 2.5})
     milvus = parse_vector_connection({"driver": "milvus", "mode": "remote", "host": "::1"})
 
     assert isinstance(chroma, ChromaRemoteVectorSettings)
     assert chroma.timeout == 2.5
     assert isinstance(milvus, MilvusRemoteVectorSettings)
-    assert milvus.url_host == "[::1]"
+    assert milvus.host == "::1"
 
 
 @pytest.mark.parametrize(
@@ -116,9 +116,7 @@ def test_local_relative_path_is_resolved_under_storage(
 @pytest.mark.parametrize(
     "raw_config",
     [
-        {"driver": "milvus", "mode": "remote", "host": "https://milvus.example.com"},
-        {"driver": "milvus", "mode": "remote", "host": "milvus.example.com:19530"},
-        {"driver": "chroma", "mode": "remote", "host": " chroma.example.com"},
+        {"driver": "milvus", "mode": "remote", "host": ""},
         {"driver": "milvus", "mode": "remote", "host": "milvus", "username": "root"},
         {"driver": "chroma", "mode": "remote", "host": "chroma", "password": "secret"},
         {

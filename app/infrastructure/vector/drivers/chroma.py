@@ -294,7 +294,7 @@ async def _create_remote_resource(settings: ChromaRemoteVectorSettings) -> Vecto
     try:
         with fail_after(settings.timeout):
             client = await chromadb.AsyncHttpClient(
-                host=settings.url_host,
+                host=settings.host,
                 port=settings.port,
                 ssl=settings.ssl,
                 headers=headers or None,

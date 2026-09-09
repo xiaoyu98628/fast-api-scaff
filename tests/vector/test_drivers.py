@@ -211,6 +211,36 @@ async def test_milvus_remote_maps_connection_crud_and_search(monkeypatch: pytest
 
 
 @pytest.mark.asyncio
+async def test_milvus_remote_builds_ipv6_uri_with_structured_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    created: list[FakeAsyncMilvusClient] = []
+
+    def create_client(**kwargs: object) -> FakeAsyncMilvusClient:
+        client = FakeAsyncMilvusClient(**kwargs)
+        created.append(client)
+        return client
+
+    sdk = milvus_driver._MilvusSdk(
+        sync_client=lambda *args, **kwargs: None,
+        async_client=create_client,
+        connection_errors=(ConnectionError,),
+        operation_errors=(RuntimeError,),
+    )
+    monkeypatch.setattr(milvus_driver, "_load_milvus_sdk", lambda: sdk)
+    manager = VectorStoreManager(
+        VectorSettings(
+            default="knowledge",
+            connections={"knowledge": {"driver": "milvus", "mode": "remote", "host": "::1"}},
+            _env_file=None,
+        )
+    )
+
+    await manager.get()
+
+    assert created[0].connection_kwargs["uri"] == "http://[::1]:19530"
+    await manager.aclose()
+
+
+@pytest.mark.asyncio
 async def test_chroma_local_persists_and_searches_without_an_embedding_function(tmp_path) -> None:
     manager = VectorStoreManager(
         VectorSettings(
