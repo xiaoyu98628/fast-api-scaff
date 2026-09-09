@@ -1,17 +1,20 @@
 # 缓存
 
-缓存基础设施把 Redis、Memcached 和进程内 Memory 统一成最小异步字节级 KV 契约。统一的是业务需要的交集：`get`、`set`、`delete`、`exists`；脚手架没有把具体驱动的全部能力伪装成通用接口。
+缓存基础设施把 Redis 和 Memcached 统一成最小异步字节级 KV 契约。统一的是业务需要的交集：`get`、`set`、`delete`、`exists`；脚手架没有把具体驱动的全部能力伪装成通用接口。
 
 ## 1. 最小配置与使用
 
 本地开发配置：
 
 ```dotenv
-CACHE_DEFAULT=local
+CACHE_DEFAULT=session
 CACHE_NAMESPACE=fast-api-scaff
 CACHE_DEFAULT_TTL=300
-CACHE_CONNECTIONS__LOCAL__DRIVER=memory
-CACHE_CONNECTIONS__LOCAL__KEY_PREFIX=local
+CACHE_CONNECTIONS__SESSION__DRIVER=redis
+CACHE_CONNECTIONS__SESSION__HOST=127.0.0.1
+CACHE_CONNECTIONS__SESSION__PORT=6379
+CACHE_CONNECTIONS__SESSION__DATABASE=0
+CACHE_CONNECTIONS__SESSION__KEY_PREFIX=session
 ```
 
 通过应用公共入口使用：
@@ -22,7 +25,7 @@ from app.infrastructure.cache.codecs.json import JsonCacheCodec
 
 
 async def example(container: ApplicationContainer) -> None:
-    cache = await container.caches.get("local")
+    cache = await container.caches.get("session")
     await cache.set("users:summary", JsonCacheCodec.encode({"total": 3}))
 
     raw = await cache.get("users:summary")
@@ -91,7 +94,7 @@ CACHE_CONNECTIONS__SESSION__KEY_PREFIX=session
 - 业务 key 不能为空，不能包含空白或控制字符；
 - 最终 key 的 UTF-8 长度不能超过 250 字节。
 
-250 字节采用最严格后端约束，保证同一业务 key 可以在 Redis、Memcached 和 Memory 间迁移。中文字符的 UTF-8 长度通常大于字符数，检查的是字节数。
+250 字节采用最严格后端约束，保证同一业务 key 可以在 Redis 和 Memcached 间迁移。中文字符的 UTF-8 长度通常大于字符数，检查的是字节数。
 
 建议格式：
 
@@ -151,23 +154,11 @@ greeting = None if raw is None else TextCacheCodec.decode(raw)
 
 适合共享缓存、分布式部署和需要成熟运维能力的场景。当前公共接口只使用 Redis String，不提供 Hash/List/Set/ZSet、Lua、Pub/Sub 或分布式锁。
 
-不要从 `CacheManager` 向业务泄露 `redis.asyncio.Redis`。若业务确实需要集合或原子脚本，应为那项能力定义独立协议和专用 Redis 适配器；不要不断扩大通用 `CacheClient`，迫使 Memcached/Memory 提供虚假实现。
+不要从 `CacheManager` 向业务泄露 `redis.asyncio.Redis`。若业务确实需要集合或原子脚本，应为那项能力定义独立协议和专用 Redis 适配器；不要不断扩大通用 `CacheClient`，迫使 Memcached 提供虚假实现。
 
 ### Memcached
 
 适合简单共享 KV。要注意 250 字节 key、30 天 TTL 解释、值大小和服务端配置。`exists` 通过 `get` 实现，会读取值；它不是独立元数据操作。
-
-### Memory
-
-适合单进程开发和测试。它：
-
-- 不持久化，重启即丢失；
-- 不跨 worker/进程共享；
-- 以进程时钟判断过期；
-- 没有容量淘汰策略；
-- 不能模拟真实网络故障、连接池或 Redis/Memcached 全部语义。
-
-不要在多 worker 生产部署中用 Memory 保存会影响正确性的状态，例如 session、验证码、限流计数或分布式幂等记录。
 
 ## 8. 延迟连接与健康
 
@@ -196,7 +187,7 @@ async def check_cache(container: ApplicationContainer) -> bool:
 | `CacheOperationError` | get/set/delete/exists 失败或返回不符合契约 |
 | `CacheKeyError` | 业务 key 不符合跨驱动规则 |
 
-脚手架不会在 Redis 失败后自动切换到 Memory，也不会吞掉错误当作 cache miss。透明回退会造成危险歧义：调用方无法区分“数据不存在”和“缓存服务故障”，不同实例还可能得到彼此隔离的本地状态。
+脚手架不会在一个缓存连接失败后自动切换到其他连接或进程内临时存储，也不会吞掉错误当作 cache miss。透明回退会造成危险歧义：调用方无法区分“数据不存在”和“缓存服务故障”，不同实例还可能访问不一致的数据。
 
 是否降级属于业务策略：
 
@@ -255,7 +246,7 @@ Application Service
 | Redis 配置正确但首次请求失败 | 网络、DNS、TLS、认证、数据库编号和超时 |
 | key 报超过 250 字节 | 检查最终 namespace + prefix + key 的 UTF-8 长度 |
 | Memcached 长 TTL 立即过期 | 系统时钟和 30 天转换 |
-| 多 worker 数据不一致 | 是否错误使用 Memory |
+| 多 worker 数据不一致 | 各实例是否连接同一后端、database 和 namespace |
 | 把 dict 传给 set 报错 | 显式使用 JsonCacheCodec |
 | Redis 挂了却没有自动回退 | 这是契约；在业务适配器定义可观测降级策略 |
 | 缓存读到旧结构 | codec/schema 版本与旧 TTL 数据 |

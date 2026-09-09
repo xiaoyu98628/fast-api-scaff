@@ -5,7 +5,6 @@ from collections.abc import Iterable
 from app.infrastructure.cache.contracts.provider import CacheProvider, CacheResourceDefinition
 from app.infrastructure.cache.errors import CacheConfigurationError
 from app.infrastructure.cache.providers.memcached import MemcachedCacheProvider
-from app.infrastructure.cache.providers.memory import MemoryCacheProvider
 from app.infrastructure.cache.providers.redis import RedisCacheProvider
 
 
@@ -56,6 +55,5 @@ DEFAULT_CACHE_PROVIDERS = CacheProviderRegistry(
     (
         RedisCacheProvider(),
         MemcachedCacheProvider(),
-        MemoryCacheProvider(),
     )
 )

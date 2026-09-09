@@ -10,7 +10,7 @@
 - 简单数据库会话认证：登录、当前用户、退出，随机 Bearer Token 只保存摘要；
 - MySQL、PostgreSQL、SQLite 异步 SQLAlchemy；
 - Repository、Mapper、Unit of Work 与 Alembic migration；
-- Redis、Memcached、Memory 字节级 KV 缓存；
+- Redis、Memcached 字节级 KV 缓存；
 - 普通与流式 HTTP 出站请求、独立连接池、阶段超时、池压力诊断和结构化日志；
 - Redis Streams、Kafka、RabbitMQ 队列适配器和独立 Worker；
 - QueueJob 动态解析与分发、投递内重试、SQL 失败存储及 Console 重放；
@@ -29,7 +29,7 @@ uv sync --extra dev
 cp sample.env .env
 ```
 
-首次运行建议把 `.env` 中 main 数据库和默认缓存改为 SQLite + Memory。切换 main 的 driver 时，必须先删除原 MySQL 的 `HOST`、`PORT`、`USERNAME`、`PASSWORD`、连接池等字段；连接配置禁止携带当前驱动不支持的额外字段。
+首次运行建议把 `.env` 中 main 数据库改为 SQLite，并让本地与部署环境都使用 Redis 缓存。切换 main 的 driver 时，必须先删除原 MySQL 的 `HOST`、`PORT`、`USERNAME`、`PASSWORD`、连接池等字段；连接配置禁止携带当前驱动不支持的额外字段。
 
 ```dotenv
 TZ=Asia/Shanghai
@@ -40,11 +40,14 @@ DB_CONNECTIONS__MAIN__DATABASE=data/database.sqlite
 DB_CONNECTIONS__MAIN__ECHO=false
 DB_CONNECTIONS__MAIN__SLOW_QUERY_MS=500
 
-CACHE_DEFAULT=local
+CACHE_DEFAULT=session
 CACHE_NAMESPACE=fast-api-scaff
 CACHE_DEFAULT_TTL=300
-CACHE_CONNECTIONS__LOCAL__DRIVER=memory
-CACHE_CONNECTIONS__LOCAL__KEY_PREFIX=local
+CACHE_CONNECTIONS__SESSION__DRIVER=redis
+CACHE_CONNECTIONS__SESSION__HOST=127.0.0.1
+CACHE_CONNECTIONS__SESSION__PORT=6379
+CACHE_CONNECTIONS__SESSION__DATABASE=0
+CACHE_CONNECTIONS__SESSION__KEY_PREFIX=session
 ```
 
 执行迁移并启动：
@@ -104,7 +107,7 @@ docker compose up --build
 docker compose --profile worker up --build
 ```
 
-默认命令只启动 HTTP 应用；带 `worker` profile 的命令同时启动独立消费容器。Compose 不提供 MySQL、PostgreSQL、Redis、Kafka、RabbitMQ 或 Memcached。容器内 `127.0.0.1` 指向容器自身；应用可以使用 SQLite 与 Memory 缓存，队列 Worker 必须配置容器可访问的 Redis、Kafka 或 RabbitMQ 地址。Compose 使用 Uvicorn reload，仅适合本地开发。
+默认命令只启动 HTTP 应用；带 `worker` profile 的命令同时启动独立消费容器。Compose 不提供 MySQL、PostgreSQL、Redis、Kafka、RabbitMQ 或 Memcached。容器内 `127.0.0.1` 指向容器自身；应用可以使用 SQLite，但缓存必须配置容器可访问的 Redis 或 Memcached，队列 Worker 必须配置容器可访问的 Redis、Kafka 或 RabbitMQ 地址。Compose 使用 Uvicorn reload，仅适合本地开发。
 
 Worker 复用应用镜像、`.env` 和网络且不暴露端口。镜像本身不声明健康检查，Compose 只为 HTTP 服务配置 `/health` 检测。脚手架内置登录成功日志 Job；Worker 根据消息携带的类路径动态加载并执行它，不扫描业务目录，也不需要在组合根注册。
 

@@ -8,13 +8,11 @@ from redis.asyncio import Redis
 
 from app.infrastructure.cache.clients.managed import ManagedCacheClient
 from app.infrastructure.cache.connections.memcached import MemcachedCacheConnection
-from app.infrastructure.cache.connections.memory import MemoryCacheConnection
 from app.infrastructure.cache.connections.redis import RedisCacheConnection
 from app.infrastructure.cache.contracts.client import NO_EXPIRATION, CacheTTL
 from app.infrastructure.cache.errors import CacheKeyError, CacheOperationError
 from app.infrastructure.cache.key import CacheKeyBuilder
 from app.infrastructure.cache.storages.memcached import MemcachedCacheStorage
-from app.infrastructure.cache.storages.memory import MemoryCacheStorage
 from app.infrastructure.cache.storages.redis.string import RedisStringStorage
 
 
@@ -48,20 +46,6 @@ async def test_managed_client_rejects_invalid_ttl(ttl: CacheTTL) -> None:
 def test_key_builder_rejects_non_portable_keys(key: str) -> None:
     with pytest.raises(CacheKeyError):
         CacheKeyBuilder("app").build(key)
-
-
-@pytest.mark.asyncio
-async def test_memory_cache_expires_values_using_monotonic_clock() -> None:
-    now = 10.0
-    connection = MemoryCacheConnection(clock=lambda: now)
-    storage = MemoryCacheStorage(connection)
-
-    await storage.set("key", b"value", ttl=5)
-    assert await storage.get("key") == b"value"
-
-    now = 15.0
-    assert await storage.get("key") is None
-    assert await storage.exists("key") is False
 
 
 @pytest.mark.asyncio

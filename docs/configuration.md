@@ -16,7 +16,7 @@
 | CORS | `CORS_` | `CORS_ALLOW_ORIGINS` |
 | HTTP 出站 | `HTTP_` | `HTTP_TIMEOUT__CONNECT` |
 | 数据库 | `DB_` | `DB_CONNECTIONS__MAIN__DRIVER` |
-| 缓存 | `CACHE_` | `CACHE_CONNECTIONS__LOCAL__DRIVER` |
+| 缓存 | `CACHE_` | `CACHE_CONNECTIONS__SESSION__DRIVER` |
 
 双下划线 `__` 表示嵌套字典。连接名不区分业务语义，由组合根按名字选择：
 
@@ -235,15 +235,6 @@ SQLite 不接受 MySQL/PostgreSQL 的连接池字段。连接模型使用 `extra
 | `READ_TIMEOUT` | `float` | `5.0` | 正数秒 |
 | `BLOCKING_TIMEOUT` | `float` | `5.0` | 正数秒 |
 
-### 8.4 Memory
-
-```dotenv
-CACHE_CONNECTIONS__LOCAL__DRIVER=memory
-CACHE_CONNECTIONS__LOCAL__KEY_PREFIX=local
-```
-
-Memory 没有网络参数。数据仅存在于当前进程内，进程重启即丢失，多 worker 之间也不共享。
-
 完整语义见[缓存](cache.md)。
 
 ## 9. 校验与连接时机
@@ -254,7 +245,7 @@ Memory 没有网络参数。数据仅存在于当前进程内，进程重启即�
 | 构建容器 | 构建管理器；校验所有缓存定义 | 不访问 HTTP 上游或数据库网络，不主动 ping 缓存 |
 | 首次 HTTP `request/stream` | 创建普通与流式连接池并访问目标上游 | 不会探测其他上游，不会自动重试 |
 | 首次数据库 `get/session` | 校验目标定义、创建 Engine/Session 工厂 | 不保证每个已配置连接都可用 |
-| 首次缓存 `get/set/ping` | 创建目标缓存资源并访问后端 | 不会自动回退到 Memory |
+| 首次缓存 `get/set/ping` | 创建目标缓存资源并访问后端 | 不会自动切换到其他连接或后端 |
 | 关闭宿主 | 逆序关闭已初始化资源 | 未初始化资源不会被无意义连接 |
 
 这解释了为什么“应用能启动”不等于“所有依赖都健康”。生产就绪检查应主动验证业务必需的连接，但不要把非关键依赖随意绑进基础 `/health`，否则会改变健康语义。
@@ -276,7 +267,7 @@ Memory 没有网络参数。数据仅存在于当前进程内，进程重启即�
 - 不通过 `HTTP_VERIFY=false` 长期绕过生产 TLS 证书问题。
 - 不假设基础 HTTP 客户端会自动重试或把 4xx/5xx 转成异常。
 - 不通过改变 `DB_DEFAULT` 猜测用户上下文会切库；当前组合明确指定 `main`。
-- 不把 Memory 当作多进程共享缓存或持久存储。
+- 不为本地开发配置与部署环境不同的缓存驱动；测试隔离应使用测试目录内的 Fake。
 - 不把 `LOG_LEVEL=DEBUG` 当作生产故障的长期方案，尤其不要记录密码、令牌和完整个人数据。
 
 配置报错时，先对照 `sample.env` 和本章字段，再阅读[故障排查](troubleshooting.md)。

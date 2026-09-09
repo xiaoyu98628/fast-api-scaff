@@ -77,9 +77,3 @@ class MemcachedCacheSettings(BaseCacheSettings):
             raise ValueError("username 和 password 必须同时配置或同时省略")
 
         return self
-
-
-class MemoryCacheSettings(BaseCacheSettings):
-    """定义不依赖外部服务的单进程缓存连接。"""
-
-    driver: Literal["memory"]

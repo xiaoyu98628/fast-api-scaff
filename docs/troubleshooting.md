@@ -41,7 +41,7 @@ git status --short
 | `page`/`limit` 请求返回 422 | 页码从 1 开始，每页范围为 1–1000；旧 `offset`/`page_size` 不再接受 | 修正参数并查看 validation data |
 | DELETE 解析 JSON 失败 | 204 没有响应体 | 客户端按 status 处理 |
 | `f` 没有生效 | Base64/URL/JSON 格式不合法 | 用项目 encode 函数生成并确认它替换查询串 |
-| 多 worker 缓存不一致 | 使用 Memory | 换共享后端，Memory 仅单进程 |
+| 多 worker 缓存不一致 | 实例连接了不同后端、database 或 namespace | 对比各实例的实际缓存配置 |
 | cache set 报 bytes 错误 | 未显式编码 | 使用 Text/Json codec |
 | key 超长或含空白 | 最终 key 违反跨驱动规则 | 检查 namespace+prefix+业务 key UTF-8 长度 |
 | Alembic autogenerate 无变化 | Model 未注册 | 更新 `database/main/model_registry.py` |
@@ -168,7 +168,6 @@ uv run alembic -c database/main/alembic.ini current
 
 - TTL 只能是正整数、默认枚举或永不过期枚举；
 - Memcached 超过 30 天会转绝对时间，检查系统时钟；
-- Memory 数据在进程重启/worker 间不共享；
 - 最终 key UTF-8 最长 250 字节；
 - codec 变更后旧值可能解码失败，使用 schema 版本和有限 TTL。
 

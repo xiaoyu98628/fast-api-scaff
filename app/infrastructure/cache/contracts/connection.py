@@ -12,6 +12,6 @@ class CacheConnection(Protocol):
         ...
 
     async def aclose(self) -> None:
-        """释放连接池或进程内资源。"""
+        """释放驱动拥有的连接资源。"""
 
         ...
