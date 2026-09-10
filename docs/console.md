@@ -9,6 +9,7 @@ uv run python -m app.console --help
 uv run python -m app.console --version
 uv run python -m app.console app --help
 uv run python -m app.console users --help
+uv run python -m app.console queue --help
 ```
 
 不带命令时显示帮助。当前命令：
@@ -18,6 +19,9 @@ uv run python -m app.console users --help
 | `app info` | 否 | 显示应用、时区和已声明连接名 |
 | `users create` | 是 | 通过用户应用服务创建用户 |
 | `users list` | 是 | 通过用户应用服务分页查询用户 |
+| `queue failed` | 是 | 分页查询持久失败任务 |
+| `queue retry` | 是 | 重新发布指定失败任务并保留原记录 |
+| `queue forget` | 是 | 删除指定失败任务记录 |
 
 ## 2. 应用信息
 
@@ -30,7 +34,8 @@ uv run python -m app.console app info
 - `name`、`version`、`environment`、`debug`；
 - 当前进程本地时区名称和 offset；
 - `.env` 中声明的数据库连接名；
-- `.env` 中声明的缓存连接名。
+- `.env` 中声明的缓存连接名；
+- `.env` 中声明的向量存储连接名。
 
 它只读取配置，不构建应用容器，也不会验证数据库、缓存网络或迁移状态。看到连接名只能证明配置字典中存在该名称。
 
@@ -176,4 +181,33 @@ class ExampleConsoleCommand(ConsoleCommand):
 
 ## 队列失败管理
 
-新增 `queue failed --limit 20 --offset 0`、`queue retry <failure-id>`、`queue forget <failure-id>`，均由 `app.bootstrap.console.application.ConsoleHost` 管理生命周期。需要 SQL 失败存储；列表不显示 payload，重放保留原记录。详见[队列](queue.md)。
+分页查询失败任务：
+
+```bash
+uv run python -m app.console queue failed --limit 20 --offset 0
+```
+
+`limit` 范围为 1–1000，默认值为 20；`offset` 从 0 开始。结果不包含原始任务载荷，单条记录包含：
+
+- `failure_id`、`job_id`；
+- `connection`、`queue`；
+- `failed_at`、`attempts`、`reason`；
+- `error_type`、`stacktrace`。
+
+重新发布失败任务：
+
+```bash
+uv run python -m app.console queue retry <failure-id>
+```
+
+成功结果包含新任务的 `job_id` 和来源记录的 `replay_of`。重放后原失败记录仍然保留；结果不确定时不要盲目重复执行。
+
+删除失败记录：
+
+```bash
+uv run python -m app.console queue forget <failure-id>
+```
+
+成功结果包含被删除的 `failure_id`。删除后无法再通过 Console 重放该记录。
+
+这些命令要求启用 SQL 失败任务存储并完成对应数据库迁移。更完整的队列配置与失败处理语义见[队列](queue.md)。
