@@ -21,7 +21,7 @@ async def submit(container: ApplicationContainer, job: object):
 await container.queues.dispatch(job, connection="redis", queue="reports", correlation_id="request-123")
 ```
 
-`dispatch()` 不启动消费者；构建容器也不连接队列服务。第一次发布时 Kafka 才建立 Producer，RabbitMQ 在第一次获取 Dispatcher 时建立发布连接，Redis 客户端在首次命令时连接。Kafka Worker 只消费时不会初始化 Producer。
+`dispatch()` 不启动消费者；构建容器也不连接队列服务。第一次发布时 Kafka 才建立 Producer，RabbitMQ 在第一次获取 Dispatcher 时建立发布连接，Redis 客户端在首次命令时连接。Kafka Worker 只消费时不会初始化 Producer。后端首次创建、连接或消费者创建阶段的驱动异常会在 `QueueManager` 边界转换为 `QueueError`，已有 `QueueError` 与任务取消保持原语义。
 
 队列名映射为 Redis 的 `prefix + queue`、Kafka Topic、RabbitMQ 同名持久队列。RabbitMQ 使用默认 exchange 和同名 routing key；首版不提供自定义 exchange 或绑定。
 

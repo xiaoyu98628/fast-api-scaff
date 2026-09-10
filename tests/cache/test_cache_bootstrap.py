@@ -19,7 +19,7 @@ async def test_invalid_cache_configuration_blocks_application_startup() -> None:
         cache=CacheSettings(
             default="broken",
             namespace="test",
-            connections={"broken": {"driver": "memcached"}},
+            connections={"broken": {"driver": "memcached", "min_connections": 2, "max_connections": 1}},
             _env_file=None,
         ),
         cors=CorsSettings(_env_file=None),

@@ -65,6 +65,7 @@ jobs:
           DB_CONNECTIONS: '{"main":{"driver":"mysql","host":"127.0.0.1","port":3306,"database":"fast_api_scaff","username":"root","password":"root"}}'
         run: |
           uv run alembic -c database/main/alembic.ini upgrade head
+          uv run alembic -c database/main/alembic.ini check
           uv run alembic -c database/main/alembic.ini downgrade base
           uv run alembic -c database/main/alembic.ini upgrade head
 
@@ -74,5 +75,6 @@ jobs:
           DB_CONNECTIONS: '{"main":{"driver":"postgresql","host":"127.0.0.1","port":5432,"database":"fast_api_scaff","username":"postgres","password":"postgres"}}'
         run: |
           uv run alembic -c database/main/alembic.ini upgrade head
+          uv run alembic -c database/main/alembic.ini check
           uv run alembic -c database/main/alembic.ini downgrade base
           uv run alembic -c database/main/alembic.ini upgrade head

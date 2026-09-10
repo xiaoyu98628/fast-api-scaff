@@ -212,3 +212,17 @@ def test_queue_clients_are_confined_to_drivers() -> None:
             if module.split(".")[0] in {"aiokafka", "aio_pika"}:
                 violations.append(f"{path.relative_to(PROJECT_ROOT)}:{line} imports {module}")
     assert violations == []
+
+
+def test_vector_sdks_are_confined_to_vector_drivers() -> None:
+    violations: list[str] = []
+    allowed_root = _APP_ROOT / "infrastructure/vector/drivers"
+
+    for path in sorted(_APP_ROOT.rglob("*.py")):
+        if path.is_relative_to(allowed_root):
+            continue
+        for module, line in _iter_imports(ast.parse(path.read_text(encoding="utf-8"))):
+            if module.split(".")[0] in {"chromadb", "elastic_transport", "elasticsearch", "pymilvus"}:
+                violations.append(f"{path.relative_to(PROJECT_ROOT)}:{line} imports {module}")
+
+    assert violations == []

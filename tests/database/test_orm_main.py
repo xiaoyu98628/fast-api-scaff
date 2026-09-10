@@ -50,4 +50,6 @@ def test_main_database_model_registry_loads_queue_failed_job_model() -> None:
         "failed_at": "最终失败时间",
         "attempts": "本次投递执行次数",
         "reason": "失败原因分类",
+        "error_type": "异常类型，不含异常消息",
+        "stacktrace": "安全调用栈位置",
     }

@@ -61,6 +61,8 @@ class AuthApplicationService:
             # 原始 Token 只返回调用方，事务中持久化的是编解码器生成的摘要。
             credential = self.tokens.issue()
             now = self.clock()
+            # 登录是已有的稳定写入口，在同一事务内顺带回收全局过期会话。
+            await uow.sessions.remove_expired(now=now)
             await uow.sessions.add(
                 UserSession(
                     token_digest=self.tokens.digest(credential),

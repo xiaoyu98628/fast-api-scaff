@@ -35,6 +35,8 @@ class SqlFailedJobStore:
                         failed_at=record.failed_at,
                         attempts=record.attempts,
                         reason=record.reason,
+                        error_type=record.error_type,
+                        stacktrace=[dict(frame) for frame in record.stacktrace] or None,
                     )
                 )
                 await session.commit()
@@ -69,12 +71,14 @@ class SqlFailedJobStore:
     @staticmethod
     def _record(row: FailedJobModel) -> FailedJobRecord:
         return FailedJobRecord(
-            UUID(row.failure_id),
-            row.payload,
-            row.connection,
-            row.queue,
-            row.failed_at,
-            row.attempts,
-            row.reason,
-            UUID(row.job_id) if row.job_id else None,
+            failure_id=UUID(row.failure_id),
+            payload=row.payload,
+            connection=row.connection,
+            queue=row.queue,
+            failed_at=row.failed_at,
+            attempts=row.attempts,
+            reason=row.reason,
+            job_id=UUID(row.job_id) if row.job_id else None,
+            error_type=row.error_type,
+            stacktrace=tuple(dict(frame) for frame in row.stacktrace or ()),
         )

@@ -1,6 +1,6 @@
 # 使用手册
 
-这套文档面向两类读者：第一次运行脚手架的使用者，以及准备在其上新增限界上下文、数据库连接、缓存实现或宿主入口的维护者。
+这套文档面向两类读者：第一次运行脚手架的使用者，以及准备在其上新增限界上下文、数据库/缓存/向量连接或宿主入口的维护者。
 
 建议先按顺序阅读“开始使用”，遇到具体问题时再进入专题章节。文档只描述当前代码中已经实现并可验证的能力；常驻调度服务尚未实现，因此不作为现有功能说明。
 
@@ -16,6 +16,7 @@
 
 - [数据库](database.md)：多连接、SQLAlchemy、Repository、Unit of Work 和 Alembic。
 - [缓存](cache.md)：Redis、Memcached、key、TTL、编码与边界。
+- [向量存储](vector.md)：Milvus、Chroma、Elasticsearch、本地模式、统一协议与扩展边界。
 - [HTTP 出站请求](outbound-http.md)：公共契约、普通/流式请求、连接池、超时和错误语义。
 - [日志](logging.md)：结构化日志、访问日志、字段、输出流和扩展驱动。
 - [队列](queue.md)：QueueJob、三种后端、失败记录和重放。
@@ -25,7 +26,7 @@
 
 - [架构说明](architecture.md)：模块化单体、DDD 分层、依赖方向和上下文扩展。
 - [开发与质量](development.md)：测试、Lint、类型检查、迁移和提交前检查。
-- [故障排查](troubleshooting.md)：按症状定位配置、数据库、缓存、HTTP 和 Console 问题。
+- [故障排查](troubleshooting.md)：按症状定位配置、数据库、缓存、向量、HTTP 和 Console 问题。
 
 ## 当前能力边界
 
@@ -36,6 +37,7 @@
 - 简单会话认证，用户表不增加角色或版本字段；
 - MySQL、PostgreSQL、SQLite 异步数据库连接；
 - Redis、Memcached 字节级 KV 缓存；
+- Milvus、Chroma 与 Elasticsearch 统一向量 CRUD 和近邻检索；
 - 普通与流式 HTTP 出站客户端、独立连接池和统一传输错误；
 - JSON/Text 结构化日志、请求 ID、访问日志和统一 HTTP 响应；
 - Redis Streams、Kafka、RabbitMQ 队列适配器与独立 Worker；

@@ -22,6 +22,8 @@ async def list_failures(context: ConsoleContext, *, limit: int, offset: int) -> 
             "failed_at": item.failed_at,
             "attempts": item.attempts,
             "reason": item.reason,
+            "error_type": item.error_type,
+            "stacktrace": item.stacktrace,
         }
         for item in records
     ]

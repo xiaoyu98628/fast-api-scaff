@@ -50,7 +50,7 @@ class MySQLDatabaseSettings(PooledDatabaseSettings):
     """校验 MySQL/asyncmy 连接参数。"""
 
     driver: Literal["mysql"]
-    host: str = Field(min_length=1)
+    host: str = Field(default="127.0.0.1", min_length=1)
     port: int = Field(default=3306, ge=1, le=65535)
     database: str = Field(min_length=1)
     username: str = Field(min_length=1)
@@ -62,7 +62,7 @@ class PostgreSQLDatabaseSettings(PooledDatabaseSettings):
     """校验 PostgreSQL/asyncpg 连接参数。"""
 
     driver: Literal["postgresql", "pgsql"]
-    host: str = Field(min_length=1)
+    host: str = Field(default="127.0.0.1", min_length=1)
     port: int = Field(default=5432, ge=1, le=65535)
     database: str = Field(min_length=1)
     username: str = Field(min_length=1)

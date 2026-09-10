@@ -10,6 +10,7 @@ from app.infrastructure.cache.manager import CacheManager
 from app.infrastructure.database.manager import DatabaseManager
 from app.infrastructure.http.manager import HttpClientManager
 from app.infrastructure.queue.manager import QueueManager
+from app.infrastructure.vector.manager import VectorStoreManager
 
 type AsyncCallback = Callable[[], Awaitable[None]]
 type Callback = Callable[[], None]
@@ -23,6 +24,7 @@ class ApplicationContainer:
     caches: CacheManager
     http: HttpClientManager
     queues: QueueManager
+    vectors: VectorStoreManager
     users: UserContext
     startup_callbacks: tuple[AsyncCallback, ...] = ()
     async_shutdown_callbacks: tuple[AsyncCallback, ...] = ()

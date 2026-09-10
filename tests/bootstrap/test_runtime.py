@@ -8,11 +8,13 @@ from app.config.cache import CacheSettings
 from app.config.database import DatabaseSettings
 from app.config.http import HttpSettings
 from app.config.queue import QueueSettings
+from app.config.vector import VectorSettings
 from app.contexts.user.composition import build_user_context
 from app.infrastructure.cache.manager import CacheManager
 from app.infrastructure.database.manager import DatabaseManager
 from app.infrastructure.http.manager import HttpClientManager
 from app.infrastructure.queue.manager import QueueManager
+from app.infrastructure.vector.manager import VectorStoreManager
 from app.runtime.container import ApplicationContainer
 from app.runtime.lifecycle import ApplicationRuntime
 
@@ -25,14 +27,16 @@ def build_container(
     databases = DatabaseManager(DatabaseSettings(_env_file=None))
     caches = CacheManager(CacheSettings(_env_file=None))
     http = HttpClientManager(HttpSettings(_env_file=None))
+    vectors = VectorStoreManager(VectorSettings(_env_file=None))
     return ApplicationContainer(
         queues=QueueManager(QueueSettings(_env_file=None), databases),
         databases=databases,
         caches=caches,
         http=http,
+        vectors=vectors,
         users=build_user_context(databases),
         startup_callbacks=startup_callbacks,
-        async_shutdown_callbacks=(*async_shutdown_callbacks, databases.aclose, caches.aclose, http.aclose),
+        async_shutdown_callbacks=(*async_shutdown_callbacks, databases.aclose, caches.aclose, http.aclose, vectors.aclose),
     )
 
 

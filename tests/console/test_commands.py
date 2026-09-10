@@ -1,10 +1,16 @@
 """验证 Console 命令注册、发现和冲突处理。"""
 
+from datetime import datetime
+from typing import cast
+from unittest.mock import AsyncMock, Mock
+from uuid import uuid4
+
 import pytest
 import typer
 
 from app.bootstrap.build import build_application_container
 from app.bootstrap.console.application import ConsoleHost
+from app.infrastructure.queue.contracts.failed_store import FailedJobRecord
 from app.infrastructure.queue.errors import QueueError
 from app.interfaces.console.command import ConsoleCommand
 from app.interfaces.console.commands.queue import list_failures
@@ -42,6 +48,46 @@ async def test_console_rejects_unconfigured_failure_database() -> None:
             await list_failures(ConsoleContext(settings, container), limit=20, offset=0)
     finally:
         await container.aclose()
+
+
+@pytest.mark.asyncio
+async def test_list_failures_includes_safe_diagnostics_without_payload() -> None:
+    failure_id = uuid4()
+    job_id = uuid4()
+    failed_at = datetime.now()
+    stacktrace = ({"module": "tests.jobs", "function": "ExampleJob.handle", "line": 27},)
+    record = FailedJobRecord(
+        failure_id=failure_id,
+        payload=b"sensitive task data",
+        connection="main",
+        queue="jobs",
+        failed_at=failed_at,
+        attempts=1,
+        reason="handler_error",
+        job_id=job_id,
+        error_type="builtins.ValueError",
+        stacktrace=stacktrace,
+    )
+    failed_jobs = Mock()
+    failed_jobs.list = AsyncMock(return_value=[record])
+    context = cast(ConsoleContext, Mock(container=Mock(queues=Mock(failed_jobs=failed_jobs))))
+
+    result = await list_failures(context, limit=20, offset=0)
+
+    assert result == [
+        {
+            "failure_id": failure_id,
+            "job_id": job_id,
+            "connection": "main",
+            "queue": "jobs",
+            "failed_at": failed_at,
+            "attempts": 1,
+            "reason": "handler_error",
+            "error_type": "builtins.ValueError",
+            "stacktrace": stacktrace,
+        }
+    ]
+    assert "sensitive task data" not in repr(result)
 
 
 def test_discovery_finds_concrete_commands_in_stable_order() -> None:

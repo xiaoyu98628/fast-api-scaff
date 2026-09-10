@@ -96,9 +96,21 @@ class QueueManager:
         """延迟获取连接后端并构造生命周期受控的 Dispatcher。"""
 
         resolved = self.resolve_name(name)
-        backend = await self._resources[resolved].get()
+        backend = await self._get_backend(resolved)
         config = self._configs[resolved]
         return Dispatcher(backend, self.codec, config.default_queue, config.publish_timeout, ensure_active=self._ensure_open)
+
+    async def _get_backend(self, name: str) -> QueueBackend:
+        """获取后端，并把驱动首次建连异常收敛为公共队列异常。"""
+
+        try:
+            return await self._resources[name].get()
+        except QueueError:
+            raise
+        except Exception as error:
+            if self._closed:
+                raise QueueError("队列管理器已关闭") from error
+            raise QueueError(f"队列连接 {name!r} 创建失败") from error
 
     async def dispatch(
         self,
@@ -121,8 +133,13 @@ class QueueManager:
         target = self._configs[resolved].default_queue if queue is None else queue
         if not target.strip() or len(target) > 200 or concurrency < 1:
             raise QueueConfigurationError("消费参数不合法")
-        backend = await self._resources[resolved].get()
-        consumer = await backend.consumer(target, concurrency)
+        backend = await self._get_backend(resolved)
+        try:
+            consumer = await backend.consumer(target, concurrency)
+        except QueueError:
+            raise
+        except Exception as error:
+            raise QueueError(f"队列连接 {resolved!r} 创建消费者失败") from error
         if self._closed:
             await consumer.aclose()
             raise QueueError("队列管理器已关闭")

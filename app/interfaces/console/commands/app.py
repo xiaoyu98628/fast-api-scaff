@@ -18,6 +18,7 @@ class ApplicationInfo:
     timezone: str
     database_connections: tuple[str, ...]
     cache_connections: tuple[str, ...]
+    vector_connections: tuple[str, ...]
 
 
 def get_application_info(settings: Settings) -> ApplicationInfo:
@@ -32,6 +33,7 @@ def get_application_info(settings: Settings) -> ApplicationInfo:
         timezone=f"{local_time.tzname()} ({local_time.strftime('%z')})",
         database_connections=tuple(settings.database.connections),
         cache_connections=tuple(settings.cache.connections),
+        vector_connections=tuple(settings.vector.connections),
     )
 
 

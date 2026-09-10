@@ -12,6 +12,7 @@ from app.config.database import DatabaseSettings
 from app.config.http import HttpSettings
 from app.config.logging import LoggingSettings
 from app.config.queue import QueueSettings
+from app.config.vector import VectorSettings
 
 
 class Settings(BaseModel):
@@ -24,6 +25,7 @@ class Settings(BaseModel):
     auth: AuthSettings = Field(default_factory=lambda: AuthSettings(_env_file=None))
     database: DatabaseSettings
     cache: CacheSettings
+    vector: VectorSettings = Field(default_factory=lambda: VectorSettings(_env_file=None))
     http: HttpSettings = Field(default_factory=lambda: HttpSettings(_env_file=None))
     cors: CorsSettings
     logging: LoggingSettings = Field(default_factory=lambda: LoggingSettings(_env_file=None))
@@ -33,13 +35,14 @@ class Settings(BaseModel):
 def load_settings() -> Settings:
     """加载并缓存应用配置。"""
 
-    # 同一进程内复用不可变快照，避免不同宿主组件读取到不一致的环境状态。
+    # 同一进程内复用启动时加载的配置，具体组件在装配时提取自身配置。
     return Settings(
         queue=QueueSettings(),
         app=AppSettings(),
         auth=AuthSettings(),
         database=DatabaseSettings(),
         cache=CacheSettings(),
+        vector=VectorSettings(),
         http=HttpSettings(),
         cors=CorsSettings(),
         logging=LoggingSettings(),

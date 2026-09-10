@@ -28,6 +28,11 @@ def test_nested_environment_is_loaded_as_raw_snapshot(monkeypatch: pytest.Monkey
     }
 
 
+@pytest.mark.parametrize("settings", [RedisCacheSettings(driver="redis"), MemcachedCacheSettings(driver="memcached")])
+def test_cache_driver_defaults_host_to_loopback(settings: RedisCacheSettings | MemcachedCacheSettings) -> None:
+    assert settings.host == "127.0.0.1"
+
+
 @pytest.mark.parametrize(
     ("username", "password"),
     [(None, None), ("user", "secret")],

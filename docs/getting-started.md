@@ -8,7 +8,8 @@
 - [uv](https://docs.astral.sh/uv/)
 - Git
 - 可选：Docker 与 Docker Compose
-- 使用 MySQL、PostgreSQL、Redis、Memcached、Kafka 或 RabbitMQ 时，需要对应服务可访问
+- 使用 MySQL、PostgreSQL、Redis、Memcached、Kafka、RabbitMQ、远程 Milvus、Chroma Server 或 Elasticsearch 时，需要对应服务可访问
+- Milvus Lite 与 Chroma 本地模式无需独立服务，但只用于单进程开发和小规模数据
 
 安装项目依赖：
 
@@ -116,10 +117,11 @@ uv run uvicorn app.main:app --reload
 
 ```bash
 docker compose up --build
-docker compose --profile worker up --build
+# 只启动 HTTP 应用
+docker compose up --build service
 ```
 
-默认命令只启动 HTTP 应用；带 `worker` profile 的命令还会启动独立队列消费容器。Compose 不会自动创建 MySQL、PostgreSQL、Redis、Kafka、RabbitMQ 或 Memcached。你需要按使用范围准备依赖：
+默认命令同时启动 HTTP 应用和独立队列消费容器；指定 `service` 时只启动 HTTP 应用。Compose 不会自动创建 MySQL、PostgreSQL、Redis、Kafka、RabbitMQ 或 Memcached。你需要按使用范围准备依赖：
 
 1. HTTP 应用可以使用 SQLite，但缓存操作必须连接容器可访问的 Redis 或 Memcached；
 2. 使用外部数据库或缓存时，把 `.env` 中的主机名改成容器可访问的地址；

@@ -19,10 +19,10 @@ def build_cors_middleware(settings: CorsSettings) -> Middleware:
 
     return Middleware(
         CORSMiddleware,
-        allow_origins=settings.allow_origins,
-        allow_methods=settings.allow_methods,
-        allow_headers=settings.allow_headers,
+        allow_origins=tuple(settings.allow_origins),
+        allow_methods=tuple(settings.allow_methods),
+        allow_headers=tuple(settings.allow_headers),
         allow_credentials=settings.allow_credentials,
-        expose_headers=expose_headers,
+        expose_headers=tuple(expose_headers),
         max_age=settings.max_age,
     )

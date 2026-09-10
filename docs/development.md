@@ -61,7 +61,7 @@ git diff --check
 
 Ruff format 的 `--check` 不修改文件；实际格式化会改变代码，执行前遵守项目确认规则并确保范围明确。
 
-仓库的 GitHub Actions 会执行同一组质量命令，并启动临时 MySQL/PostgreSQL 服务验证 main migration 的 upgrade、downgrade 和再次 upgrade。SQLite 迁移由 pytest 使用当前 Python 的独立子进程执行，数据库文件位于临时目录。子进程禁用开发 `.env`、清除继承的 `DB_` 配置并注入临时 SQLite 连接，父进程检查退出码、表结构及 revision。Alembic 日志配置留在子进程内，不影响后续应用日志测试。HTTPX2/httpcore2 升级还必须通过 `tests/outbound_http/test_http11_cancellation.py`，确认基于公开上下文管理协议的取消清理不会耗尽连接池。
+仓库的 GitHub Actions 会执行同一组质量命令，并启动临时 MySQL/PostgreSQL 服务验证 main migration 的 upgrade、metadata 漂移检查、downgrade 和再次 upgrade。SQLite 迁移由 pytest 使用当前 Python 的独立子进程执行，数据库文件位于临时目录；升级到 head 后同样执行 `alembic check`，确保当前 ORM metadata 没有尚未生成的迁移操作。子进程禁用开发 `.env`、清除继承的 `DB_` 配置并注入临时 SQLite 连接，父进程检查退出码、表结构及 revision。Alembic 日志配置留在子进程内，不影响后续应用日志测试。HTTPX2/httpcore2 升级还必须通过 `tests/outbound_http/test_http11_cancellation.py`，确认基于公开上下文管理协议的取消清理不会耗尽连接池。
 
 ## 3. 测试分层
 
@@ -160,6 +160,7 @@ find app database -name '__init__.py' -type f -size +0c -print
 uv run alembic -c database/main/alembic.ini current
 uv run alembic -c database/main/alembic.ini revision --autogenerate -m "describe change"
 uv run alembic -c database/main/alembic.ini upgrade head
+uv run alembic -c database/main/alembic.ini check
 uv run alembic -c database/main/alembic.ini downgrade -1
 ```
 
@@ -172,7 +173,7 @@ uv run alembic -c database/main/alembic.ini downgrade -1
 - SQLite batch 与生产方言差异；
 - downgrade 的数据损失。
 
-迁移测试至少验证 head 能落地、revision 记录正确、可按预期 downgrade；应同时验证迁移测试与生命周期日志测试按两种先后顺序运行都通过。生产部署应把 schema 变更与应用兼容窗口一起设计。
+迁移测试至少验证 head 能落地、revision 记录正确、当前 ORM metadata 没有漂移且可按预期 downgrade；应同时验证迁移测试与生命周期日志测试按两种先后顺序运行都通过。生产部署应把 schema 变更与应用兼容窗口一起设计。
 
 ## 8. 修改公开契约时的同步范围
 

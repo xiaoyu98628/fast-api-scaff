@@ -44,6 +44,10 @@ git status --short
 | 多 worker 缓存不一致 | 实例连接了不同后端、database 或 namespace | 对比各实例的实际缓存配置 |
 | cache set 报 bytes 错误 | 未显式编码 | 使用 Text/Json codec |
 | key 超长或含空白 | 最终 key 违反跨驱动规则 | 检查 namespace+prefix+业务 key UTF-8 长度 |
+| 向量配置存在但没有本地文件 | 资源是延迟创建 | 首次调用 `container.vectors.get(name)`，再检查相对 `storage/` 的路径 |
+| Chroma 远程认证失败 | 把自托管、代理 Basic Auth 与 Cloud API Key 混用 | 确认部署类型，只选择一种认证方式 |
+| 本地向量库锁冲突或数据异常 | 多进程共享同一路径 | 改为单进程，或迁移到远程 Milvus/Chroma/Elasticsearch |
+| 向量写入/查询维度错误 | Embedding 维度与 Collection 不一致 | 对照 `describe_collection()` 和模型维度，重建错误 Collection |
 | Alembic autogenerate 无变化 | Model 未注册 | 更新 `database/main/model_registry.py` |
 | 普通 SQL 没日志 | ECHO 默认 false | 临时开启目标连接 ECHO 并评估敏感信息 |
 | request ID 不在日志 | 不在 HTTP 上下文或日志未走配置 handler | 查中间件顺序和 logger/handler |
@@ -64,6 +68,8 @@ git status --short
 - CORS 凭据模式下 origin 不能含 `*`；
 - 日志 active handler 非空、无重复且有定义；
 - Memcached username/password 同时出现或同时省略；
+- 向量连接必须同时配置合法的 `DRIVER/MODE`，远程 host 不包含协议、端口或路径；
+- Milvus/Elasticsearch 和 Chroma 代理 Basic Auth 的 username/password 必须成对；Chroma API key 不能与它们同时出现；
 - 端口、pool、timeout 和 TTL 满足数值范围。
 
 修改 `.env` 后重启当前宿主。`load_settings()` 在同一进程缓存，测试里动态改环境变量不会自动刷新。
@@ -171,7 +177,36 @@ uv run alembic -c database/main/alembic.ini current
 - 最终 key UTF-8 最长 250 字节；
 - codec 变更后旧值可能解码失败，使用 schema 版本和有限 TTL。
 
-## 8. HTTP 出站问题
+## 8. 向量存储问题
+
+### 配置与延迟初始化
+
+`VectorStoreManager` 构建时校验所有定义，但不创建文件、不连接远程服务。检查连接名和配置：
+
+```bash
+uv run python -m app.console app info
+```
+
+然后在受控诊断代码中调用 `await container.vectors.ping("knowledge")`。`connection_names` 只说明配置存在，`is_initialized()` 只说明 SDK 客户端已经创建；只有 ping 或真实 CRUD 能说明目标当前可用。`/health` 不探测向量存储。
+
+相对路径都从 `storage/` 解析。Milvus Lite 的 `PATH` 是文件，Chroma 本地 `PATH` 是目录。二者只用于单进程开发和小规模数据；出现锁、回环服务端口或并发访问问题时，先确认没有 Uvicorn 多 worker、独立 Worker 或其他容器共享路径。
+
+### 远程连接与认证
+
+- `HOST` 只写主机名或 IP，不带 `http://`、`https://`、端口和路径；
+- `SSL=true` 才使用 TLS，端口单独配置；
+- Milvus 与 Elasticsearch 的 username/password 必须成对；
+- Chroma 自托管 1.x 无内置认证；username/password 只适用于前置 Basic Auth 代理；
+- Chroma Cloud 使用 API key、tenant 和 database，不能同时配置 Basic Auth；
+- Elasticsearch TLS 失败时检查 `VERIFY_CERTS` 与 `CA_CERTS`，不要把长期关闭证书校验当作修复。
+
+### 数据与检索
+
+Collection 名、向量值和元数据字段先经过公共约束校验。SDK 报维度不匹配时，用 `describe_collection()` 对照当前 Embedding 模型输出；更改维度不能原地修改公共 Collection 契约，应建立新 Collection 并重建数据。
+
+过滤只支持顶层标量 AND 等值条件。不同驱动/metric 的 score 尺度不同，只能在同一次同配置检索内排序，不能用一个跨驱动固定阈值解释相关度。连接错误不会自动回退到另一个驱动，也不会伪装成空结果。
+
+## 9. HTTP 出站问题
 
 ### 连接、超时与状态码
 
@@ -196,7 +231,7 @@ uv run alembic -c database/main/alembic.ini current
 
 若请求目标来自 HTTP/Console 输入，不要把用户提供的完整 URL 直接交给出站客户端。目标 scheme、host 和 port 必须来自受信任配置，业务输入只能作为经过校验和编码的 path/query 数据，否则可能形成 SSRF。
 
-## 9. Console 问题
+## 10. Console 问题
 
 ### 退出码 2
 
@@ -221,7 +256,7 @@ uv run python -m app.console users list 1>result.json 2>error.log
 - 是否存在重复 group/name 或不一致 group_help；
 - import 顶层是否抛错或执行外部副作用。
 
-## 10. 日志问题
+## 11. 日志问题
 
 ### 没有日志
 
@@ -242,9 +277,9 @@ uv run python -m app.console users list 1>result.json 2>error.log
 
 日志时间是本地 aware 时间，领域数据是本地 naive 时间，两者表现不同但应对应同一 `TZ`。request ID 只在 HTTP 上下文自然存在；Console/启动日志没有是正常行为。
 
-## 11. Docker 问题
+## 12. Docker 问题
 
-当前 `compose.yml` 默认只启动 HTTP 服务；启用 `worker` profile 后还会启动独立消费服务。它们：
+当前 `compose.yml` 执行 `docker compose up` 时默认同时启动 HTTP 服务和独立消费服务；只需要 HTTP 时显式执行 `docker compose up service`。它们：
 
 - 从 `.env` 读取配置；
 - 复用应用镜像、源码挂载和 Compose 网络；
@@ -255,11 +290,11 @@ uv run python -m app.console users list 1>result.json 2>error.log
 - 镜像本身不声明健康检查，Compose 只为 HTTP 服务检测 `/health`；
 - 不启动数据库、缓存或队列服务。
 
-若使用 SQLite，相对路径位于 bind mount 的项目 `storage/` 下；检查目录写权限。若使用外部服务，容器内 `127.0.0.1` 不是宿主。Worker 需要容器可访问的 Redis、Kafka 或 RabbitMQ；业务 Job 无需注册，Worker 根据消息里的类路径动态解析。若容器退出，先用 Compose 日志查看配置、Job 解析和连接错误；当前 `restart: no`，不会自动重启。
+若使用 SQLite、Milvus Lite 或 Chroma 本地持久化，相对路径位于 bind mount 的项目 `storage/` 下；检查目录写权限，并保持单进程访问。若使用外部服务，容器内 `127.0.0.1` 不是宿主。Worker 需要容器可访问的 Redis、Kafka 或 RabbitMQ；业务 Job 无需注册，Worker 根据消息里的类路径动态解析。若容器退出，先用 Compose 日志查看配置、Job 解析和连接错误；当前 `restart: no`，不会自动重启。
 
 Dockerfile 的生产默认命令不带 reload，但 Compose 覆盖了它。不要把当前 Compose 直接当生产编排。
 
-## 12. 时间不一致
+## 13. 时间不一致
 
 当前设计要求本地无时区业务时间。常见错误：
 
@@ -271,7 +306,7 @@ Dockerfile 的生产默认命令不带 reload，但 Compose 覆盖了它。不�
 
 解决前先明确旧值究竟代表哪个时区。不要仅通过加/减 8 小时“修复”表象。跨时区改造必须同步 Domain、时钟、DTO、ORM、迁移和客户端契约。
 
-## 13. 架构测试失败
+## 14. 架构测试失败
 
 错误形如：
 
@@ -283,7 +318,7 @@ app/contexts/example/application/service.py:10 imports app.infrastructure.cache.
 
 跨上下文协作也不要直接 import 对方 infrastructure。通过明确的公开应用端口或上层 workflow 协调，并明确事务/一致性边界。
 
-## 14. 仍无法定位时
+## 15. 仍无法定位时
 
 保留以下最小证据：
 

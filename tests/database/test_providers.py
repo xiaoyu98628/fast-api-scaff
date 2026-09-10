@@ -83,6 +83,28 @@ def test_mysql_provider_builds_asyncmy_engine_spec() -> None:
     assert spec.slow_query_ms == 500
 
 
+@pytest.mark.parametrize(
+    ("provider", "raw_config"),
+    [
+        (
+            MySQLDatabaseProvider(),
+            {"driver": "mysql", "database": "application", "username": "app", "password": "secret"},
+        ),
+        (
+            PostgreSQLDatabaseProvider(),
+            {"driver": "postgresql", "database": "application", "username": "app", "password": "secret"},
+        ),
+    ],
+)
+def test_network_database_provider_defaults_host_to_loopback(
+    provider: MySQLDatabaseProvider | PostgreSQLDatabaseProvider,
+    raw_config: dict[str, object],
+) -> None:
+    definition = provider.prepare(raw_config)
+
+    assert definition.engine_spec.url.host == "127.0.0.1"
+
+
 @pytest.mark.parametrize("driver", ["postgresql", "pgsql"])
 def test_postgresql_provider_supports_both_driver_names(driver: str) -> None:
     definition = PostgreSQLDatabaseProvider().prepare(
@@ -133,6 +155,7 @@ def test_sqlite_provider_builds_supported_engine_spec() -> None:
     assert definition.engine_spec.options == {}
     assert definition.engine_spec.log_queries is True
     assert definition.engine_spec.slow_query_ms == 500
+    assert definition.configure_engine is not None
 
 
 @pytest.mark.asyncio

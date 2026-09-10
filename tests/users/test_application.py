@@ -184,7 +184,8 @@ async def test_user_service_completes_crud_flow() -> None:
 @pytest.mark.asyncio
 async def test_user_service_rejects_duplicate_username_and_email() -> None:
     repository = FakeUserRepository()
-    service = build_service(repository)
+    password_hasher = FakePasswordHasher()
+    service = build_service(repository, password_hasher)
     await service.create(CreateUserCommand(username="alice", email="alice@example.com", password="password123"))
 
     with pytest.raises(UserConflictError) as username_error:
@@ -195,6 +196,24 @@ async def test_user_service_rejects_duplicate_username_and_email() -> None:
 
     assert username_error.value.field == "username"
     assert email_error.value.field == "email"
+    assert password_hasher.passwords == ["password123"]
+
+
+@pytest.mark.asyncio
+async def test_user_service_rejects_missing_password_target_before_hashing() -> None:
+    repository = FakeUserRepository()
+    password_hasher = FakePasswordHasher()
+    service = build_service(repository, password_hasher)
+
+    with pytest.raises(UserNotFoundError):
+        await service.reset_password(
+            ResetUserPasswordCommand(
+                user_id=UUID("00000000-0000-0000-0000-000000000002"),
+                password="replacement-password",
+            )
+        )
+
+    assert password_hasher.passwords == []
 
 
 @pytest.mark.asyncio

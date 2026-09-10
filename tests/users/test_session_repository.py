@@ -102,8 +102,8 @@ async def test_user_and_session_share_transaction_and_foreign_key_cascades() -> 
     try:
         engine = await databases.get_engine("main")
         async with engine.begin() as connection:
-            await connection.execute(text("PRAGMA foreign_keys=ON"))
             await connection.run_sync(load_main_database_metadata().create_all)
+            assert await connection.scalar(text("PRAGMA foreign_keys")) == 1
         user = User.create(username="alice", email="alice@example.com", password_hash=PasswordHash("test-hash"), now=datetime.now())
         stored = UserSession(
             token_digest="a" * 64,

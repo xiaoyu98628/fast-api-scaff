@@ -57,6 +57,22 @@ async def test_network_drivers_create_engine_without_connecting(
 
 
 @pytest.mark.asyncio
+async def test_manager_copies_raw_connection_before_lazy_creation() -> None:
+    settings = DatabaseSettings(
+        default="main",
+        connections={"main": {"driver": "sqlite", "database": ":memory:"}},
+        _env_file=None,
+    )
+    manager = DatabaseManager(settings)
+
+    settings.connections["main"]["database"] = "data/changed.sqlite"
+    engine = await manager.get_engine()
+
+    assert engine.url.database == ":memory:"
+    await manager.aclose()
+
+
+@pytest.mark.asyncio
 async def test_missing_default_connection_is_reported_on_first_use() -> None:
     manager = DatabaseManager(DatabaseSettings(_env_file=None))
 
