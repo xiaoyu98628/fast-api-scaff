@@ -17,6 +17,7 @@ from app.infrastructure.vector.contracts.provider import VectorResourceDefinitio
 from app.infrastructure.vector.errors import (
     VectorCollectionConflictError,
     VectorCollectionNotFoundError,
+    VectorConfigurationError,
     VectorConnectionError,
     VectorOperationError,
 )
@@ -321,7 +322,11 @@ async def _create_local_resource(settings: MilvusLocalVectorSettings) -> VectorR
 
 
 async def _create_remote_resource(settings: MilvusRemoteVectorSettings) -> VectorResource:
-    uri = str(httpx.URL(scheme="https" if settings.ssl else "http", host=settings.host, port=settings.port))
+    try:
+        uri = str(httpx.URL(scheme="https" if settings.ssl else "http", host=settings.host, port=settings.port))
+    except httpx.InvalidURL as error:
+        raise VectorConfigurationError("Milvus 远程连接地址不合法") from error
+
     sdk = await to_thread.run_sync(_load_milvus_sdk, abandon_on_cancel=False)
     try:
         client = sdk.async_client(

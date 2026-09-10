@@ -241,6 +241,28 @@ async def test_milvus_remote_builds_ipv6_uri_with_structured_url(monkeypatch: py
 
 
 @pytest.mark.asyncio
+async def test_milvus_remote_maps_invalid_address_to_configuration_error() -> None:
+    manager = VectorStoreManager(
+        VectorSettings(
+            default="knowledge",
+            connections={
+                "knowledge": {
+                    "driver": "milvus",
+                    "mode": "remote",
+                    "host": "[]",
+                }
+            },
+            _env_file=None,
+        )
+    )
+
+    with pytest.raises(VectorConfigurationError, match="连接地址不合法"):
+        await manager.get()
+
+    await manager.aclose()
+
+
+@pytest.mark.asyncio
 async def test_chroma_local_persists_and_searches_without_an_embedding_function(tmp_path) -> None:
     manager = VectorStoreManager(
         VectorSettings(
