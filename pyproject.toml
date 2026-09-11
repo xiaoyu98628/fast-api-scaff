@@ -10,45 +10,55 @@ authors = [
     {name = "CaoGaoYu", email = "1765841705@qq.com"}
 ]
 dependencies = [
+    # HTTP、ASGI、配置与请求上下文
     "fastapi>=0.141.1",
     "uvicorn[standard]>=0.52.4",
     "pydantic-settings>=2.15.0",
     "starlette-context>=0.5.1",
 
+    # 密码哈希
     "pwdlib[argon2]>=0.3.0",
 
+    # 异步运行时与 HTTP 出站
     "anyio>=4.15.1",
     "httpx2>=2.12.0",
 
+    # ORM 与数据库驱动
     "sqlalchemy[asyncio]>=2.0.52",
     "aiosqlite>=0.22.1",
     "asyncmy>=0.2.14",
     "asyncpg>=0.31.0",
 
+    # 缓存驱动
     "redis>=8.1.0",
     "memcachio>=0.5.1",
 
+    # 数据库迁移
     "alembic>=1.19.2",
 
+    # Console 与 Worker 命令行
     "typer>=0.21.0",
 
+    # 队列驱动：RabbitMQ 与 Kafka；Redis 队列复用上面的 redis 客户端
     "aio-pika>=10.0.1,<11",
     "aiokafka>=0.12,<1",
 
+    # 向量存储驱动
     "pymilvus[milvus-lite]>=3.0.1,<4",
     "chromadb>=1.5.9,<2",
     "elasticsearch[async]>=9.4.1,<10",
 ]
 
 [project.optional-dependencies]
+# 最小测试依赖
 test = [
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
 ]
+# 本地开发与 CI 质量检查
 dev = [
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
-    "black>=24.0.0",
     "ruff>=0.15.21",
     "ty>=0.0.59",
 ]
@@ -56,9 +66,6 @@ dev = [
 # 目标 Python 版本
 [tool.ty.environment]
 python-version = "3.14"
-
-[tool.black]
-line-length = 150
 
 [tool.ruff]
 line-length = 150
