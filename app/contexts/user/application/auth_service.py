@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from app.contexts.user.application.auth_dto import LoginCommand, TokenDTO
-from app.contexts.user.application.auth_errors import AuthenticationRequiredError, InvalidCredentialsError, LoginUserNotFoundError
+from app.contexts.user.application.auth_errors import AuthenticationRequiredError, InvalidCredentialsError
 from app.contexts.user.application.dto import UserDTO
 from app.contexts.user.application.password_hasher import PasswordHasher
 from app.contexts.user.application.session_token import SessionCredential, SessionTokenCodec
@@ -37,24 +37,25 @@ class AuthApplicationService:
         try:
             username = Username(command.username)
         except InvalidUserDataError:
+            await self.password_hasher.verify_or_dummy(command.password, None)
             raise InvalidCredentialsError() from None
 
         # 首次事务只读取验证所需快照，不在密码慢哈希期间占用数据库事务。
         async with self.unit_of_work_factory() as uow:
             snapshot = await uow.users.find_by_username(username)
 
-        if snapshot is None:
-            raise LoginUserNotFoundError()
-
-        verified = await self.password_hasher.verify(command.password, snapshot.password_hash)
-        if not verified or snapshot.status is not UserStatus.ACTIVE:
+        verified = await self.password_hasher.verify_or_dummy(
+            command.password,
+            None if snapshot is None else snapshot.password_hash,
+        )
+        if snapshot is None or not verified or snapshot.status is not UserStatus.ACTIVE:
             raise InvalidCredentialsError()
 
         # 慢哈希完成后重新核对账户，避免期间发生的禁用、改名或密码更新被忽略。
         async with self.unit_of_work_factory() as uow:
             current = await uow.users.find(snapshot.id)
             if current is None:
-                raise LoginUserNotFoundError()
+                raise InvalidCredentialsError()
             if current.status is not UserStatus.ACTIVE or current.password_hash != snapshot.password_hash or current.username != snapshot.username:
                 raise InvalidCredentialsError()
 

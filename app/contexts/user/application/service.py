@@ -13,10 +13,10 @@ from app.contexts.user.application.dto import (
     UserDTO,
     UserPageDTO,
 )
-from app.contexts.user.application.errors import UserConflictError, UserNotFoundError
+from app.contexts.user.application.errors import ConcurrentUserUpdateError, UserConflictError, UserNotFoundError
 from app.contexts.user.application.password_hasher import PasswordHasher
 from app.contexts.user.application.unit_of_work import UserUnitOfWorkFactory
-from app.contexts.user.domain.repository import UserRepository
+from app.contexts.user.domain.repository import UserRepository, UserUpdateResult
 from app.contexts.user.domain.user import User
 from app.contexts.user.domain.values import EmailAddress, Password, UserId, Username
 
@@ -97,8 +97,7 @@ class UserApplicationService:
                 now=self.clock(),
             )
             await self._ensure_unique(unit_of_work.users, user)
-            if not await unit_of_work.users.update(user):
-                raise UserNotFoundError(command.user_id)
+            self._ensure_updated(await unit_of_work.users.update(user), command.user_id)
 
             await unit_of_work.commit()
 
@@ -115,8 +114,7 @@ class UserApplicationService:
                 raise UserNotFoundError(command.user_id)
 
             user.change_status(status=command.status, now=self.clock())
-            if not await unit_of_work.users.update(user):
-                raise UserNotFoundError(command.user_id)
+            self._ensure_updated(await unit_of_work.users.update(user), command.user_id)
 
             await unit_of_work.commit()
 
@@ -142,8 +140,7 @@ class UserApplicationService:
                 raise UserNotFoundError(command.user_id)
 
             user.reset_password(password_hash=password_hash, now=self.clock())
-            if not await unit_of_work.users.update(user):
-                raise UserNotFoundError(command.user_id)
+            self._ensure_updated(await unit_of_work.users.update(user), command.user_id)
 
             await unit_of_work.commit()
 
@@ -157,6 +154,19 @@ class UserApplicationService:
                 raise UserNotFoundError(user_id)
 
             await unit_of_work.commit()
+
+    @staticmethod
+    def _ensure_updated(result: UserUpdateResult, user_id: UUID) -> None:
+        """把仓储更新结果转换为公开的应用层语义。"""
+
+        if result is UserUpdateResult.UPDATED:
+            return
+        if result is UserUpdateResult.NOT_FOUND:
+            raise UserNotFoundError(user_id)
+        if result is UserUpdateResult.CONFLICT:
+            raise ConcurrentUserUpdateError(user_id)
+
+        raise AssertionError(f"未知用户更新结果: {result!r}")
 
     @staticmethod
     async def _ensure_unique(repository: UserRepository, user: User) -> None:

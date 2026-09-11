@@ -116,11 +116,11 @@ HTTP / Console
 
 - `UserRepository` 是领域层所需的持久化契约，使用聚合和值对象；
 - `SqlAlchemyUserRepository` 实现查询和持久化，不决定用例何时提交；
-- Mapper 显式完成 Domain ↔ ORM 转换，包括把领域 `PasswordHash` 映射到数据库 `password` 列；
+- Mapper 显式完成 Domain ↔ ORM 转换，包括把领域 `PasswordHash` 映射到数据库 `password` 列，并携带内部并发版本；
 - `UserUnitOfWork` 定义一个用例的事务边界；
 - Application Service 编排读取、领域行为、唯一性预检查与 commit。
 
-Repository 的 `update()` 和 `remove()` 使用带主键条件的单条 DML，并返回是否匹配记录。Application Service 将零匹配转换为 `UserNotFoundError`，避免目标在并发期间已经删除时仍返回成功。这个返回值属于领域持久化协议，不向上层暴露 SQLAlchemy result。
+Repository 的 `update()` 使用 `id + version` 条件写入完整聚合并递增版本，返回更新成功、目标不存在或版本冲突；Application Service 分别转换为成功、`UserNotFoundError` 和 `ConcurrentUserUpdateError`。`remove()` 仍使用主键条件并返回是否匹配记录。这些结果属于领域持久化协议，不向上层暴露 SQLAlchemy result。
 
 用户 ID 在 Domain/Application 中使用 `UUID`，在数据库中统一保存为带连字符的小写 `String(36)`，例如 `019cba13-c9eb-7d22-845e-123456789abc`。Mapper 和 Repository 负责两种类型之间的转换，因此 MySQL、PostgreSQL、SQLite 的物理值与 HTTP 返回值保持一致。这个约定以跨数据库可见格式一致为优先级，PostgreSQL 不使用原生 UUID 列。
 
@@ -137,7 +137,7 @@ Repository 的 `update()` 和 `remove()` 使用带主键条件的单条 DML，�
 
 一个应用用例应尽量对应一个明确事务。不要在 Repository 中偷偷 commit，否则多个聚合操作无法被同一个 UoW 原子包裹，错误处理也会碎片化。
 
-当前原子 UPDATE/DELETE 能识别写入时目标已经不存在，但没有乐观锁版本字段，因此不防止两个并发更新互相覆盖。作为使用说明型脚手架，它展示事务边界和聚合更新方式，但不承诺解决并发覆盖。真实业务若存在并发写，应按冲突语义选择版本号、条件更新、悲观锁或事件模型，并补充 409 映射与并发测试。
+用户聚合包含从 1 开始递增的内部 `version`。UPDATE 只有在数据库版本仍等于聚合快照版本时才成功，否则仓储检查目标是否仍存在：已删除返回不存在，仍存在则返回并发冲突。HTTP 把并发冲突映射为 409 和尾码 `1004`，调用方应重新读取后根据业务决定是否重试。版本不出现在公开 DTO 中，它保护的是服务端一次“读取—修改—写回”调用链，而不是客户端条件请求协议。
 
 ## 8. 唯一性与异常映射
 
@@ -235,6 +235,8 @@ uv run alembic -c database/main/alembic.ini downgrade -1
 - 约束名是否仍能被异常映射识别。
 
 用户表的 `password` 列保存密码哈希而不是明文。它是非空字段，因此从已有用户表演进时必须明确历史数据回填或重置策略；不能在生产数据上直接生成一个无法审计的占位密码。
+
+用户模型和迁移都要求 `version` 为非空整数且默认值为 1。从不含该字段的已有数据库升级时，必须在发布依赖乐观锁的新代码前把历史用户回填为 1。
 
 ## 13. 方言差异
 

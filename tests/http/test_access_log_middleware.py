@@ -14,10 +14,11 @@ from app.config.cors import CorsSettings
 from app.config.database import DatabaseSettings
 from app.config.logging import LoggingSettings
 from app.config.settings import Settings
-from app.interfaces.http.logging import HttpLogEvent
 from app.interfaces.http.middleware.access_log import AccessLogMiddleware
+from app.interfaces.http.middleware.logging import HttpLogEvent
 from app.interfaces.http.middleware.query_param_decode import encode_query_param
 from app.interfaces.http.middleware.request_id import RequestIdMiddleware
+from app.interfaces.http.middleware.trace_context import TraceContextMiddleware
 
 
 def build_settings(
@@ -42,7 +43,8 @@ def test_access_log_runs_inside_request_context() -> None:
     app = create_app(build_settings())
 
     assert app.user_middleware[1].cls is RequestIdMiddleware
-    assert app.user_middleware[2].cls is AccessLogMiddleware
+    assert app.user_middleware[2].cls is TraceContextMiddleware
+    assert app.user_middleware[3].cls is AccessLogMiddleware
 
 
 @pytest.mark.parametrize("query_mode", ["plain", "encoded", "invalid"])

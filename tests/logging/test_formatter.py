@@ -4,13 +4,15 @@ import json
 import logging
 from datetime import datetime
 
-from starlette_context import request_cycle_context
-from starlette_context.header_keys import HeaderKeys
-
-from app.infrastructure.logging.context import RequestContextFilter
+from app.infrastructure.logging.context import (
+    JobLogContext,
+    RuntimeContextFilter,
+    bind_job_log_context,
+)
 from app.infrastructure.logging.formatter import JsonLogFormatter, TextLogFormatter
 from app.infrastructure.logging.record import log_extra, safe_exception_details
-from app.interfaces.http.logging import HttpLogEvent
+from app.interfaces.http.middleware.logging import HttpLogEvent
+from app.runtime.trace import TraceContext, bind_trace_context
 
 
 def test_json_formatter_renders_structured_event_and_request_id() -> None:
@@ -28,8 +30,8 @@ def test_json_formatter_renders_structured_event_and_request_id() -> None:
     record.details = {"status_code": 200}
     record.created = 1_700_000_000.123
 
-    with request_cycle_context({HeaderKeys.request_id: "request-123"}):
-        RequestContextFilter().filter(record)
+    with bind_trace_context(TraceContext(correlation_id="request-123", request_id="request-123")):
+        RuntimeContextFilter().filter(record)
 
     payload = json.loads(formatter.format(record))
 
@@ -40,6 +42,7 @@ def test_json_formatter_renders_structured_event_and_request_id() -> None:
     assert payload["service_version"] == "1.2.3"
     assert payload["message"] == "Request completed"
     assert payload["request_id"] == "request-123"
+    assert payload["correlation_id"] == "request-123"
     assert payload["event"] == "http.request.completed"
     assert payload["details"] == {"status_code": 200}
     assert payload["timestamp"] == _local_timestamp(record.created)
@@ -66,6 +69,47 @@ def test_json_formatter_keeps_details_nested() -> None:
         "level": "business-value",
         "message": "detail-message",
     }
+
+
+def test_json_formatter_renders_scoped_console_command_id() -> None:
+    formatter = JsonLogFormatter(service="test-service", environment="test", service_version="1.2.3")
+    record = logging.LogRecord("app.test", logging.INFO, __file__, 10, "Command log", (), None)
+
+    with bind_trace_context(TraceContext(correlation_id="command-123", command_id="command-123")):
+        RuntimeContextFilter().filter(record)
+
+    payload = formatter.build_payload(record)
+    assert payload["command_id"] == "command-123"
+    assert payload["correlation_id"] == "command-123"
+
+
+def test_json_formatter_renders_scoped_job_context_and_clears_it() -> None:
+    formatter = JsonLogFormatter(service="test-service", environment="test", service_version="1.2.3")
+    record = logging.LogRecord("app.test", logging.INFO, __file__, 10, "Job log", (), None)
+    job_context = JobLogContext(
+        job_id="job-123",
+        job_type="app.jobs:ExampleJob",
+        job_version=2,
+        queue_connection="redis",
+        queue_name="reports",
+        replay_of="failure-123",
+    )
+
+    with bind_trace_context(TraceContext(correlation_id="request-123")), bind_job_log_context(job_context):
+        RuntimeContextFilter().filter(record)
+
+    payload = formatter.build_payload(record)
+    assert payload["job_id"] == "job-123"
+    assert payload["job_type"] == "app.jobs:ExampleJob"
+    assert payload["job_version"] == 2
+    assert payload["queue_connection"] == "redis"
+    assert payload["queue_name"] == "reports"
+    assert payload["correlation_id"] == "request-123"
+    assert payload["replay_of"] == "failure-123"
+
+    unrelated = logging.LogRecord("app.test", logging.INFO, __file__, 10, "Other log", (), None)
+    RuntimeContextFilter().filter(unrelated)
+    assert "job_id" not in formatter.build_payload(unrelated)
 
 
 def test_text_formatter_renders_structured_fields_on_one_line() -> None:

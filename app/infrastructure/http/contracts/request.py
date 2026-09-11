@@ -2,6 +2,7 @@
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from math import isfinite
 from urllib.parse import urlsplit
 
 
@@ -48,7 +49,7 @@ class HttpRequest:
             raise ValueError("content 和 json 不能同时提供")
         if self.operation is not None and not self.operation.strip():
             raise ValueError("HTTP operation 有值时不能为空")
-        if self.timeout is not None and self.timeout <= 0:
-            raise ValueError("HTTP timeout 必须大于 0")
+        if self.timeout is not None and (not isfinite(self.timeout) or self.timeout <= 0):
+            raise ValueError("HTTP timeout 必须是有限正数")
 
         object.__setattr__(self, "method", method)

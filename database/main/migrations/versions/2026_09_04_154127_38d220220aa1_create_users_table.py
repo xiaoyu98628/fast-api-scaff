@@ -30,6 +30,7 @@ def upgrade() -> None:
         sa.Column("status", sa.String(length=16), nullable=False, comment="用户状态"),
         sa.Column("created_at", sa.DateTime(), nullable=False, comment="创建时间"),
         sa.Column("updated_at", sa.DateTime(), nullable=False, comment="更新时间"),
+        sa.Column("version", sa.Integer(), server_default=sa.text("1"), nullable=False, comment="并发版本"),
         sa.CheckConstraint("status IN ('active', 'disabled')", name=op.f("ck_users_status")),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_users")),
         sa.UniqueConstraint("email", name=op.f("uq_users_email")),

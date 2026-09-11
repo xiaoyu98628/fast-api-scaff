@@ -14,6 +14,7 @@ from app.config.cache import CacheSettings
 from app.config.cors import CorsSettings
 from app.config.database import DatabaseSettings
 from app.config.settings import Settings
+from app.contexts.user.domain.repository import UserUpdateResult
 from app.contexts.user.infrastructure.persistence.models.user import UserModel
 from app.contexts.user.infrastructure.persistence.repository import SqlAlchemyUserRepository
 from app.infrastructure.database.manager import DatabaseManager
@@ -271,3 +272,27 @@ async def test_update_constraint_conflict_after_precheck_returns_409(monkeypatch
             stored = (await client.get(f"/api/v1/users/{user_id}")).json()["data"]
             assert stored["username"] == "bobby"
             assert stored["email"] == "bobby@example.com"
+
+
+@pytest.mark.asyncio
+async def test_concurrent_update_returns_dedicated_409(monkeypatch: pytest.MonkeyPatch) -> None:
+    app = create_app(build_settings())
+    async with app.router.lifespan_context(app):
+        engine = await app.state.container.databases.get_engine()
+        async with engine.begin() as connection:
+            await connection.run_sync(UserModel.metadata.create_all)
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            created = await client.post(
+                "/api/v1/users",
+                json={"username": "alice", "email": "alice@example.com", "password": "password123"},
+            )
+            user_id = created.json()["data"]["id"]
+
+            async def conflict(*_args: object, **_kwargs: object) -> UserUpdateResult:
+                return UserUpdateResult.CONFLICT
+
+            monkeypatch.setattr(SqlAlchemyUserRepository, "update", conflict)
+            response = await client.patch(f"/api/v1/users/{user_id}/status", json={"status": "disabled"})
+
+            assert response.status_code == 409
+            assert response.json()["code"] == "4093211004"

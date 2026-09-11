@@ -13,9 +13,9 @@ from app.config.cache import CacheSettings
 from app.config.cors import CorsSettings
 from app.config.database import DatabaseSettings
 from app.config.settings import Settings
-from app.infrastructure.logging.context import RequestContextFilter
+from app.infrastructure.logging.context import RuntimeContextFilter
 from app.interfaces.http.exceptions.error import HttpError
-from app.interfaces.http.logging import HttpLogEvent
+from app.interfaces.http.middleware.logging import HttpLogEvent
 from app.interfaces.http.shared.response.codes.error_code import ErrorCode
 from app.interfaces.http.shared.response.codes.success_code import SuccessCode
 
@@ -178,8 +178,8 @@ async def test_unexpected_exception_uses_request_context_and_cors(caplog: pytest
     logger_name = "app.interfaces.http.exception"
     logging.getLogger(logger_name).disabled = False
     caplog.set_level(logging.ERROR, logger=logger_name)
-    request_context_filter = RequestContextFilter()
-    caplog.handler.addFilter(request_context_filter)
+    runtime_context_filter = RuntimeContextFilter()
+    caplog.handler.addFilter(runtime_context_filter)
 
     @app.get("/unexpected-failure")
     async def unexpected_failure() -> None:
@@ -192,7 +192,7 @@ async def test_unexpected_exception_uses_request_context_and_cors(caplog: pytest
                 headers={"Origin": "https://app.example.com"},
             )
     finally:
-        caplog.handler.removeFilter(request_context_filter)
+        caplog.handler.removeFilter(runtime_context_filter)
 
     body = response.json()
 

@@ -29,6 +29,7 @@ def test_user_creation_normalizes_identity_fields() -> None:
     assert user.status is UserStatus.ACTIVE
     assert user.created_at == now
     assert user.updated_at == now
+    assert user.version == 1
 
 
 def test_password_validates_length_without_normalizing_secret() -> None:
@@ -171,7 +172,41 @@ def test_user_rehydration_rechecks_domain_value_types() -> None:
             status=user.status,
             created_at=user.created_at,
             updated_at=user.updated_at,
+            version=user.version,
         )
+
+
+@pytest.mark.parametrize("version", [0, -1, True])
+def test_user_rehydration_rejects_invalid_version(version: int) -> None:
+    now = datetime(2026, 8, 28, 18, 0)
+    user = User.create(username="alice", email="alice@example.com", password_hash=_PASSWORD_HASH, now=now)
+
+    with pytest.raises(InvalidUserDataError, match="用户版本"):
+        User.rehydrate(
+            user_id=user.id,
+            username=user.username,
+            email=user.email,
+            password_hash=user.password_hash,
+            status=user.status,
+            created_at=user.created_at,
+            updated_at=user.updated_at,
+            version=version,
+        )
+
+
+def test_user_version_advances_only_when_persistence_confirms_update() -> None:
+    user = User.create(
+        username="alice",
+        email="alice@example.com",
+        password_hash=_PASSWORD_HASH,
+        now=datetime(2026, 8, 28, 18, 0),
+    )
+
+    user.update_profile(username="alice_new", email="new@example.com", now=user.updated_at)
+    assert user.version == 1
+
+    user.advance_version()
+    assert user.version == 2
 
 
 def test_user_fields_can_only_be_changed_through_domain_methods() -> None:

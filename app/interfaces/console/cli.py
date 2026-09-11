@@ -16,6 +16,7 @@ from app.interfaces.console.discovery import discover_console_commands
 from app.interfaces.console.exit_codes import ConsoleExitCode
 from app.interfaces.console.presentation import ConsolePresenter
 from app.interfaces.console.registry import ConsoleCommandRegistry
+from app.runtime.trace import TraceContext, TraceIdFactory, bind_trace_context, new_trace_id
 
 type ConsoleEntrypoint = Callable[[], None]
 
@@ -60,12 +61,20 @@ def create_console(console: ConsoleExecutor) -> typer.Typer:
     return application
 
 
-def run_console(entrypoint: ConsoleEntrypoint, presenter: ConsolePresenter) -> None:
+def run_console(
+    entrypoint: ConsoleEntrypoint,
+    presenter: ConsolePresenter,
+    *,
+    command_id_factory: TraceIdFactory = new_trace_id,
+) -> None:
     """执行 Console 入口并将可预期运行错误转换为稳定退出码。"""
 
-    try:
-        entrypoint()
-    except (ValidationError, LoggingConfigurationError, DatabaseError, CacheError, HttpError, QueueError, VectorError) as error:
-        # 仅转换配置和基础设施边界错误，未知编程错误保留原始堆栈。
-        presenter.error(error)
-        raise SystemExit(ConsoleExitCode.FAILURE) from None
+    command_id = command_id_factory()
+    trace_context = TraceContext(correlation_id=command_id, command_id=command_id)
+    with bind_trace_context(trace_context):
+        try:
+            entrypoint()
+        except (ValidationError, LoggingConfigurationError, DatabaseError, CacheError, HttpError, QueueError, VectorError) as error:
+            # 仅转换配置和基础设施边界错误，未知编程错误保留原始堆栈。
+            presenter.error(error)
+            raise SystemExit(ConsoleExitCode.FAILURE) from None

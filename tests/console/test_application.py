@@ -19,6 +19,7 @@ from app.infrastructure.queue.manager import QueueManager
 from app.infrastructure.vector.manager import VectorStoreManager
 from app.interfaces.console.context import ConsoleContext
 from app.runtime.container import ApplicationContainer
+from app.runtime.trace import TraceContext, bind_trace_context, current_correlation_id
 
 
 def build_settings() -> Settings:
@@ -56,13 +57,17 @@ def build_container(settings: Settings, events: list[str]) -> ApplicationContain
 def test_console_application_provides_context_and_closes_runtime() -> None:
     settings = build_settings()
     events: list[str] = []
+    command_id = "00000000000040008000000000000001"
     console = ConsoleHost(
         settings,
         container_builder=lambda active_settings: build_container(active_settings, events),
+        command_id_factory=lambda: command_id,
     )
 
     async def operation(context: ConsoleContext) -> str:
         assert context.settings is settings
+        assert context.command_id == command_id
+        assert current_correlation_id() == command_id
         events.append("operation")
         return context.settings.app.name
 
@@ -86,3 +91,24 @@ def test_console_application_closes_runtime_when_operation_fails() -> None:
         console.run(fail)
 
     assert events == ["start", "operation", "stop"]
+
+
+def test_console_application_reuses_outer_command_id() -> None:
+    settings = build_settings()
+    events: list[str] = []
+
+    def reject_new_command_id() -> str:
+        raise AssertionError("已有命令上下文时不应生成新 ID")
+
+    console = ConsoleHost(
+        settings,
+        container_builder=lambda active_settings: build_container(active_settings, events),
+        command_id_factory=reject_new_command_id,
+    )
+
+    async def operation(context: ConsoleContext) -> str:
+        return context.command_id
+
+    trace_context = TraceContext(correlation_id="outer-command-id", command_id="outer-command-id")
+    with bind_trace_context(trace_context):
+        assert console.run(operation) == "outer-command-id"

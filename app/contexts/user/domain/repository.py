@@ -1,9 +1,18 @@
 """声明用户聚合在 Domain 层需要的持久化能力。"""
 
+from enum import StrEnum
 from typing import Protocol
 
 from app.contexts.user.domain.user import User
 from app.contexts.user.domain.values import EmailAddress, UserId, Username
+
+
+class UserUpdateResult(StrEnum):
+    """描述一次带版本条件的用户聚合更新结果。"""
+
+    UPDATED = "updated"
+    NOT_FOUND = "not_found"
+    CONFLICT = "conflict"
 
 
 class UserRepository(Protocol):
@@ -39,8 +48,8 @@ class UserRepository(Protocol):
 
         ...
 
-    async def update(self, user: User) -> bool:
-        """持久化现有聚合，并返回记录是否仍然存在。"""
+    async def update(self, user: User) -> UserUpdateResult:
+        """按当前版本持久化完整聚合，并区分不存在与并发冲突。"""
 
         ...
 

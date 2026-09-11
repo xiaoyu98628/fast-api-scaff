@@ -120,7 +120,7 @@ class QueueManager:
         queue: str | None = None,
         correlation_id: str | None = None,
     ) -> UUID:
-        """通过默认或指定连接投递一个 QueueJob。"""
+        """投递 QueueJob；未显式指定关联 ID 时继承当前追踪上下文。"""
 
         dispatcher = await self.get(connection)
         return await dispatcher.dispatch(job, queue=queue, correlation_id=correlation_id)

@@ -33,6 +33,23 @@ class _StructuredLogFormatter(logging.Formatter):
         if request_id is not None:
             payload["request_id"] = str(request_id)
 
+        command_id = getattr(record, "command_id", None)
+        if command_id is not None:
+            payload["command_id"] = str(command_id)
+
+        for field in (
+            "job_id",
+            "job_type",
+            "job_version",
+            "queue_connection",
+            "queue_name",
+            "correlation_id",
+            "replay_of",
+        ):
+            value = getattr(record, field, None)
+            if value is not None:
+                payload[field] = value
+
         event = getattr(record, "event", None)
         if isinstance(event, StrEnum):
             payload["event"] = event.value

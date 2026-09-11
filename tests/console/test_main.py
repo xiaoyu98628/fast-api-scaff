@@ -1,6 +1,7 @@
 """验证 Console 进程入口、退出码和标准流契约。"""
 
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -34,6 +35,7 @@ from app.infrastructure.cache.manager import CacheManager
 from app.infrastructure.database.manager import DatabaseManager
 from app.infrastructure.http.errors import HttpTransportError
 from app.infrastructure.http.manager import HttpClientManager
+from app.infrastructure.logging.context import RuntimeContextFilter
 from app.infrastructure.queue.manager import QueueManager
 from app.infrastructure.vector.manager import VectorStoreManager
 from app.interfaces.console.cli import create_console, run_console
@@ -113,7 +115,14 @@ def build_console(service: FakeUserService) -> tuple[CliRunner, typer.Typer]:
 
 
 def test_app_info_displays_runtime_configuration() -> None:
-    settings = build_settings()
+    settings = build_settings().model_copy(
+        update={
+            "queue": QueueSettings(
+                _env_file=None,
+                connections={"events": {"driver": "redis", "host": "localhost"}},
+            )
+        }
+    )
 
     def reject_container_build(_settings: Settings) -> ApplicationContainer:
         raise AssertionError("app info 不应构建应用容器")
@@ -137,6 +146,7 @@ def test_app_info_displays_runtime_configuration() -> None:
         "debug": False,
         "database_connections": [],
         "cache_connections": [],
+        "queue_connections": ["events"],
         "vector_connections": [],
     }
     assert timezone
@@ -280,6 +290,31 @@ def test_run_console_preserves_unexpected_programming_error() -> None:
         run_console(fail, ConsolePresenter())
 
 
+def test_run_console_binds_command_id_without_leaking(caplog: pytest.LogCaptureFixture) -> None:
+    command_id = "00000000000040008000000000000002"
+    logger = logging.getLogger("app.test.console.context")
+    runtime_filter = RuntimeContextFilter()
+    caplog.handler.addFilter(runtime_filter)
+    caplog.set_level(logging.INFO)
+
+    try:
+        run_console(
+            lambda: logger.info("inside command"),
+            ConsolePresenter(),
+            command_id_factory=lambda: command_id,
+        )
+        logger.info("outside command")
+    finally:
+        caplog.handler.removeFilter(runtime_filter)
+
+    inside = next(record for record in caplog.records if record.getMessage() == "inside command")
+    outside = next(record for record in caplog.records if record.getMessage() == "outside command")
+    assert getattr(inside, "command_id", None) == command_id
+    assert getattr(inside, "correlation_id", None) == command_id
+    assert getattr(outside, "command_id", None) is None
+    assert getattr(outside, "correlation_id", None) is None
+
+
 @pytest.mark.parametrize(("name", "value"), [("HTTP_POOL__MAX_CONNECTIONS", "0"), ("LOG_LEVEL", "invalid")])
 @pytest.mark.parametrize("color", [False, True], ids=["plain", "colored"])
 def test_console_help_loads_and_validates_environment(name: str, value: str, color: bool) -> None:
@@ -300,7 +335,8 @@ def test_console_help_loads_and_validates_environment(name: str, value: str, col
     )
     assert result.returncode == 1
     assert result.stdout == ""
-    assert "ValidationError" in result.stderr
+    assert "配置" in result.stderr
+    assert "Traceback" not in result.stderr
 
 
 @pytest.mark.parametrize(
@@ -327,7 +363,7 @@ main()
     assert result.returncode == 1
     assert result.stdout == ""
     assert location in result.stderr
-    assert "ValidationError" in result.stderr
+    assert "Traceback" not in result.stderr
 
 
 def test_settings_accept_explicit_overrides_in_invalid_environment(monkeypatch: pytest.MonkeyPatch) -> None:

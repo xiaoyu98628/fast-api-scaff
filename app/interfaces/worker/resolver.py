@@ -8,6 +8,7 @@ from typing import Protocol, cast
 from app.infrastructure.queue.errors import InvalidMessageError, QueueConfigurationError
 from app.infrastructure.queue.job import JobDescriptor, QueueJob, describe_job
 from app.infrastructure.queue.policies import JobPolicy
+from app.interfaces.worker.context import JobExecutionContext
 
 
 class ExecutableJob(Protocol):
@@ -19,8 +20,8 @@ class ExecutableJob(Protocol):
 
         ...
 
-    async def execute(self, payload: bytes) -> None:
-        """解码业务 payload 并执行具体任务。"""
+    async def execute(self, payload: bytes, context: JobExecutionContext) -> None:
+        """解码业务 payload，并使用单任务上下文执行具体任务。"""
 
         ...
 
@@ -35,7 +36,7 @@ class JobTypeResolver(Protocol):
 
 
 @dataclass(frozen=True, slots=True)
-class JobBinding[T: QueueJob]:
+class JobBinding[T: QueueJob[JobExecutionContext]]:
     """绑定已验证的任务描述，并负责 payload 解码和执行。"""
 
     descriptor: JobDescriptor[T]
@@ -46,8 +47,8 @@ class JobBinding[T: QueueJob]:
 
         return self.descriptor.policy
 
-    async def execute(self, payload: bytes) -> None:
-        """恢复准确任务类型后调用其无参数 handle。"""
+    async def execute(self, payload: bytes, context: JobExecutionContext) -> None:
+        """恢复准确任务类型后把单任务上下文交给 handle。"""
 
         try:
             job = self.descriptor.codec.decode(payload)
@@ -55,7 +56,7 @@ class JobBinding[T: QueueJob]:
                 raise TypeError("Codec 返回了错误的任务类型")
         except Exception as error:
             raise InvalidMessageError("业务任务数据解码失败") from error
-        await job.handle()
+        await job.handle(context)
 
 
 @dataclass(frozen=True)
@@ -83,7 +84,7 @@ class JobResolver:
             raise KeyError((reference, version))
         return JobBinding(descriptor)
 
-    def _load(self, reference: str) -> type[QueueJob]:
+    def _load(self, reference: str) -> type[QueueJob[JobExecutionContext]]:
         """从白名单模块加载模块级 QueueJob 子类。"""
 
         # 类路径来自队列消息，因此导入前必须先限制在可信包前缀内。
@@ -97,4 +98,4 @@ class JobResolver:
             value = getattr(value, part)
         if not isinstance(value, type) or not issubclass(value, QueueJob):
             raise TypeError("任务类必须继承 QueueJob")
-        return cast(type[QueueJob], value)
+        return cast(type[QueueJob[JobExecutionContext]], value)

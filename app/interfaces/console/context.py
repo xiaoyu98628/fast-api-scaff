@@ -12,3 +12,4 @@ class ConsoleContext:
 
     settings: Settings
     container: ApplicationContainer
+    command_id: str

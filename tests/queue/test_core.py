@@ -16,6 +16,7 @@ from app.infrastructure.queue.contracts.message import MessageEnvelope
 from app.infrastructure.queue.errors import InvalidMessageError, QueueConfigurationError, QueueError
 from app.infrastructure.queue.job import describe_job, encode_job, job_reference
 from app.infrastructure.queue.manager import QueueManager
+from app.runtime.trace import TraceContext, bind_trace_context
 from tests.queue.fakes import (
     FakeQueueBackend,
     FakeQueueConsumer,
@@ -104,12 +105,36 @@ async def test_manager_is_lazy_and_dispatches_typed_job() -> None:
         item = queues.codec.decode(delivery.payload)
         assert item.job_id == job_id
         assert item.payload == b"42"
+        assert item.correlation_id is None
         await delivery.acknowledge()
     await queues.aclose()
     with pytest.raises(QueueError):
         await queues.get()
     with pytest.raises(QueueError):
         await publisher.dispatch(Job(43))
+
+
+@pytest.mark.asyncio
+async def test_dispatch_inherits_runtime_correlation_and_allows_explicit_override() -> None:
+    queues = create_queue_manager()
+
+    with bind_trace_context(TraceContext(correlation_id="request-123", request_id="request-123")):
+        inherited_id = await queues.dispatch(Job(1))
+        overridden_id = await queues.dispatch(Job(2), correlation_id="manual-456")
+
+    async with queues.consume() as consumer:
+        inherited_delivery = await consumer.receive()
+        inherited = queues.codec.decode(inherited_delivery.payload)
+        await inherited_delivery.acknowledge()
+        overridden_delivery = await consumer.receive()
+        overridden = queues.codec.decode(overridden_delivery.payload)
+        await overridden_delivery.acknowledge()
+
+    assert inherited.job_id == inherited_id
+    assert inherited.correlation_id == "request-123"
+    assert overridden.job_id == overridden_id
+    assert overridden.correlation_id == "manual-456"
+    await queues.aclose()
 
 
 @pytest.mark.asyncio

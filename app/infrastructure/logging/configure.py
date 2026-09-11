@@ -5,7 +5,7 @@ import logging.config
 from pydantic import ValidationError
 
 from app.config.settings import Settings
-from app.infrastructure.logging.context import RequestContextFilter
+from app.infrastructure.logging.context import RuntimeContextFilter
 from app.infrastructure.logging.drivers.registry import DEFAULT_LOGGING_DRIVERS, LoggingDriverRegistry
 from app.infrastructure.logging.errors import LoggingConfigurationError
 from app.infrastructure.logging.formatter import JsonLogFormatter, TextLogFormatter
@@ -29,8 +29,8 @@ def configure_logging(
             "version": 1,
             "disable_existing_loggers": False,
             "filters": {
-                "request_context": {
-                    "()": RequestContextFilter,
+                "runtime_context": {
+                    "()": RuntimeContextFilter,
                 }
             },
             "formatters": {
@@ -116,11 +116,11 @@ def _build_handlers(
             rendered_keys = ", ".join(sorted(reserved_keys))
             raise LoggingConfigurationError(f"日志 Driver 不能配置 Core 保留字段：{rendered_keys}")
 
-        # 格式和请求上下文属于日志核心契约，不允许各驱动自行分叉。
+        # 格式和运行时关联上下文属于日志核心契约，不允许各驱动自行分叉。
         handlers[name] = {
             **handler,
             "formatter": settings.logging.format,
-            "filters": ["request_context"],
+            "filters": ["runtime_context"],
         }
 
     return handlers

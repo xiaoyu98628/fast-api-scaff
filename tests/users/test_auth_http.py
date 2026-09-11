@@ -21,6 +21,7 @@ from app.contexts.user.jobs.login_succeeded import LoginSucceededJob
 from app.interfaces.http.controllers.v1.auth.router import _publish_login_succeeded
 from app.interfaces.http.shared.response.codes.error_code import ErrorCode
 from app.runtime.container import ApplicationContainer
+from app.runtime.trace import TraceContext, bind_trace_context, current_trace_context
 from database.main.model_registry import load_main_database_metadata
 
 
@@ -47,7 +48,12 @@ async def client() -> AsyncIterator[AsyncClient]:
 
 @pytest.mark.asyncio
 async def test_http_login_me_logout_and_public_crud(client: AsyncClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    publish_login_succeeded = AsyncMock()
+    observed_trace_contexts: list[TraceContext | None] = []
+
+    async def capture_trace_context(_container: ApplicationContainer, _user_id: UUID) -> None:
+        observed_trace_contexts.append(current_trace_context())
+
+    publish_login_succeeded = AsyncMock(side_effect=capture_trace_context)
     monkeypatch.setattr("app.interfaces.http.controllers.v1.auth.router._publish_login_succeeded", publish_login_succeeded)
     created = await client.post("/api/v1/users", json={"username": "alice", "email": "alice@example.com", "password": "password123"})
     assert created.status_code == 201
@@ -60,7 +66,16 @@ async def test_http_login_me_logout_and_public_crud(client: AsyncClient, monkeyp
     assert token["token_type"] == "bearer"
     assert token["expires_in"] == 120
     assert len(token["access_token"]) == 43
-    publish_login_succeeded.assert_awaited_once_with(ANY, UUID(user["id"]))
+    publish_login_succeeded.assert_awaited_once_with(
+        ANY,
+        UUID(user["id"]),
+    )
+    assert observed_trace_contexts == [
+        TraceContext(
+            correlation_id=login.headers["X-Request-ID"],
+            request_id=login.headers["X-Request-ID"],
+        )
+    ]
     headers = {"Authorization": f"Bearer {token['access_token']}"}
 
     me = await client.get("/api/v1/auth/me", headers=headers)
@@ -96,7 +111,7 @@ async def test_missing_malformed_and_unknown_credentials_use_unified_401(client:
 
 
 @pytest.mark.asyncio
-async def test_login_reports_missing_user_and_does_not_log_secrets(
+async def test_login_hides_missing_user_and_does_not_log_secrets(
     client: AsyncClient,
     caplog: pytest.LogCaptureFixture,
     monkeypatch: pytest.MonkeyPatch,
@@ -110,14 +125,14 @@ async def test_login_reports_missing_user_and_does_not_log_secrets(
     incorrect = await client.post("/api/v1/auth/login", json={"username": "alice", "password": "wrong-password"})
     await client.patch(f"/api/v1/users/{user_id}/status", json={"status": "disabled"})
     disabled = await client.post("/api/v1/auth/login", json={"username": "alice", "password": password})
-    assert missing.status_code == 404
-    assert missing.json()["message"] == "用户不存在"
+    assert missing.status_code == 401
+    assert missing.json()["message"] == "用户名或密码错误"
     assert missing.json()["success"] is False
     assert missing.json()["data"] is None
     assert missing.headers["Cache-Control"] == "no-store"
-    assert "WWW-Authenticate" not in missing.headers
+    assert missing.headers["WWW-Authenticate"] == "Bearer"
     assert password not in missing.text
-    for result in (incorrect, disabled):
+    for result in (missing, incorrect, disabled):
         assert result.status_code == 401
         assert result.json()["message"] == "用户名或密码错误"
         assert result.headers["WWW-Authenticate"] == "Bearer"
@@ -138,12 +153,13 @@ async def test_login_queue_failure_does_not_change_successful_response(client: A
 
 
 @pytest.mark.asyncio
-async def test_login_publisher_uses_default_queue() -> None:
+async def test_login_publisher_uses_default_queue_without_manual_correlation() -> None:
     queues = Mock(dispatch=AsyncMock())
     container = cast(ApplicationContainer, SimpleNamespace(queues=queues))
     user_id = uuid7()
 
-    await _publish_login_succeeded(container, user_id)
+    with bind_trace_context(TraceContext(correlation_id="request-123", request_id="request-123")):
+        await _publish_login_succeeded(container, user_id)
 
     queues.dispatch.assert_awaited_once_with(LoginSucceededJob(user_id=user_id))
 
@@ -163,9 +179,7 @@ def test_auth_openapi_documents_bearer_and_unified_responses() -> None:
     paths = schema["paths"]
     assert schema["components"]["securitySchemes"]["SessionBearer"]["scheme"] == "bearer"
     assert "security" not in paths["/api/v1/auth/login"]["post"]
-    not_found = paths["/api/v1/auth/login"]["post"]["responses"]["404"]
-    assert not_found["description"] == "登录用户不存在"
-    assert "JsonResponse" in not_found["content"]["application/json"]["schema"]["$ref"]
+    assert "404" not in paths["/api/v1/auth/login"]["post"]["responses"]
     assert "security" not in paths["/api/v1/users"]["get"]
     for path, method in (("/api/v1/auth/me", "get"), ("/api/v1/auth/logout", "post")):
         operation = paths[path][method]

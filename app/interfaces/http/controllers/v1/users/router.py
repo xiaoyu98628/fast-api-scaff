@@ -145,6 +145,7 @@ async def update_user(
     response_model=JsonResponse[UserResponse],
     responses={
         404: USER_NOT_FOUND_RESPONSE,
+        409: USER_CONFLICT_RESPONSE,
         422: USER_VALIDATION_ERROR_RESPONSE,
     },
 )
@@ -175,6 +176,7 @@ async def change_user_status(
     response_class=Response,
     responses={
         404: USER_NOT_FOUND_RESPONSE,
+        409: USER_CONFLICT_RESPONSE,
         422: USER_VALIDATION_ERROR_RESPONSE,
     },
 )

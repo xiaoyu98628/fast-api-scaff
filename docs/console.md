@@ -35,9 +35,10 @@ uv run python -m app.console app info
 - 当前进程本地时区名称和 offset；
 - `.env` 中声明的数据库连接名；
 - `.env` 中声明的缓存连接名；
+- `.env` 中声明的队列连接名；
 - `.env` 中声明的向量存储连接名。
 
-它只读取配置，不构建应用容器，也不会验证数据库、缓存网络或迁移状态。看到连接名只能证明配置字典中存在该名称。
+它只读取配置，不构建应用容器，也不会验证数据库、缓存、队列网络或迁移状态。看到连接名只能证明配置字典中存在该名称。
 
 ## 3. 用户命令
 
@@ -77,6 +78,8 @@ uv run python -m app.console users list \
 
 结果由 `ConsolePresenter` 序列化为 JSON：dataclass 转对象，UUID 转字符串，枚举转值，日期时间使用 ISO 8601。当前时间是本地无时区值，所以 ISO 字符串通常不带 offset。
 
+正常进程入口通过 Runtime 与 HTTP 共用的生成器，为每次 Console 调用创建 32 位 UUID4 十六进制 `command_id`，并在参数解析、命令处理和资源生命周期期间绑定到当前执行流，同时作为该调用的 `correlation_id`。需要应用容器的 operation 还可以通过 `context.command_id` 显式读取它。结构化日志和新发布的队列消息会自动取得关联 ID，但 stdout 结果不会额外包裹或混入 command ID，现有脚本数据协议保持不变。直接调用 `ConsoleHost.run()` 且外层没有命令上下文时，宿主会为该次 operation 单独生成 ID。
+
 不要在命令处理器里用 `print()` 随意输出调试信息，否则会破坏 stdout 的机器可读契约。诊断信息应走日志或 stderr。
 
 ## 5. 退出码
@@ -98,6 +101,7 @@ uv run python -m app.console users list \
   → 读取并缓存 Settings
   → 配置 Console 日志
   → 创建 ConsoleHost 和 Typer 应用
+  → 生成并绑定 command_id
   → 解析并执行命令
   → 构建 ApplicationRuntime
   → 构建并启动 ApplicationContainer
@@ -108,7 +112,7 @@ uv run python -m app.console users list \
 
 命令失败时，上下文管理器仍会尝试关闭容器。关闭阶段多个资源同时失败时可能形成 `ExceptionGroup`，不应为了隐藏关闭错误而直接终止进程。
 
-配置加载和日志初始化由顶层入口负责，因此包括 `--help` 在内的所有调用都会先校验完整配置。`app info` 是特例：它直接读取入口注入的配置快照，避免无意义地构建缓存、数据库和用户上下文。
+配置加载和日志初始化由 `main()` 在 Console 根错误边界内负责，因此包括 `--help` 在内的所有调用都会先校验完整配置，配置错误会输出稳定错误并返回 1，不暴露 Python traceback。单纯导入 `app.console` 不读取环境配置。`app info` 是特例：它直接读取入口注入的配置快照，避免无意义地构建缓存、数据库和用户上下文。
 
 ## 7. 新增命令
 
@@ -128,7 +132,7 @@ class ExampleConsoleCommand(ConsoleCommand):
         self._console.presenter.text("ok")
 ```
 
-需要应用依赖时，把异步业务操作写成接收 `ConsoleContext` 的函数，再通过 `self._console.run(operation)` 执行。命令应调用 `context.container.<context>.service`，不应直接创建 Repository、Session 或具体缓存驱动。
+需要应用依赖时，把异步业务操作写成接收 `ConsoleContext` 的函数，再通过 `self._console.run(operation)` 执行。命令应调用 `context.container.<context>.service`，不应直接创建 Repository、Session 或具体缓存驱动。通过 `context.container.queues.dispatch(job)` 发布的新任务会自动继承当前 command ID，无需逐层传递；只有要建立另一条调用链时才显式覆盖 `correlation_id`。
 
 自动发现规则：
 

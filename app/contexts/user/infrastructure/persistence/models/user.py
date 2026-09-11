@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, String, UniqueConstraint
+from sqlalchemy import CheckConstraint, DateTime, Integer, String, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infrastructure.database.orm.main import MainBase
@@ -27,3 +27,4 @@ class UserModel(MainBase):
     status: Mapped[str] = mapped_column(String(16), nullable=False, comment="用户状态")
     created_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False, comment="创建时间")
     updated_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False, comment="更新时间")
+    version: Mapped[int] = mapped_column(Integer(), nullable=False, default=1, server_default=text("1"), comment="并发版本")

@@ -13,7 +13,7 @@ class PasswordHasher(Protocol):
 
         ...
 
-    async def verify(self, password: str, password_hash: PasswordHash) -> bool:
-        """验证原始密码是否匹配已有哈希。"""
+    async def verify_or_dummy(self, password: str, password_hash: PasswordHash | None) -> bool:
+        """验证已有哈希；哈希不存在时执行等成本占位校验并返回假。"""
 
         ...

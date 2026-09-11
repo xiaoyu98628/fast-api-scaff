@@ -15,7 +15,7 @@
 - 普通与流式 HTTP 出站请求、独立连接池、阶段超时、池压力诊断和结构化日志；
 - Redis Streams、Kafka、RabbitMQ 队列适配器和独立 Worker；
 - QueueJob 动态解析与分发、投递内重试、SQL 失败存储及 Console 重放；
-- JSON/Text 结构化日志、request ID、访问日志和数据库查询日志；
+- JSON/Text 结构化日志、HTTP request ID、Console command ID、Worker 任务关联、访问日志和数据库查询日志；
 - 架构依赖测试、pytest、Ruff、ty 与 GitHub Actions 质量检查；
 - CI 使用临时 MySQL/PostgreSQL 服务验证 Alembic upgrade、downgrade 和再次 upgrade。
 
@@ -83,7 +83,7 @@ uv run python -m app.console users create \
 uv run python -m app.console users list --page 1 --limit 20
 ```
 
-`users create` 会交互式读取并确认密码，输入不回显。命令结果写 stdout，日志和错误写 stderr；退出码 0/1/2 分别表示成功、运行失败和用法错误。
+`users create` 会交互式读取并确认密码，输入不回显。每次 Console 调用通过与 HTTP 相同的生成器创建 32 位 UUID4 十六进制 `command_id`，并自动作为当前 `correlation_id` 附加到调用链日志和新发布的队列消息；命令结果写 stdout，日志和错误写 stderr，结果 JSON 不额外包裹该 ID。退出码 0/1/2 分别表示成功、运行失败和用法错误。
 
 ## 登录示例
 
@@ -97,9 +97,9 @@ curl -X POST http://127.0.0.1:8000/api/v1/auth/login \
 
 将响应 `data.access_token` 放入 `Authorization: Bearer <token>`，即可访问 `GET /api/v1/auth/me`；`POST /api/v1/auth/logout` 删除该会话并返回 204。会话默认有效期为 3600 秒，可通过 `AUTH_SESSION_TTL_SECONDS` 配置。
 
-登录用户不存在时直接返回 404 和“用户不存在”，不执行密码验证；密码错误或账户禁用返回 401。
+用户名不存在、格式错误、密码错误或账户禁用时统一返回 401 和“用户名或密码错误”。对于无法取得用户哈希的请求，密码组件仍执行固定占位哈希校验，避免直接暴露账户是否存在。
 
-认证使用独立的 `user_sessions` 表，签发时间和过期时间采用与用户资料一致的本地无时区 `datetime`，用户表不增加角色或版本字段。每次成功登录会清理已过期会话；密码重置保留已有会话，禁用期间会话不可用，再启用后未过期会话仍可使用。详细契约见[认证](docs/authentication.md)。
+认证使用独立的 `user_sessions` 表，签发时间和过期时间采用与用户资料一致的本地无时区 `datetime`，用户表不增加角色或认证版本字段。用户聚合使用从 1 开始递增的内部 `version` 执行乐观并发控制，陈旧写入返回 409，不把版本暴露到 HTTP DTO；数据库迁移将该字段定义为非空整数并默认初始化为 1。每次成功登录会清理已过期会话；密码重置保留已有会话，禁用期间会话不可用，再启用后未过期会话仍可使用。详细契约见[认证](docs/authentication.md)。
 
 ## Docker
 
@@ -160,7 +160,7 @@ uv run python -m app.worker --connection redis --queue reports --concurrency 4
 docker compose up --build worker
 ```
 
-内置 `LoginSucceededJob` 由登录接口尽力投递到默认连接配置的默认队列（`sample.env` 为 `default`），消息以 `user_id` 参数标识登录用户，不包含用户名、密码或 Token；Worker 收到后调用它的 `handle()` 记录固定文案和结构化用户 ID。新增任务只需继承 `QueueJob` 并实现 `handle()`，无需注册、扫描目录或修改组合根。HTTP 与 Console 只负责发布，独立 Worker 通过 Redis、Kafka 或 RabbitMQ 消费。
+内置 `LoginSucceededJob` 由登录接口尽力投递到默认连接配置的默认队列（`sample.env` 为 `default`），消息以 `user_id` 参数标识登录用户，不包含用户名、密码或 Token；HTTP request ID 由运行时上下文自动作为 correlation ID 写入消息。Worker 收到后调用它的 `handle(context)` 记录固定文案和结构化用户 ID，并在发布后续任务时自动继承该 correlation ID。每条消息获得不可变 `JobExecutionContext`，其中既有当前配置和正在运行的 `ApplicationContainer`，也有任务、队列和关联元数据；Job 可以像 Console operation 一样选择已装配的应用服务以及数据库、缓存、HTTP、队列和向量能力。业务 Job 应优先调用应用服务，不把容器继续传入 Application/Domain。新增任务无需注册、扫描目录或修改组合根。HTTP 与 Console 负责发布，独立 Worker 通过 Redis、Kafka 或 RabbitMQ 消费。
 
 失败任务固定使用 SQL 存储，需配置 QUEUE_FAILED__DATABASE 并执行对应 Alembic migration。外部适配器目前由模拟客户端测试覆盖，未进行真实 Redis/Kafka/RabbitMQ 服务集成验证。重试是投递内重试，不包含持久延迟调度或 exactly-once 保证。
 

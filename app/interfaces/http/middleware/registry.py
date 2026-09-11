@@ -8,6 +8,7 @@ from app.interfaces.http.middleware.cors import build_cors_middleware
 from app.interfaces.http.middleware.exception_capture import ExceptionCaptureMiddleware
 from app.interfaces.http.middleware.query_param_decode import QueryParamDecodeMiddleware
 from app.interfaces.http.middleware.request_id import build_request_id_middleware
+from app.interfaces.http.middleware.trace_context import TraceContextMiddleware
 
 
 def build_http_middlewares(settings: Settings) -> list[Middleware]:
@@ -17,6 +18,7 @@ def build_http_middlewares(settings: Settings) -> list[Middleware]:
     middlewares = [
         build_cors_middleware(settings.cors),
         build_request_id_middleware(settings.app.service_code),
+        Middleware(TraceContextMiddleware),
     ]
 
     if settings.logging.access_enabled:

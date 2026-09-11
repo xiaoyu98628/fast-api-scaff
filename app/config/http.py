@@ -9,7 +9,7 @@ from app.config.base import BASE_SETTINGS_CONFIG
 class HttpTimeoutSettings(BaseModel):
     """HTTP 请求阶段超时。"""
 
-    model_config = ConfigDict(frozen=True, extra="forbid")
+    model_config = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
 
     connect: float = Field(default=3.0, gt=0)
     read: float = Field(default=10.0, gt=0)
@@ -19,7 +19,7 @@ class HttpTimeoutSettings(BaseModel):
 class HttpPoolSettings(BaseModel):
     """一个 HTTP 连接池的容量和等待策略。"""
 
-    model_config = ConfigDict(frozen=True, extra="forbid")
+    model_config = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
 
     timeout: float = Field(default=5.0, gt=0)
     max_connections: int = Field(default=100, ge=1)
@@ -44,6 +44,7 @@ class HttpSettings(BaseSettings):
         env_prefix="HTTP_",
         env_nested_delimiter="__",
         frozen=True,
+        allow_inf_nan=False,
     )
 
     timeout: HttpTimeoutSettings = HttpTimeoutSettings()

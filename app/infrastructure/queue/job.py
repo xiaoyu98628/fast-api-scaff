@@ -11,16 +11,16 @@ from app.infrastructure.queue.errors import QueueConfigurationError
 from app.infrastructure.queue.policies import JobPolicy
 
 
-class QueueJob(ABC):
-    """把可序列化任务数据与无参数异步执行入口收敛在同一类型。"""
+class QueueJob[TContext](ABC):
+    """把可序列化任务数据与单次执行上下文入口收敛在同一类型。"""
 
     version: ClassVar[int] = 1
     policy: ClassVar[JobPolicy] = JobPolicy()
     codec: ClassVar[JobCodec[Any] | None] = None
 
     @abstractmethod
-    async def handle(self) -> None:
-        """执行已经从消息 payload 恢复的任务。"""
+    async def handle(self, context: TContext) -> None:
+        """使用单次执行上下文处理已经从消息 payload 恢复的任务。"""
 
         pass
 
@@ -35,7 +35,7 @@ class EncodedJob:
 
 
 @dataclass(frozen=True, slots=True)
-class JobDescriptor[T: QueueJob]:
+class JobDescriptor[T: QueueJob[Any]]:
     """缓存一个 QueueJob 类型的稳定消息契约。"""
 
     reference: str
@@ -52,7 +52,7 @@ class JobDescriptor[T: QueueJob]:
         return EncodedJob(self.reference, self.version, self.codec.encode(cast(T, job)))
 
 
-def job_reference(job_type: type[QueueJob]) -> str:
+def job_reference(job_type: type[QueueJob[Any]]) -> str:
     """生成 Worker 可动态导入的 ``module:qualname`` 类型标识。"""
 
     module = job_type.__module__.strip()
@@ -66,7 +66,7 @@ def job_reference(job_type: type[QueueJob]) -> str:
 
 
 @cache
-def describe_job[T: QueueJob](job_type: type[T]) -> JobDescriptor[T]:
+def describe_job[T: QueueJob[Any]](job_type: type[T]) -> JobDescriptor[T]:
     """验证并缓存任务类型配置，未声明 Codec 时使用 JSON。"""
 
     if not issubclass(job_type, QueueJob):

@@ -18,6 +18,7 @@ def user_to_model(user: User) -> UserModel:
         status=user.status.value,
         created_at=user.created_at,
         updated_at=user.updated_at,
+        version=user.version,
     )
 
 
@@ -32,11 +33,12 @@ def user_to_domain(model: UserModel) -> User:
         status=UserStatus(model.status),
         created_at=model.created_at,
         updated_at=model.updated_at,
+        version=model.version,
     )
 
 
 def user_update_values(user: User) -> dict[str, object]:
-    """提取允许更新的字段，不修改用户 ID 和创建时间。"""
+    """提取完整聚合的下一版本更新值。"""
 
     return {
         "username": user.username.value,
@@ -44,4 +46,5 @@ def user_update_values(user: User) -> dict[str, object]:
         "password": user.password_hash.value,
         "status": user.status.value,
         "updated_at": user.updated_at,
+        "version": user.version + 1,
     }

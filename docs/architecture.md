@@ -1,6 +1,6 @@
 # 架构说明
 
-项目采用模块化单体：一个部署单元内按限界上下文划分业务，并在每个上下文内部保持 Domain、Application、Infrastructure 边界。HTTP、Console 与 Worker 是独立宿主，共享配置、组合根和资源生命周期；HTTP 与 Console 调用已装配的应用用例，当前 Worker 动态解析并执行自包含 QueueJob。
+项目采用模块化单体：一个部署单元内按限界上下文划分业务，并在每个上下文内部保持 Domain、Application、Infrastructure 边界。HTTP、Console 与 Worker 是独立宿主，共享配置、组合根和资源生命周期；HTTP、Console 与 Worker Job 都可以在各自的入站边界选择已装配的应用用例，Worker 通过不可变上下文向动态解析的 QueueJob 提供当前应用容器。
 
 这不是为了堆叠 DDD 名词，而是解决三个实际问题：业务规则不被框架入口绕过，基础设施可以替换/测试，多入口复用同一用例且不会出现行为分叉。
 
@@ -28,7 +28,7 @@ app/
 │   ├── http/               # FastAPI 请求、响应、中间件和路由
 │   ├── console/            # Typer 命令、参数、展示和退出码
 │   └── worker/             # 队列 Job 动态解析、执行和消费并发
-└── runtime/                # 宿主无关的容器、生命周期和进程路径约定
+└── runtime/                # 宿主无关的容器、生命周期、追踪上下文和进程路径约定
 
 database/main/              # main 数据库的 Alembic 环境与模型注册
 tests/                      # 分层测试与架构约束
@@ -55,7 +55,7 @@ bootstrap/composition 负责选择实现并完成装配
 - Infrastructure 可以依赖 Application/Domain 协议并实现它们；
 - Interfaces 依赖 Application DTO/错误，不把 FastAPI/Typer 传入业务层；
 - Interfaces 不依赖 Bootstrap，避免协议适配器反向控制启动装配；
-- Runtime 保存宿主无关的 `ApplicationContainer` 和 `ApplicationRuntime`；
+- Runtime 保存宿主无关的 `ApplicationContainer`、`ApplicationRuntime` 和 `TraceContext`；
 - Bootstrap/Composition 是允许知道具体实现、Interfaces 和 Runtime 的装配边界。
 
 `tests/test_architecture.py` 用 AST 检查 Domain、Application、Infrastructure、Interfaces 与 Bootstrap 的导入。它不仅保护核心层，还禁止共享 Infrastructure 反向依赖业务或宿主、上下文 Infrastructure 跨上下文依赖、Interfaces 依赖 Bootstrap，以及 Interfaces 直接穿透到上下文 Infrastructure。相对导入也会被视为违规，项目统一要求绝对、显式导入。这类测试防止边界在日常迭代中悄悄腐化。
@@ -72,7 +72,7 @@ bootstrap/composition 负责选择实现并完成装配
 - SQLAlchemy mapper/repository/UoW/model 与 pwdlib 密码哈希适配器；
 - HTTP 与 Console 入口。
 
-它覆盖用户 CRUD、密码重置和简单会话认证。`AuthApplicationService` 提供登录、当前用户和退出，独立的 `UserSession` 记录令牌摘要与有效期，并通过 `UserUnitOfWork.sessions` 与用户仓储共享事务。用户表没有角色、认证版本或数据版本字段；公开 CRUD 不受登录校验保护，也不包含用户自行修改密码和角色权限体系。它是示例上下文，并非完整 IAM。
+它覆盖用户 CRUD、密码重置和简单会话认证。`AuthApplicationService` 提供登录、当前用户和退出，独立的 `UserSession` 记录令牌摘要与有效期，并通过 `UserUnitOfWork.sessions` 与用户仓储共享事务。用户表没有角色或认证版本字段，但使用内部数据版本执行乐观并发控制；公开 CRUD 不受登录校验保护，也不包含用户自行修改密码和角色权限体系。它是示例上下文，并非完整 IAM。
 
 ## 4. 聚合与不变量
 
@@ -125,9 +125,9 @@ Python 无法提供绝对私有性；下划线是协作契约。真正的保证�
   → 返回 DTO
 ```
 
-Application 不知道 FastAPI、Typer、SQLAlchemy、pwdlib 或具体数据库。时钟和 `PasswordHasher` 窄端口由组合根注入，测试可提供固定时间和确定性的假哈希实现。端口提供 `async def hash(self, password: Password) -> PasswordHash` 和 `async def verify(self, password: str, password_hash: PasswordHash) -> bool`。基础设施适配器在线程中执行 Argon2 哈希和验证，两类操作共享同一个默认容量为 2 的限制器；用户服务和认证服务复用该实例。创建用户在哈希前做规范化与唯一性预检查，写入前再次检查；密码重置在确认目标存在后才哈希，并在写入事务中重新读取。这些预检查减少无效请求的计算占用，最终正确性仍由事务内检查和数据库约束保证。取消调用时会等待本次工作结束再传播取消，避免提前释放仍在计算的额度。聚合不会接触明文密码。
+Application 不知道 FastAPI、Typer、SQLAlchemy、pwdlib 或具体数据库。时钟和 `PasswordHasher` 窄端口由组合根注入，测试可提供固定时间和确定性的假哈希实现。端口提供 `async def hash(self, password: Password) -> PasswordHash` 和 `async def verify_or_dummy(self, password: str, password_hash: PasswordHash | None) -> bool`。基础设施适配器在线程中执行 Argon2 哈希和验证，两类操作共享同一个默认容量为 2 的限制器；用户服务和认证服务复用该实例。创建用户在哈希前做规范化与唯一性预检查，写入前再次检查；密码重置在确认目标存在后才哈希，并在写入事务中重新读取。这些预检查减少无效请求的计算占用，最终正确性仍由事务内检查和数据库约束保证。取消调用时会等待本次工作结束再传播取消，避免提前释放仍在计算的额度。聚合不会接触明文密码。
 
-会话令牌通过应用层 `SessionTokenCodec` 窄协议注入，基础设施使用 `secrets.token_urlsafe(32)` 和 SHA-256。用户不存在时立即抛出 `LoginUserNotFoundError`，HTTP 映射为 404 和“用户不存在”，不执行密码验证；用户存在时，慢密码验证在数据库事务外执行，签发前重新读取密码哈希与账户状态。没有版本字段或锁定串行化，重新读取不是并发改密撤销保证；已有会话也不会因密码重置失效。完整契约见[认证](authentication.md)。
+会话令牌通过应用层 `SessionTokenCodec` 窄协议注入，基础设施使用 `secrets.token_urlsafe(32)` 和 SHA-256。登录凭据失败统一抛出 `InvalidCredentialsError`；用户不存在或用户名格式错误时，密码适配器使用固定占位哈希执行等成本校验。用户存在时，慢密码验证在数据库事务外执行，签发前重新读取密码哈希与账户状态。用户数据版本只保护聚合写入，不是认证版本，因此重新读取仍不构成并发改密撤销保证；已有会话也不会因密码重置失效。完整契约见[认证](authentication.md)。
 
 Application Service 可以做跨聚合的流程编排和权限决策，但不应承载实体自身的核心规则。反过来，Domain 也不应执行数据库/缓存/网络 I/O。
 
@@ -142,7 +142,7 @@ Application Service 可以做跨聚合的流程编排和权限决策，但不应
 | Mapper | Domain 与 ORM 的显式转换 | 不编排用例 |
 | Provider | 把驱动配置转为资源定义 | 不暴露给业务层 |
 
-用户 UoW 在 commit 阶段和事务体退出阶段处理唯一约束异常，覆盖 INSERT 提交和 UPDATE 立即执行两条路径；执行阶段的异常在回滚、关闭成功后转换。未知 `IntegrityError` 原样保留，因为错误映射是语义承诺，过宽映射会把真实数据缺陷伪装成普通冲突。
+用户 UoW 在 commit 阶段和事务体退出阶段处理唯一约束异常，覆盖 INSERT 提交和 UPDATE 立即执行两条路径；执行阶段的异常在回滚、关闭成功后转换。未知 `IntegrityError` 原样保留，因为错误映射是语义承诺，过宽映射会把真实数据缺陷伪装成普通冲突。用户仓储以完整聚合执行 `WHERE id = ? AND version = ?` 条件更新，成功时同时把版本递增；零匹配会进一步区分目标已删除和版本冲突，分别映射为 404 与独立的 409。
 
 ## 8. Runtime Container 与 Composition Root
 
@@ -197,14 +197,14 @@ HTTP lifespan、ConsoleHost 和 WorkerHost 都复用 runtime。这样资源的�
 
 ## 11. HTTP、Console 与 Worker 适配器
 
-HTTP 与 Console 都调用 `UserApplicationService`，Worker 则解析消息携带的 QueueJob 类型并调用其 `handle()`：
+HTTP 与 Console 都调用 `UserApplicationService`，Worker 则解析消息携带的 QueueJob 类型，并通过每条消息的 `JobExecutionContext` 调用其 `handle(context)`：
 
 - HTTP 负责 schema、status、统一 JSON 和异常到 HTTP 映射；
-- Console 负责 Typer 参数、JSON stdout、错误 stderr 和退出码；
-- Worker 负责消息解码、执行策略、并发消费和确认；
+- Console 负责 Typer 参数、每次调用的 command ID、JSON stdout、错误 stderr 和退出码；
+- Worker 负责消息解码、宿主上下文注入、执行策略、并发消费和确认；
 - 三者都不实现业务规则，不直接操作 ORM，也不负责全局启动装配。
 
-HTTP 独立定义 `page/limit` 查询协议和 `items + meta` 分页响应，并在调用应用服务前把页码换算为 `offset/limit`。Console 的 `users list` 也在宿主边界约束 `page` 和 `limit`，但直接输出应用 DTO；后台批处理应根据任务语义使用 `batch_size`、进度、stdout/stderr 和退出码，而不是复用 HTTP 分页响应。
+HTTP 独立定义 `page/limit` 查询协议和 `items + meta` 分页响应，并在调用应用服务前把页码换算为 `offset/limit`。Console 的 `users list` 也在宿主边界约束 `page` 和 `limit`，但直接输出应用 DTO；HTTP 缺少调用方 ID 和 Console 启动命令时都通过 Runtime 的同一个生成器创建 32 位 UUID4 十六进制 ID，`ConsoleHost` 在 operation 中复用 command ID，外层没有命令上下文的直接宿主调用则生成独立 ID。HTTP、Console 和 Worker 分别在入口把 request ID、command ID 或消息 correlation ID 绑定到宿主无关的 `TraceContext`，日志和新发布的队列消息从中自动取得关联字段，业务调用不逐层传递 ID。后台批处理应根据任务语义使用 `batch_size`、进度、stdout/stderr 和退出码，而不是复用 HTTP 分页响应。
 
 新增宿主时，`interfaces` 只承担协议边界，`bootstrap` 负责日志、组合、生命周期、取消和进程入口。不能因为某个适配器能够 import service，就把启动装配重新放回 `interfaces`。
 
@@ -272,6 +272,8 @@ HTTP 独立定义 `page/limit` 查询协议和 `items + meta` 分页响应，并
 
 共享基础设施 queue 提供 QueueJob、Dispatcher、QueueManager、驱动和 FailedJobStore。ApplicationContainer.queues 与数据库等 Manager 一样按需使用；队列先关闭，数据库后关闭。HTTP 不订阅队列。
 
-独立 `app.worker` 入口由 `app.bootstrap.worker` 完成装配并复用 ApplicationRuntime；`app.interfaces.worker` 只负责 Job 类路径解析、消息执行、重试和消费并发。QueueJob 将可序列化数据与 `handle()` 收敛在同一类，投递时自动把类路径写入消息，Worker 动态导入并验证该类型；框架不扫描 `contexts`、`jobs` 或其他业务目录，不维护业务注册表，应用组合根也不收集 Job。当前示例把任务放在上下文级 `jobs/` 包并按类名使用蛇形命名模块，但这只是组织习惯。当前无参数 `handle()` 不提供应用服务依赖注入，只适合自包含任务；需要业务依赖时应先设计显式的窄接口装配边界。Application/Domain 不导入 Worker、具体队列驱动或全局容器，共享 Infrastructure 不导入具体业务。内置 `LoginSucceededJob` 由登录 HTTP 适配器在会话提交后尽力投递，作为默认队列和 `handle()` 日志输出的最小示例，不进入认证 Application/Domain，也不参与登录事务。
+独立 `app.worker` 入口由 `app.bootstrap.worker` 完成装配并复用 ApplicationRuntime；`app.interfaces.worker` 负责 Job 类路径解析、宿主上下文注入、消息执行、重试和消费并发。QueueJob 将可序列化数据与 `handle(context)` 收敛在同一类，投递时自动把类路径写入消息，Worker 动态导入并验证该类型；框架不扫描 `contexts`、`jobs` 或其他业务目录，不维护业务注册表，应用组合根也不收集 Job。当前示例把任务放在上下文级 `jobs/` 包并按类名使用蛇形命名模块，但这只是组织习惯。
+
+`WorkerContext` 是进程级宿主上下文，与 `ConsoleContext` 一样只在宿主/入站适配边界暴露当前配置和已经启动的 `ApplicationContainer`。执行器从它为每条消息创建独立、不可变的 `JobExecutionContext`，其中 `settings` 和 `container` 保持直接访问，任务、队列和关联元数据组合在 `context.job`；同一投递内重试复用同一个对象。Job 应优先从容器选择当前上下文的公开应用服务；需要数据库、缓存或外部服务的业务流程，仍由 Application 层定义窄协议并经 composition 注入实现。Application/Domain 不导入 Worker、具体 Manager、队列驱动或全局容器，共享 Infrastructure 不导入具体业务。所有消费槽共享应用级 Manager，任务级 Session、UoW 和事务不能跨 Job 共享。内置 `LoginSucceededJob` 由登录 HTTP 适配器在会话提交后尽力投递，HTTP request ID 通过 `TraceContext` 自动进入消息 correlation ID，作为默认队列、跨宿主日志关联和 `handle(context)` 输出的最小示例；它不进入认证 Application/Domain，也不参与登录事务。
 
 SQL 失败表属于共享技术能力，在 main metadata 注册；失败写入使用独立短事务，不借用业务 UoW。任务执行和消息确认不是跨系统原子事务。详见[队列](queue.md)、[Worker](worker.md)。

@@ -2,7 +2,7 @@
 
 配置由 `pydantic-settings` 从项目根目录 `.env` 和进程环境变量读取。进程环境变量优先于 `.env`；未知字段会被忽略；配置对象创建后不可变，并由 `load_settings()` 在当前进程内缓存。
 
-导入配置模块不会读取或校验环境变量。HTTP、Console 和 Worker 顶层入口均在导入时通过 `load_settings()` 显式创建各组配置并初始化各自的日志；因此即使 Console 或 Worker 只请求 `--help`，也会先校验完整配置。手动构造 `Settings` 时，未提供的认证、HTTP、向量和日志配置由默认值工厂在实例化时创建。默认值工厂的 `_env_file=None` 只跳过 `.env`，仍读取进程环境变量；显式注入这些配置时不会调用对应工厂。
+导入配置模块不会读取或校验环境变量。HTTP 顶层入口在导入时通过 `load_settings()` 显式创建各组配置并初始化日志；Console 和 Worker 则在 `main()` 的进程错误边界内完成相同步骤，单纯导入入口模块没有配置副作用。Console 或 Worker 即使只请求 `--help`，仍会先校验完整配置，但配置错误会转换成稳定的 stderr 输出和退出码 1。手动构造 `Settings` 时，未提供的认证、HTTP、向量和日志配置由默认值工厂在实例化时创建。默认值工厂的 `_env_file=None` 只跳过 `.env`，仍读取进程环境变量；显式注入这些配置时不会调用对应工厂。
 
 ## 1. 命名和嵌套规则
 
@@ -107,18 +107,18 @@ HTTP 出站配置在 `load_settings()` 时严格校验，普通请求和流式�
 
 | 变量 | 类型 | 默认值 | 约束与说明 |
 | --- | --- | --- | --- |
-| `HTTP_TIMEOUT__CONNECT` | `float` | `3.0` | 建立 TCP/TLS 连接，正数秒 |
-| `HTTP_TIMEOUT__READ` | `float` | `10.0` | 等待响应数据，正数秒 |
-| `HTTP_TIMEOUT__WRITE` | `float` | `10.0` | 发送请求数据，正数秒 |
+| `HTTP_TIMEOUT__CONNECT` | `float` | `3.0` | 建立 TCP/TLS 连接，有限正数秒 |
+| `HTTP_TIMEOUT__READ` | `float` | `10.0` | 等待响应数据，有限正数秒 |
+| `HTTP_TIMEOUT__WRITE` | `float` | `10.0` | 发送请求数据，有限正数秒 |
 
 普通连接池使用 `HTTP_POOL__*`，流式连接池使用 `HTTP_STREAM_POOL__*`：
 
 | 后缀 | 普通池默认值 | 流式池默认值 | 约束与说明 |
 | --- | --- | --- | --- |
-| `TIMEOUT` | `5.0` | `10.0` | 等待连接池容量，正数秒 |
+| `TIMEOUT` | `5.0` | `10.0` | 等待连接池容量，有限正数秒 |
 | `MAX_CONNECTIONS` | `100` | `100` | 总连接数，至少 1 |
 | `MAX_KEEPALIVE_CONNECTIONS` | `20` | `10` | keep-alive 容量，0 到总连接数 |
-| `KEEPALIVE_EXPIRY` | `30.0` | `30.0` | 空闲连接过期时间，正数秒 |
+| `KEEPALIVE_EXPIRY` | `30.0` | `30.0` | 空闲连接过期时间，有限正数秒 |
 
 其他配置：
 
@@ -194,7 +194,7 @@ SQLite 不接受 MySQL/PostgreSQL 的连接池字段。连接模型使用 `extra
 | `CACHE_DEFAULT_TTL` | `int | null` | `300` | 秒；环境变量只能写正整数；`None` 仅可由代码构造 Settings 时显式传入 |
 | `CACHE_CONNECTIONS` | 嵌套对象 | `{}` | 按名称保存连接定义 |
 
-与数据库不同，所有缓存连接定义会在 `CacheManager` 构造时校验。因此无效的未使用缓存连接也会阻止 HTTP/Console 宿主构建容器。远程网络连接仍是延迟建立。
+与数据库不同，所有缓存连接定义会在 `CacheManager` 构造时校验。因此无效的未使用缓存连接也会阻止 HTTP、Console 或 Worker 宿主构建容器。远程网络连接仍是延迟建立。
 
 ### 8.1 公共字段
 
@@ -363,6 +363,6 @@ HTTP 不启动消费者。新增配置无队列连接默认值；`QUEUE_DEFAULT`
 | kafka | bootstrap_servers 非空列表；group=workers；security_protocol=PLAINTEXT；sasl_mechanism=PLAIN；username/password 可选；max_poll_interval_ms=300000 |
 | rabbitmq | host=127.0.0.1；port=5672；virtual_host=/；username/password=guest；ssl=false；connect_timeout=5 |
 
-Kafka security_protocol 可选 PLAINTEXT、SSL、SASL_PLAINTEXT、SASL_SSL；SASL 模式需要 username/password，mechanism 支持 PLAIN、SCRAM-SHA-256、SCRAM-SHA-512。Kafka 保留 bootstrap_servers 列表以支持多个 Broker。Redis 和 RabbitMQ 使用独立的主机、端口及认证字段；ssl=true 时使用系统 CA。Redis command_timeout 控制普通命令与消费阻塞读取的 socket 超时，和仅约束发布调用的 publish_timeout 相互独立。Redis 工作队列在 QueueJob 的 `handle()` 完成或失败记录落库后原子执行 XACK + XDEL，不保留已完成的 Stream 历史。
+Kafka security_protocol 可选 PLAINTEXT、SSL、SASL_PLAINTEXT、SASL_SSL；SASL 模式需要 username/password，mechanism 支持 PLAIN、SCRAM-SHA-256、SCRAM-SHA-512。Kafka 保留 bootstrap_servers 列表以支持多个 Broker。Redis 和 RabbitMQ 使用独立的主机、端口及认证字段；ssl=true 时使用系统 CA。Redis command_timeout 控制普通命令与消费阻塞读取的 socket 超时，和仅约束发布调用的 publish_timeout 相互独立。Redis 工作队列在 QueueJob 的 `handle(context)` 完成或失败记录落库后原子执行 XACK + XDEL，不保留已完成的 Stream 历史。
 
 完整环境示例见 `sample.env`，其中 `redis`、`kafka` 和 `rabbitmq` 三个命名连接可同时存在，`QUEUE_DEFAULT=redis` 仅指定默认使用 Redis 连接。使用方式见[队列](queue.md)与[Worker](worker.md)。Settings 新增 queue，Worker 参数位于 `queue.worker`，ApplicationContainer 新增 queues。构建容器校验连接字段但不连接；失败存储数据库名称在 Worker 或 Console 使用前校验。资源按使用创建，关闭后不允许重新获取。

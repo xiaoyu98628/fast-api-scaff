@@ -78,7 +78,7 @@ async def test_cancelled_hash_holds_capacity_until_worker_finishes(monkeypatch: 
             if operation == "hash":
                 await hasher.hash(Password("password-one"))
             else:
-                await hasher.verify("password-one", PasswordHash("test-hash"))
+                await hasher.verify_or_dummy("password-one", PasswordHash("test-hash"))
 
     def blocking_verify(password: str, _hash: str) -> bool:
         blocking_hash(password)
@@ -118,16 +118,24 @@ async def test_cancelled_hash_holds_capacity_until_worker_finishes(monkeypatch: 
 async def test_password_verification_accepts_match_and_rejects_mismatch() -> None:
     hasher = PwdlibPasswordHasher()
     hashed = await hasher.hash(Password(" password123 "))
-    assert await hasher.verify(" password123 ", hashed)
-    assert not await hasher.verify("password123", hashed)
-    assert not await hasher.verify("wrong", hashed)
+    assert await hasher.verify_or_dummy(" password123 ", hashed)
+    assert not await hasher.verify_or_dummy("password123", hashed)
+    assert not await hasher.verify_or_dummy("wrong", hashed)
+
+
+@pytest.mark.asyncio
+async def test_dummy_password_verification_always_rejects() -> None:
+    hasher = PwdlibPasswordHasher()
+
+    assert not await hasher.verify_or_dummy("password123", None)
+    assert not await hasher.verify_or_dummy("codex-scaffold-dummy-password", None)
 
 
 @pytest.mark.asyncio
 async def test_unknown_password_hash_error_does_not_expose_hash() -> None:
     hasher = PwdlibPasswordHasher()
     with pytest.raises(RuntimeError, match="存储的密码哈希无法识别") as captured:
-        await hasher.verify("secret-password", PasswordHash("private-invalid-hash"))
+        await hasher.verify_or_dummy("secret-password", PasswordHash("private-invalid-hash"))
     assert "private-invalid-hash" not in str(captured.value)
     assert "secret-password" not in str(captured.value)
     assert captured.value.__suppress_context__

@@ -63,7 +63,7 @@ async def consume_events(container: ApplicationContainer) -> None:
 - `operation`：稳定的低基数操作名，用于日志检索；
 - `headers`、`params`；
 - `content` 或 `json`，二者不能同时提供；
-- `timeout`：可选的单次请求覆盖值，正数秒。
+- `timeout`：可选的单次请求覆盖值，必须是有限正数秒；`nan` 和正负无穷都会在进入驱动前被拒绝。
 
 不传 `json` 表示没有 JSON 请求体；显式传入 `json=None` 会发送 JSON `null` 和 `Content-Type: application/json`。这两个状态不会混用。
 
@@ -128,7 +128,7 @@ JSON 解码失败、调用参数错误和调用方业务处理异常不属于网
 
 `HttpClientManager` 延迟到首次请求才创建两个 HTTPX2 client。应用关闭时，`ApplicationContainer` 逆序执行异步关闭 callback；未初始化的 HTTP 资源不会为了关闭而创建。Manager 一旦开始关闭便拒绝后续 `get/request/stream`，新的运行周期必须构建新容器。
 
-HTTP/Console 入口可以从容器选择客户端。业务 application service 不应持有整个 `ApplicationContainer`；当上下文需要访问上游时，应在该上下文 application 层定义符合业务语言的窄端口，由 infrastructure 适配器使用公共 HTTP 客户端实现，再由 composition 注入。
+HTTP、Console 与 Worker Job 等入站边界可以从容器选择客户端。业务 application service 不应持有整个 `ApplicationContainer`；当上下文需要访问上游时，应在该上下文 application 层定义符合业务语言的窄端口，由 infrastructure 适配器使用公共 HTTP 客户端实现，再由 composition 注入。
 
 HTTPX2 在 `pyproject.toml` 中保留可升级的依赖范围，其传递依赖 httpcore2 只在 `uv.lock` 中记录当前经过验证的精确版本。驱动只使用 HTTPX2 公开接口管理请求、流和连接关闭，不依赖具体版本的私有连接池结构。
 

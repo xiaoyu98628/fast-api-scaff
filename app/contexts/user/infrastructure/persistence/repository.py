@@ -6,6 +6,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.contexts.user.domain.repository import UserUpdateResult
 from app.contexts.user.domain.user import User
 from app.contexts.user.domain.values import EmailAddress, UserId, Username
 from app.contexts.user.infrastructure.persistence.mapper import user_to_domain, user_to_model, user_update_values
@@ -66,17 +67,23 @@ class SqlAlchemyUserRepository:
 
         self._session.add(user_to_model(user))
 
-    async def update(self, user: User) -> bool:
-        """按 ID 更新可变字段，并用受影响行数表示记录是否存在。"""
+    async def update(self, user: User) -> UserUpdateResult:
+        """使用聚合版本执行条件更新，并区分删除与并发写入。"""
 
+        user_id = str(user.id.value)
         statement = (
             update(UserModel)
-            .where(UserModel.id == str(user.id.value))
+            .where(UserModel.id == user_id, UserModel.version == user.version)
             .values(**user_update_values(user))
             .execution_options(synchronize_session=False)
         )
         result = cast(CursorResult[tuple[object, ...]], await self._session.execute(statement))
-        return result.rowcount == 1
+        if result.rowcount == 1:
+            user.advance_version()
+            return UserUpdateResult.UPDATED
+
+        exists = (await self._session.scalar(select(UserModel.id).where(UserModel.id == user_id).limit(1))) is not None
+        return UserUpdateResult.CONFLICT if exists else UserUpdateResult.NOT_FOUND
 
     async def remove(self, user_id: UserId) -> bool:
         """按 ID 删除用户，并用受影响行数表示是否删除成功。"""

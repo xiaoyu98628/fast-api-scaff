@@ -18,8 +18,10 @@ async def submit(container: ApplicationContainer, job: object):
 只有在任务需要独立优先级、并发或扩缩容时，才覆盖连接或队列：
 
 ```python
-await container.queues.dispatch(job, connection="redis", queue="reports", correlation_id="request-123")
+await container.queues.dispatch(job, connection="redis", queue="reports")
 ```
+
+`correlation_id` 是跨宿主关联字段，不等同于某一种入口 ID。HTTP、Console 与 Worker 分别在入口把 request ID、command ID 或消息 correlation ID 绑定到宿主无关的追踪上下文；Dispatcher 未收到显式值时自动继承它。因此正常调用只需 `dispatch(job)`，特殊场景仍可通过 `correlation_id="..."` 覆盖。没有追踪上游的根任务仍允许该字段为空。Console 的失败任务 retry 直接发布原信封，保留原 correlation ID，并通过新 `job_id` 和 `replay_of` 表达重放关系，不用当前 command ID 覆盖原调用链。
 
 `dispatch()` 不启动消费者；构建容器也不连接队列服务。第一次发布时 Kafka 才建立 Producer，RabbitMQ 在第一次获取 Dispatcher 时建立发布连接，Redis 客户端在首次命令时连接。Kafka Worker 只消费时不会初始化 Producer。后端首次创建、连接或消费者创建阶段的驱动异常会在 `QueueManager` 边界转换为 `QueueError`，已有 `QueueError` 与任务取消保持原语义。
 
@@ -35,30 +37,36 @@ await container.queues.dispatch(job, connection="redis", queue="reports", correl
 
 ```python
 from dataclasses import dataclass
+from uuid import UUID
 
 from app.infrastructure.queue.job import QueueJob
+from app.interfaces.worker.context import JobExecutionContext
+
 
 @dataclass(frozen=True, slots=True)
-class ExampleJob(QueueJob):
-    number: int
+class LoadUserJob(QueueJob[JobExecutionContext]):
+    user_id: UUID
 
-    async def handle(self) -> None:
-        print(self.number)
+    async def handle(self, context: JobExecutionContext) -> None:
+        # Job 是入站适配器：把 payload 转给已装配的应用用例。
+        await context.container.users.service.get(self.user_id)
 ```
 
 投递仍然只有一个入口：
 
 ```python
-await container.queues.dispatch(ExampleJob(number=42))
+await container.queues.dispatch(LoadUserJob(user_id=user_id))
 ```
 
-Dispatcher 自动取得 `类型.__module__:类型.__qualname__`，将类路径、默认版本 1 和 JSON payload 写入消息。Worker 不扫描 `contexts`、`jobs` 或其他业务目录，也没有 Job Catalog 或 Handler 注册表；它按消息中的类路径动态导入类型，确认模块属于应用根包且类型继承 `QueueJob`，解码后直接执行 `await job.handle()`。解析结果会缓存。
+Dispatcher 自动取得 `类型.__module__:类型.__qualname__`，将类路径、默认版本 1 和 JSON payload 写入消息。Worker 不扫描 `contexts`、`jobs` 或其他业务目录，也没有 Job Catalog 或 Handler 注册表；它按消息中的类路径动态导入类型，确认模块属于应用根包且类型继承 `QueueJob`，解码后执行 `await job.handle(context)`。解析结果会缓存。
 
-普通 dataclass 和 Pydantic Model 默认使用基于 Pydantic schema 的 JSON Codec；需要兼容特殊历史协议时，可以在 Job 类上覆盖 `codec`。重试策略同样通过类级 `policy` 覆盖，版本通过类级 `version` 覆盖。当前 `handle()` 固定为无参数方法，Worker 不注入全局容器、应用服务或其他依赖，因此现有能力适合只依赖自身 payload 的任务。需要访问业务能力时，必须先扩展显式装配边界并注入上下文内定义的窄接口，不能让 Application/Domain 反向依赖 `ApplicationContainer`。
+普通 dataclass 和 Pydantic Model 默认使用基于 Pydantic schema 的 JSON Codec；需要兼容特殊历史协议时，可以在 Job 类上覆盖 `codec`。重试策略同样通过类级 `policy` 覆盖，版本通过类级 `version` 覆盖。`WorkerContext` 是不可变的进程级宿主上下文，保存当前 `Settings` 和已启动的 `ApplicationContainer`；执行器从它为每条消息创建独立的 `JobExecutionContext`，继续直接提供 `settings` 和 `container`，并把低频消息元数据收敛到 `context.job`。其中包括 `id`、`reference`、`version`、`enqueued_at`、`queue_connection`、`queue_name`、`correlation_id` 和 `replay_of`。同一条消息的全部投递内重试复用同一个任务上下文。所有消费槽共享同一个应用容器，数据库 Session 和业务 UoW 仍需按任务或用例单独创建。Manager 保持延迟初始化，未被 Job 使用的数据库、缓存、HTTP 或向量资源不会仅因 Worker 启动而连接。
+
+Job 属于 Worker 入站适配边界。业务任务应通过 `context.container.<context>.service` 调用应用用例，让 Repository、事务和业务缓存策略继续封装在限界上下文中；不要把 `JobExecutionContext`、`WorkerContext` 或 `ApplicationContainer` 传入 Application/Domain。宿主级维护任务确实需要通用技术能力时，可以使用 `context.container.databases`、`caches`、`http`、`queues` 或 `vectors` 的公共入口，但不应直接依赖具体数据库、Redis、Memcached 或其他驱动。
 
 类路径属于队列消息契约。移动或重命名 Job 时，尚未消费的消息仍引用旧路径；应在旧模块暂时保留一个指向新类的显式导入，待旧队列排空后再删除。动态导入以队列服务是内部可信资源为前提，默认拒绝应用根包之外的类路径。
 
-当前内置 `LoginSucceededJob` 作为最小业务示例：登录 HTTP 适配器在会话提交后向默认队列尽力投递 `user_id` 参数和固定文案，Worker 调用其 `handle()` 记录该文案和结构化用户 ID。任务不携带用户名、密码或 Token；发布失败不改变登录响应。`user_id` 暂时可空，以兼容队列中已经存在的旧消息。该通知不具备 Outbox 或 exactly-once 保证，不应用于审计或安全决策。
+当前内置 `LoginSucceededJob` 作为最小业务示例：登录 HTTP 适配器在会话提交后向默认队列尽力投递 `user_id` 参数和固定文案，Dispatcher 自动把当前 request ID 写入消息的 `correlation_id`；Worker 调用其 `handle(context)` 记录该文案和结构化用户 ID。任务不携带用户名、密码或 Token；发布失败不改变登录响应。`user_id` 暂时可空，以兼容队列中已经存在的旧消息。该通知不具备 Outbox 或 exactly-once 保证，不应用于审计或安全决策。
 
 ## 3. 信封与交付保证
 
