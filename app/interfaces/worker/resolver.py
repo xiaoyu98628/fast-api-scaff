@@ -5,7 +5,16 @@ from functools import cache
 from importlib import import_module
 from typing import Protocol, cast
 
-from app.infrastructure.queue.errors import InvalidMessageError, QueueConfigurationError
+from pydantic import ValidationError
+
+from app.infrastructure.queue.contracts.codec import JobDecoder
+from app.infrastructure.queue.errors import (
+    InvalidMessageError,
+    JobDecodeError,
+    JobDefinitionError,
+    QueueConfigurationError,
+    UnknownJobError,
+)
 from app.infrastructure.queue.job import JobDescriptor, QueueJob, describe_job
 from app.infrastructure.queue.policies import JobPolicy
 from app.interfaces.worker.context import JobExecutionContext
@@ -27,10 +36,10 @@ class ExecutableJob(Protocol):
 
 
 class JobTypeResolver(Protocol):
-    """按稳定类型引用和版本查找可执行任务。"""
+    """按稳定类型引用和版本查找任务，并保留消息错误与部署错误分类。"""
 
     def resolve(self, reference: str, version: int) -> ExecutableJob:
-        """解析匹配类型引用和版本的可执行任务绑定。"""
+        """返回绑定；未知引用/版本和任务定义缺陷应抛出对应队列错误。"""
 
         ...
 
@@ -40,6 +49,7 @@ class JobBinding[T: QueueJob[JobExecutionContext]]:
     """绑定已验证的任务描述，并负责 payload 解码和执行。"""
 
     descriptor: JobDescriptor[T]
+    decoder: JobDecoder[T]
 
     @property
     def policy(self) -> JobPolicy:
@@ -51,11 +61,16 @@ class JobBinding[T: QueueJob[JobExecutionContext]]:
         """恢复准确任务类型后把单任务上下文交给 handle。"""
 
         try:
-            job = self.descriptor.codec.decode(payload)
-            if type(job) is not self.descriptor.job_type:
-                raise TypeError("Codec 返回了错误的任务类型")
+            job = self.decoder.decode(payload)
+        except JobDecodeError:
+            raise
+        except (InvalidMessageError, ValidationError) as error:
+            raise JobDecodeError("业务任务数据解码失败") from error
         except Exception as error:
-            raise InvalidMessageError("业务任务数据解码失败") from error
+            # Decoder 必须显式区分坏数据；其他异常表示已部署任务定义有缺陷。
+            raise JobDefinitionError("任务 Decoder 执行失败") from error
+        if type(job) is not self.descriptor.job_type:
+            raise JobDefinitionError("任务 Decoder 返回了错误的任务类型")
         await job.handle(context)
 
 
@@ -73,16 +88,16 @@ class JobResolver:
 
     @cache
     def resolve(self, reference: str, version: int) -> ExecutableJob:
-        """解析并缓存任务绑定；未知类型和版本统一表现为 KeyError。"""
+        """解析并缓存任务绑定，同时区分未知消息和部署定义错误。"""
 
         try:
             job_type = self._load(reference)
             descriptor = describe_job(job_type)
-        except Exception:
-            raise KeyError((reference, version)) from None
-        if descriptor.version != version:
-            raise KeyError((reference, version))
-        return JobBinding(descriptor)
+        except UnknownJobError:
+            raise
+        except QueueConfigurationError as error:
+            raise JobDefinitionError("队列任务定义不合法") from error
+        return JobBinding(descriptor, descriptor.decoder_for(version))
 
     def _load(self, reference: str) -> type[QueueJob[JobExecutionContext]]:
         """从白名单模块加载模块级 QueueJob 子类。"""
@@ -90,12 +105,24 @@ class JobResolver:
         # 类路径来自队列消息，因此导入前必须先限制在可信包前缀内。
         module_name, separator, qualified_name = reference.partition(":")
         if not separator or not module_name or not qualified_name or "<locals>" in qualified_name:
-            raise ValueError("任务类路径不合法")
+            raise UnknownJobError("任务类路径不合法")
         if not any(module_name == package or module_name.startswith(f"{package}.") for package in self.allowed_packages):
-            raise ValueError("任务模块不在允许范围内")
-        value: object = import_module(module_name)
+            raise UnknownJobError("任务模块不在允许范围内")
+        try:
+            value: object = import_module(module_name)
+        except ModuleNotFoundError as error:
+            if error.name is not None and (module_name == error.name or module_name.startswith(f"{error.name}.")):
+                raise UnknownJobError("任务模块不存在") from None
+            raise JobDefinitionError("任务模块依赖导入失败") from error
+        except Exception as error:
+            raise JobDefinitionError("任务模块导入失败") from error
         for part in qualified_name.split("."):
-            value = getattr(value, part)
+            try:
+                value = getattr(value, part)
+            except AttributeError:
+                raise UnknownJobError("任务类型不存在") from None
+            except Exception as error:
+                raise JobDefinitionError("任务类型读取失败") from error
         if not isinstance(value, type) or not issubclass(value, QueueJob):
-            raise TypeError("任务类必须继承 QueueJob")
+            raise UnknownJobError("任务类型必须继承 QueueJob")
         return cast(type[QueueJob[JobExecutionContext]], value)

@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from uuid import UUID, uuid4
 
+from app.config.queue import validate_queue_name
 from app.infrastructure.queue.codecs.envelope_json import EnvelopeJsonCodec
 from app.infrastructure.queue.contracts.message import MessageEnvelope
 from app.infrastructure.queue.contracts.publisher import QueuePublisher
@@ -50,8 +51,9 @@ class Dispatcher:
         """发布已经构造的信封，供失败任务重放等内部流程使用。"""
 
         self.ensure_active()
-        target = self.default_queue if queue is None else queue
-        if not target.strip() or len(target) > 200:
+        try:
+            target = validate_queue_name(self.default_queue if queue is None else queue)
+        except TypeError, ValueError:
             raise QueueError("队列名不合法")
         payload = self.codec.encode(message)
         try:

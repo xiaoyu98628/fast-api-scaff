@@ -15,7 +15,13 @@ from app.infrastructure.queue.codecs.envelope_json import EnvelopeJsonCodec
 from app.infrastructure.queue.contracts.consumer import Delivery
 from app.infrastructure.queue.contracts.failed_store import FailedJobRecord, FailedJobStore
 from app.infrastructure.queue.contracts.message import MessageEnvelope
-from app.infrastructure.queue.errors import InvalidMessageError, RetryableJobError
+from app.infrastructure.queue.errors import (
+    InvalidMessageError,
+    JobDefinitionError,
+    RetryableJobError,
+    UnknownJobError,
+    UnsupportedJobVersionError,
+)
 from app.interfaces.worker.context import JobExecutionContext, JobMetadata, WorkerContext
 from app.interfaces.worker.resolver import ExecutableJob, JobTypeResolver
 from app.runtime.trace import TraceContext, bind_trace_context
@@ -54,8 +60,8 @@ async def run_attempts(binding: ExecutableJob, payload: bytes, context: JobExecu
                 return _failed_result(attempt, "handler_timeout_error", error)
             reason = "execution_timeout"
             failure_error = error
-        except InvalidMessageError as error:
-            return _failed_result(attempt, "invalid_job_payload", error)
+        except (InvalidMessageError, JobDefinitionError) as error:
+            return _classify_job_error(attempt, error)
         except Exception as error:
             return _failed_result(attempt, "handler_error", error)
         else:
@@ -65,6 +71,15 @@ async def run_attempts(binding: ExecutableJob, payload: bytes, context: JobExecu
             return _failed_result(attempt, reason, failure_error)
         await asyncio.sleep(policy.retry_delay(attempt))
     raise RuntimeError("任务重试配置不合法")
+
+
+def _classify_job_error(attempt: int, error: InvalidMessageError | JobDefinitionError) -> ExecutionResult:
+    """区分可终结的坏消息与必须中止 Worker 的部署定义错误。"""
+
+    if isinstance(error, JobDefinitionError):
+        # 保持消息未确认，部署修复并重启后由后端重新投递。
+        raise error
+    return _failed_result(attempt, "invalid_job_payload", error)
 
 
 def _failed_result(attempts: int, reason: str, error: BaseException) -> ExecutionResult:
@@ -101,7 +116,7 @@ class JobExecutor:
         # 连接与队列也参与身份，避免跨队列投递同一个 job_id 相互抑制。
         failure_id = uuid5(NAMESPACE_URL, repr(("queue-failure", self.connection, self.queue, identity)))
         if message is None:
-            if await self.failures.find(failure_id) is not None:
+            if delivery.possibly_redelivered and await self.failures.find(failure_id) is not None:
                 await delivery.acknowledge()
                 return
             result = ExecutionResult(0, "invalid_envelope")
@@ -132,13 +147,15 @@ class JobExecutor:
         )
         trace_context = TraceContext(correlation_id=context.job.correlation_id)
         with bind_trace_context(trace_context), bind_job_log_context(log_context):
-            if await self.failures.find(failure_id) is not None:
+            if delivery.possibly_redelivered and await self.failures.find(failure_id) is not None:
                 await delivery.acknowledge()
                 return
             try:
                 binding = self.resolver.resolve(message.job_type, message.job_version)
-            except KeyError:
+            except UnknownJobError:
                 result = ExecutionResult(0, "unknown_job")
+            except UnsupportedJobVersionError:
+                result = ExecutionResult(0, "unsupported_job_version")
             else:
                 result = await run_attempts(binding, message.payload, context)
             await self._finish(delivery, message, result, failure_id=failure_id, started_at=started_at)

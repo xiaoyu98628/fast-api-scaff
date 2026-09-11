@@ -1,19 +1,47 @@
 """定义队列连接、失败任务存储和 Worker 的严格配置模型。"""
 
+import re
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, TypeAdapter, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, TypeAdapter, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.config.base import BASE_SETTINGS_CONFIG
+
+_QUEUE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+def validate_queue_name(value: str) -> str:
+    """校验跨 Redis、Kafka 和 RabbitMQ 共用的逻辑队列名。"""
+
+    if not isinstance(value, str) or not value or len(value) > 200:
+        raise ValueError("队列名必须是长度为 1–200 的字符串")
+    if value in {".", ".."} or _QUEUE_NAME_PATTERN.fullmatch(value) is None:
+        raise ValueError("队列名只能包含字母、数字、点、下划线和连字符")
+    return value
+
+
+def validate_worker_concurrency(value: int) -> int:
+    """校验 Worker 和队列消费者共用的严格并发数。"""
+
+    if type(value) is not int or not 1 <= value <= 1024:
+        raise ValueError("concurrency 必须是 1–1024 的整数")
+    return value
 
 
 class ConnectionSettings(BaseModel):
     """保存所有队列驱动共享的发布参数。"""
 
     model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True, allow_inf_nan=False)
-    default_queue: str = Field(default="default", min_length=1, max_length=200, pattern=r"^\S+$")
+    default_queue: str = Field(default="default", min_length=1, max_length=200)
     publish_timeout: float = Field(default=10.0, gt=0)
+
+    @field_validator("default_queue")
+    @classmethod
+    def queue_name(cls, value: str) -> str:
+        """确保配置队列名与运行时覆盖值遵守同一可移植规则。"""
+
+        return validate_queue_name(value)
 
 
 class RedisQueueSettings(ConnectionSettings):
@@ -87,6 +115,24 @@ class WorkerSettings(BaseModel):
 
     concurrency: int = Field(default=4, ge=1, le=1024)
     shutdown_timeout_seconds: float = Field(default=30.0, gt=0)
+
+    @field_validator("concurrency", mode="before")
+    @classmethod
+    def reject_non_integer_concurrency(cls, value: object) -> object:
+        """允许环境变量数字字符串，但拒绝 bool 和浮点数的隐式转换。"""
+
+        if type(value) is int:
+            return value
+        if isinstance(value, str) and value.isascii() and value.isdecimal():
+            return value
+        raise ValueError("concurrency 必须是整数或整数字符串")
+
+    @field_validator("concurrency")
+    @classmethod
+    def strict_concurrency(cls, value: int) -> int:
+        """复用运行时消费者的并发数约束。"""
+
+        return validate_worker_concurrency(value)
 
 
 class QueueSettings(BaseSettings):

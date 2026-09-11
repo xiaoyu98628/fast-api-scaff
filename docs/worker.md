@@ -23,7 +23,7 @@ docker compose up --build worker
 
 脚手架内置 `LoginSucceededJob` 最小任务。登录接口向默认连接配置的默认队列（`sample.env` 为 `default`）尽力投递 `user_id` 参数和固定文案，Dispatcher 自动把当前 HTTP request ID 作为 correlation ID；Worker 调用它的 `handle(context)` 输出“用户登录成功，队列任务已执行。”并记录结构化用户 ID。任务不含用户名、密码或 Token。`user_id` 暂时可空，以兼容队列中已经存在的旧消息。`sample.env` 以 Redis 为默认连接，因此 Worker 可以不带参数启动。
 
-新增任务时，继承 `QueueJob[JobExecutionContext]`、声明可序列化字段并实现异步 `handle(context)`。投递端自动把实际类路径写入消息；Worker 收到后动态导入、验证、解码并执行，不扫描业务目录，也不需要修改上下文 composition 或应用组合根。完整示例见[队列](queue.md)。
+新增任务时，继承 `QueueJob[JobExecutionContext]`、声明可序列化字段并实现异步 `handle(context)`。投递端自动把实际类路径写入消息；Worker 收到后动态导入、验证、解码并执行，不扫描业务目录，也不需要修改上下文 composition 或应用组合根。payload 契约升级时递增 `version`，并按需要在 `legacy_decoders` 中把历史 payload 转换成当前 Job 类型。完整示例见[队列](queue.md#job-版本兼容)。
 
 一个默认 Worker 可以执行默认队列中的所有合法 QueueJob，但不会动态扫描 Redis Stream、Kafka Topic 或 RabbitMQ Queue。命名队列是用于优先级、并发和扩缩容隔离的可选高级能力，需要时为它单独启动 Worker。
 
@@ -39,7 +39,7 @@ JobPolicy 的 max_attempts 包含首次执行；backoff_seconds 依次使用，�
 
 仅 `RetryableJobError` 和框架执行超时进行重试。QueueJob 可把明确的暂时性适配错误转换为 `app.infrastructure.queue.errors.RetryableJobError`；业务层不直接依赖该基础设施异常。业务自己抛出的 TimeoutError 单独分类并最终失败。
 
-重试属于本次投递，在同一执行槽内等待；不是持久延迟调度。崩溃后尝试次数可能重新开始，没有跨崩溃的全局次数上限。失败分类包含 unknown_job、invalid_envelope、invalid_job_payload、handler_error、handler_timeout_error、execution_timeout、retry_exhausted、timeout_suppressed。
+重试属于本次投递，在同一执行槽内等待；不是持久延迟调度。崩溃后尝试次数可能重新开始，没有跨崩溃的全局次数上限。可终结的失败分类包含 unknown_job、unsupported_job_version、invalid_envelope、invalid_job_payload、handler_error、handler_timeout_error、execution_timeout、retry_exhausted、timeout_suppressed。Job 模块或其依赖导入失败、Codec/Policy/Decoder 配置错误，以及 Decoder 的意外异常属于部署定义缺陷，Worker 保持消息未确认并退出，修复部署后再由后端恢复，避免永久误分类为 unknown_job。
 
 asyncio 超时只能协作式取消。`handle(context)` 应及时让出事件循环，不吞 CancelledError，不执行长时间阻塞调用；它无法强制终止阻塞线程或外部副作用。超时后重试仍可能重复业务效果，必要时由业务实现幂等。
 
@@ -49,7 +49,9 @@ Kafka 的 max_poll_interval_ms 必须大于最大任务执行与全部退避时�
 
 SIGINT/SIGTERM 设置停止信号：停止安排新任务，取消等待消息的执行槽，等待在途任务。超过 QUEUE_WORKER__SHUTDOWN_TIMEOUT_SECONDS 后请求取消在途任务，然后关闭消费者和容器。该上限是发出取消的等待时间，不保证强制终止不响应取消的业务代码。
 
-消费、ACK、失败存储或租约错误会停止整个 Worker，其他在途任务被取消，未确认任务交给后端恢复；首版没有自动无限重连循环。Kafka 再均衡导致在途任务取消时也按故障退出，避免旧消费者继续提交。无在途任务的正常再均衡可以继续消费。
+消费、ACK、失败存储、任务定义或租约错误会停止整个 Worker，其他在途任务被取消，未确认任务交给后端恢复；首版没有自动无限重连循环。Kafka 再均衡导致在途任务取消时也按故障退出，避免旧消费者继续提交。无在途任务的正常再均衡可以继续消费。
+
+正常首次投递不查询 SQL 失败表。只有驱动判断消息可能是恢复投递时，执行器才检查是否已经存在失败记录并只补做 ACK：Redis 使用 XAUTOCLAIM 来源，RabbitMQ 使用 redelivered，Kafka 对分区分配后的首条消息保守检查。最终失败仍先保存记录再确认，不改变恢复保证。
 
 队列连接最后装配，先于数据库/缓存/HTTP 出站资源关闭。关闭失败仍尝试剩余资源并聚合异常。
 

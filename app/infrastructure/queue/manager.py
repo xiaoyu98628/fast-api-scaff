@@ -10,7 +10,7 @@ from uuid import UUID, uuid4
 from anyio import CancelScope
 from pydantic import ValidationError
 
-from app.config.queue import QueueConnection, QueueSettings, parse_connection
+from app.config.queue import QueueConnection, QueueSettings, parse_connection, validate_queue_name, validate_worker_concurrency
 from app.infrastructure.database.manager import DatabaseManager
 from app.infrastructure.queue.codecs.envelope_json import EnvelopeJsonCodec
 from app.infrastructure.queue.contracts.consumer import QueueConsumer
@@ -130,12 +130,14 @@ class QueueManager:
         """创建并登记消费者，退出上下文时保证释放消费资源。"""
 
         resolved = self.resolve_name(connection)
-        target = self._configs[resolved].default_queue if queue is None else queue
-        if not target.strip() or len(target) > 200 or concurrency < 1:
+        try:
+            target = validate_queue_name(self._configs[resolved].default_queue if queue is None else queue)
+            active_concurrency = validate_worker_concurrency(concurrency)
+        except TypeError, ValueError:
             raise QueueConfigurationError("消费参数不合法")
         backend = await self._get_backend(resolved)
         try:
-            consumer = await backend.consumer(target, concurrency)
+            consumer = await backend.consumer(target, active_concurrency)
         except QueueError:
             raise
         except Exception as error:
@@ -159,7 +161,10 @@ class QueueManager:
         """解析一个连接最终使用的逻辑队列名。"""
 
         config = self._configs[self.resolve_name(connection)]
-        return config.default_queue if queue is None else queue
+        try:
+            return validate_queue_name(config.default_queue if queue is None else queue)
+        except TypeError, ValueError:
+            raise QueueConfigurationError("队列名不合法") from None
 
     async def replay(self, failure_id: UUID) -> UUID:
         """用新 job_id 重发原始信封，并保留 replay_of 追踪关系。"""

@@ -105,6 +105,34 @@ def test_context_composition_does_not_cross_context_or_depend_on_hosts() -> None
     assert violations == []
 
 
+def test_context_jobs_keep_the_worker_adapter_boundary() -> None:
+    """Job 可用宿主公共能力，但不能反向依赖组合根、驱动或其他上下文实现。"""
+
+    violations: list[str] = []
+    context_names = tuple(path.name for path in _context_directories())
+
+    for context_name in context_names:
+        jobs_root = _CONTEXTS_ROOT / context_name / "jobs"
+        forbidden_prefixes = (
+            "app.bootstrap",
+            "app.infrastructure.queue.drivers",
+            *(f"app.contexts.{other_name}.infrastructure" for other_name in context_names if other_name != context_name),
+        )
+        violations.extend(_find_forbidden_dependencies(jobs_root, forbidden_prefixes=forbidden_prefixes))
+
+        if not jobs_root.is_dir():
+            continue
+        for source_path in sorted(jobs_root.rglob("*.py")):
+            source = source_path.read_text(encoding="utf-8")
+            for module, line in _iter_imports(ast.parse(source, filename=str(source_path))):
+                if module.split(".", maxsplit=1)[0] not in {"redis", "aiokafka", "aio_pika"}:
+                    continue
+                relative_path = source_path.relative_to(PROJECT_ROOT)
+                violations.append(f"{relative_path}:{line} imports {module}")
+
+    assert violations == []
+
+
 def test_interfaces_do_not_depend_on_context_persistence_ports() -> None:
     forbidden_prefixes: list[str] = []
 

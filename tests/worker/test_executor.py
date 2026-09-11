@@ -12,7 +12,7 @@ import pytest
 import app.interfaces.worker.executor as worker_executor
 from app.config.settings import Settings
 from app.infrastructure.logging.context import RuntimeContextFilter
-from app.infrastructure.queue.errors import RetryableJobError
+from app.infrastructure.queue.errors import JobDefinitionError, RetryableJobError, UnknownJobError, UnsupportedJobVersionError
 from app.infrastructure.queue.job import job_reference
 from app.infrastructure.queue.policies import JobPolicy
 from app.interfaces.worker.context import JobExecutionContext, WorkerContext
@@ -51,7 +51,7 @@ class StubResolver:
 
     def resolve(self, reference: str, version: int) -> ExecutableJob:
         if self.binding is None or reference != job_reference(Job) or version != 1:
-            raise KeyError((reference, version))
+            raise UnknownJobError("测试任务不存在")
         return self.binding
 
 
@@ -103,6 +103,7 @@ async def test_retry_and_ack_after_success() -> None:
 @pytest.mark.asyncio
 async def test_failed_record_recovery_does_not_execute_again_and_replay_retains_original(monkeypatch: pytest.MonkeyPatch) -> None:
     queues = create_queue_manager()
+    failures = cast(RecordingFailedJobStore, queues.failed_jobs)
     calls: list[int] = []
     logger = Mock()
     monkeypatch.setattr(worker_executor, "_logger", logger)
@@ -120,6 +121,7 @@ async def test_failed_record_recovery_does_not_execute_again_and_replay_retains_
         class BrokenAck:
             payload = original.payload
             identity = original.identity
+            possibly_redelivered = original.possibly_redelivered
 
             async def acknowledge(self) -> None:
                 raise OSError("ack failed")
@@ -129,6 +131,7 @@ async def test_failed_record_recovery_does_not_execute_again_and_replay_retains_
     async with queues.consume() as consumer:
         await executor.execute(await consumer.receive())
     assert calls == [9]
+    assert failures.find_calls == 1
     level, message = logger.log.call_args.args
     details = logger.log.call_args.kwargs["extra"]["details"]
     assert level == logging.ERROR
@@ -162,6 +165,83 @@ async def test_failed_record_recovery_does_not_execute_again_and_replay_retains_
     assert replay_contexts[0].job.id == replay_id
     assert replay_contexts[0].job.replay_of == records[0].failure_id
     assert len(await queues.failed_jobs.list()) == 1
+    await queues.aclose()
+
+
+@pytest.mark.asyncio
+async def test_fresh_delivery_does_not_query_failure_store() -> None:
+    queues = create_queue_manager()
+    failures = cast(RecordingFailedJobStore, queues.failed_jobs)
+    await queues.dispatch(Job(1))
+
+    async with queues.consume() as consumer:
+        delivery = await consumer.receive()
+        assert delivery.possibly_redelivered is False
+        await JobExecutor(
+            "main",
+            "default",
+            resolver(),
+            failures,
+            queues.codec,
+            _WORKER_CONTEXT,
+        ).execute(delivery)
+
+    assert failures.find_calls == 0
+    await queues.aclose()
+
+
+@pytest.mark.asyncio
+async def test_job_definition_error_leaves_delivery_unacknowledged() -> None:
+    queues = create_queue_manager()
+
+    class BrokenResolver:
+        def resolve(self, reference: str, version: int) -> ExecutableJob:
+            del reference, version
+            raise JobDefinitionError("deployed decoder is broken")
+
+    await queues.dispatch(Job(1))
+    async with queues.consume() as consumer:
+        delivery = await consumer.receive()
+        executor = JobExecutor(
+            "main",
+            "default",
+            BrokenResolver(),
+            queues.failed_jobs,
+            queues.codec,
+            _WORKER_CONTEXT,
+        )
+        with pytest.raises(JobDefinitionError):
+            await executor.execute(delivery)
+
+    async with queues.consume() as consumer:
+        recovered = await consumer.receive()
+        assert recovered.identity == delivery.identity
+        assert recovered.possibly_redelivered is True
+        await recovered.acknowledge()
+    await queues.aclose()
+
+
+@pytest.mark.asyncio
+async def test_unsupported_job_version_is_recorded_as_terminal_message_failure() -> None:
+    queues = create_queue_manager()
+
+    class UnsupportedResolver:
+        def resolve(self, reference: str, version: int) -> ExecutableJob:
+            del reference, version
+            raise UnsupportedJobVersionError("version is no longer supported")
+
+    await queues.dispatch(Job(1))
+    async with queues.consume() as consumer:
+        await JobExecutor(
+            "main",
+            "default",
+            UnsupportedResolver(),
+            queues.failed_jobs,
+            queues.codec,
+            _WORKER_CONTEXT,
+        ).execute(await consumer.receive())
+
+    assert [record.reason for record in await queues.failed_jobs.list()] == ["unsupported_job_version"]
     await queues.aclose()
 
 

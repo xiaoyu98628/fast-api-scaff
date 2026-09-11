@@ -18,6 +18,12 @@ class Delivery(Protocol):
 
         ...
 
+    @property
+    def possibly_redelivered(self) -> bool:
+        """返回消息是否可能是后端恢复的重复投递。"""
+
+        ...
+
     async def acknowledge(self) -> None:
         """按后端语义确认当前消息已经处理完毕。"""
 

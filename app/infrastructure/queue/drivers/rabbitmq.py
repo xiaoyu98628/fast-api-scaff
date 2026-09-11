@@ -18,6 +18,7 @@ class RabbitDelivery:
         self._message = message
         self.payload = message.body
         self.identity = message.message_id or f"delivery:{message.delivery_tag}"
+        self.possibly_redelivered = bool(message.redelivered)
 
     async def acknowledge(self) -> None:
         """向 RabbitMQ 确认当前消息已经处理完毕。"""

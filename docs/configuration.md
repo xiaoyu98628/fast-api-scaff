@@ -352,10 +352,10 @@ HTTP 不启动消费者。新增配置无队列连接默认值；`QUEUE_DEFAULT`
 | QUEUE_CONNECTIONS | {} | 命名连接，可用双下划线配置多个连接及其字段 |
 | QUEUE_MAX_MESSAGE_BYTES | 1048576 | 完整编码信封的字节上限，最小 256 |
 | QUEUE_FAILED__DATABASE | main | 失败记录数据库连接；Worker 与 Console 使用前必须配置 |
-| QUEUE_WORKER__CONCURRENCY | 4 | 1–1024 个执行槽，Kafka 同分区仍串行 |
+| QUEUE_WORKER__CONCURRENCY | 4 | 1–1024 的整数执行槽；环境变量数字字符串会解析为整数，bool/浮点值不接受；Kafka 同分区仍串行 |
 | QUEUE_WORKER__SHUTDOWN_TIMEOUT_SECONDS | 30 | 取消在途任务前的等待时间 |
 
-所有连接包含 driver、default_queue（default，1–200 个非空白字符）、publish_timeout（10 秒）。驱动特有字段如下；不支持的额外字段会被拒绝。
+所有连接包含 driver、default_queue（default，1–200 个字符，只允许 ASCII 字母、数字、`.`、`_`、`-`，且不能是 `.` 或 `..`）、publish_timeout（10 秒）。配置默认值、发布/重放覆盖值和 Worker 消费参数使用同一队列名规则，确保名称可以安全映射到 Redis Stream、Kafka Topic 和 RabbitMQ Queue。驱动特有字段如下；不支持的额外字段会被拒绝。
 
 | driver | 字段 |
 | --- | --- |
