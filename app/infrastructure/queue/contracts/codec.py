@@ -15,3 +15,12 @@ class JobCodec[T](Protocol):
         """校验 payload 并恢复具体任务实例。"""
 
         ...
+
+
+class JobDecoder[T](Protocol):
+    """把指定历史版本的 payload 恢复或迁移为当前 QueueJob。"""
+
+    def decode(self, payload: bytes) -> T:
+        """返回当前 Job 类型；数据错误应抛出 JobDecodeError。"""
+
+        ...

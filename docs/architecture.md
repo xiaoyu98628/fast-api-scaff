@@ -58,7 +58,7 @@ bootstrap/composition 负责选择实现并完成装配
 - Runtime 保存宿主无关的 `ApplicationContainer`、`ApplicationRuntime` 和 `TraceContext`；
 - Bootstrap/Composition 是允许知道具体实现、Interfaces 和 Runtime 的装配边界。
 
-`tests/test_architecture.py` 用 AST 检查 Domain、Application、Infrastructure、Interfaces 与 Bootstrap 的导入。它不仅保护核心层，还禁止共享 Infrastructure 反向依赖业务或宿主、上下文 Infrastructure 跨上下文依赖、Interfaces 依赖 Bootstrap，以及 Interfaces 直接穿透到上下文 Infrastructure。相对导入也会被视为违规，项目统一要求绝对、显式导入。这类测试防止边界在日常迭代中悄悄腐化。
+`tests/test_architecture.py` 用 AST 检查 Domain、Application、Infrastructure、Interfaces、Bootstrap 与上下文 Job 的导入。它不仅保护核心层，还禁止共享 Infrastructure 反向依赖业务或宿主、上下文 Infrastructure 跨上下文依赖、Interfaces 依赖 Bootstrap，以及 Interfaces 直接穿透到上下文 Infrastructure。上下文 `jobs/` 被视为 Worker 入站适配器：允许使用 `JobExecutionContext`、当前上下文公开服务和宿主级公共 Manager，但不能依赖 Bootstrap、具体队列驱动/SDK 或其他上下文的 Infrastructure。相对导入也会被视为违规，项目统一要求绝对、显式导入。这类测试防止边界在日常迭代中悄悄腐化。
 
 ## 3. 用户限界上下文
 
@@ -174,7 +174,7 @@ Application Service 可以做跨聚合的流程编排和权限决策，但不应
 - 关闭时先清空当前引用，再聚合资源关闭错误；
 - 支持 `async with`。
 
-HTTP lifespan、ConsoleHost 和 WorkerHost 都复用 runtime。这样资源的初始化、失败清理和关闭顺序不会在不同入口重复实现。数据库、缓存、向量和 HTTP 出站资源都由管理器延迟创建，并由容器 callback 逆序关闭；未初始化资源不会在关闭阶段被创建。关闭进入不可取消清理区间，单个 callback 失败或收到取消后仍会尝试剩余 callback，最后通过异常组保留全部根因。Manager/延迟资源是一次性生命周期对象，关闭开始后拒绝新获取，也不能通过再次调用 `get()` 隐式重建。数据库、缓存和向量 Manager 在第一次等待前统一禁止所有资源获取，再逐个释放；已经开始的初始化允许完成，但结果只交给关闭流程，不再返回调用方。宿主必须先停止使用已经借出的资源，再关闭 Manager。
+HTTP lifespan、ConsoleHost 和 WorkerHost 都复用 runtime。这样资源的初始化、失败清理和关闭顺序不会在不同入口重复实现。HTTP 与 Worker 的启动/关闭日志边界都覆盖 `BaseException`，取消等退出路径也不会绕过对应失败事件；HTTP lifespan 退出后会清除 `app.state.container`，避免关闭容器继续以可用状态暴露。数据库、缓存、向量和 HTTP 出站资源都由管理器延迟创建，并由容器 callback 逆序关闭；未初始化资源不会在关闭阶段被创建。关闭进入不可取消清理区间，单个 callback 失败或收到取消后仍会尝试剩余 callback，最后通过异常组保留全部根因。Manager/延迟资源是一次性生命周期对象，关闭开始后拒绝新获取，也不能通过再次调用 `get()` 隐式重建。数据库、缓存和向量 Manager 在第一次等待前统一禁止所有资源获取，再逐个释放；已经开始的初始化允许完成，但结果只交给关闭流程，不再返回调用方。宿主必须先停止使用已经借出的资源，再关闭 Manager。
 
 顶层 HTTP 出站能力只负责驱动无关请求、连接池、超时、传输错误和日志，不知道具体上游协议。上下文若需要调用外部服务，应在自己的 application 层定义业务窄端口，在 infrastructure 层使用公共 HTTP 客户端实现，并由 composition 注入；application service 不应持有整个容器，也不应直接导入 HTTPX2。
 
@@ -272,8 +272,8 @@ HTTP 独立定义 `page/limit` 查询协议和 `items + meta` 分页响应，并
 
 共享基础设施 queue 提供 QueueJob、Dispatcher、QueueManager、驱动和 FailedJobStore。ApplicationContainer.queues 与数据库等 Manager 一样按需使用；队列先关闭，数据库后关闭。HTTP 不订阅队列。
 
-独立 `app.worker` 入口由 `app.bootstrap.worker` 完成装配并复用 ApplicationRuntime；`app.interfaces.worker` 负责 Job 类路径解析、宿主上下文注入、消息执行、重试和消费并发。QueueJob 将可序列化数据与 `handle(context)` 收敛在同一类，投递时自动把类路径写入消息，Worker 动态导入并验证该类型；框架不扫描 `contexts`、`jobs` 或其他业务目录，不维护业务注册表，应用组合根也不收集 Job。当前示例把任务放在上下文级 `jobs/` 包并按类名使用蛇形命名模块，但这只是组织习惯。
+独立 `app.worker` 入口由 `app.bootstrap.worker` 完成装配并复用 ApplicationRuntime；`app.interfaces.worker` 负责 Job 类路径解析、宿主上下文注入、消息执行、重试和消费并发。QueueJob 将可序列化数据与 `handle(context)` 收敛在同一类，投递时自动把类路径写入消息，Worker 动态导入并验证该类型；框架不扫描 `contexts`、`jobs` 或其他业务目录，不维护业务注册表，应用组合根也不收集 Job。版本变化由 Job 自身的 `version` 和 `legacy_decoders` 显式维护，历史 Decoder 输出当前 Job 类型；未知引用/版本属于消息问题，导入依赖或任务定义错误属于部署问题，后者不会被吞成可确认失败。当前示例把任务放在上下文级 `jobs/` 包并按类名使用蛇形命名模块，但这只是组织习惯。
 
 `WorkerContext` 是进程级宿主上下文，与 `ConsoleContext` 一样只在宿主/入站适配边界暴露当前配置和已经启动的 `ApplicationContainer`。执行器从它为每条消息创建独立、不可变的 `JobExecutionContext`，其中 `settings` 和 `container` 保持直接访问，任务、队列和关联元数据组合在 `context.job`；同一投递内重试复用同一个对象。Job 应优先从容器选择当前上下文的公开应用服务；需要数据库、缓存或外部服务的业务流程，仍由 Application 层定义窄协议并经 composition 注入实现。Application/Domain 不导入 Worker、具体 Manager、队列驱动或全局容器，共享 Infrastructure 不导入具体业务。所有消费槽共享应用级 Manager，任务级 Session、UoW 和事务不能跨 Job 共享。内置 `LoginSucceededJob` 由登录 HTTP 适配器在会话提交后尽力投递，HTTP request ID 通过 `TraceContext` 自动进入消息 correlation ID，作为默认队列、跨宿主日志关联和 `handle(context)` 输出的最小示例；它不进入认证 Application/Domain，也不参与登录事务。
 
-SQL 失败表属于共享技术能力，在 main metadata 注册；失败写入使用独立短事务，不借用业务 UoW。任务执行和消息确认不是跨系统原子事务。详见[队列](queue.md)、[Worker](worker.md)。
+SQL 失败表属于共享技术能力，在 main metadata 注册；失败写入使用独立短事务，不借用业务 UoW。正常首次投递不查询失败表，只有 Redis/RabbitMQ/Kafka 驱动标识为可能恢复的消息才执行补偿查询；最终失败仍先落库再确认。任务执行和消息确认不是跨系统原子事务。详见[队列](queue.md)、[Worker](worker.md)。

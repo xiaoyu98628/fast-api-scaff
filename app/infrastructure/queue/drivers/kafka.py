@@ -28,7 +28,16 @@ def client_options(settings: KafkaQueueSettings) -> dict[str, object]:
 class KafkaDelivery:
     """绑定一条 Kafka 记录及其所属的消费组 generation。"""
 
-    def __init__(self, source: KafkaConsumer, partition: TopicPartition, offset: int, payload: bytes, generation: int) -> None:
+    def __init__(
+        self,
+        source: KafkaConsumer,
+        partition: TopicPartition,
+        offset: int,
+        payload: bytes,
+        generation: int,
+        *,
+        possibly_redelivered: bool,
+    ) -> None:
         """绑定消息位置、消费代次和负责执行该消息的任务。"""
 
         self.source = source
@@ -37,6 +46,7 @@ class KafkaDelivery:
         self.payload = payload
         self.identity = f"{partition.topic}:{partition.partition}:{offset}"
         self.generation = generation
+        self.possibly_redelivered = possibly_redelivered
         self.owner = asyncio.current_task()
         self.settled = False
 
@@ -51,6 +61,8 @@ class KafkaDelivery:
             raise DeliveryLostError("Kafka 确认期间发生再均衡")
         self.settled = True
         self.source.pending.pop(self.partition, None)
+        # 同一 generation 内成功提交后，后续 offset 可视为本消费者首次投递。
+        self.source.trusted_partitions.add(self.partition)
         self.source.client.resume(self.partition)
 
 
@@ -65,8 +77,10 @@ class RebalanceListener(ConsumerRebalanceListener):
     async def on_partitions_revoked(self, revoked: Iterable[TopicPartition]) -> None:
         """在分区撤销时取消全部旧 generation 的在途执行。"""
 
+        revoked_partitions = tuple(revoked)
         # 取消旧 generation 的 handler，避免其完成后提交已经转移的分区。
         self.source.generation += 1
+        self.source.trusted_partitions.difference_update(revoked_partitions)
         for delivery in tuple(self.source.pending.values()):
             if delivery.owner is not None:
                 delivery.owner.cancel()
@@ -75,7 +89,10 @@ class RebalanceListener(ConsumerRebalanceListener):
     async def on_partitions_assigned(self, assigned: Iterable[TopicPartition]) -> None:
         """恢复新分配分区的消息拉取。"""
 
-        self.source.client.resume(*assigned)
+        assigned_partitions = tuple(assigned)
+        # 新 assignment 的首条消息可能来自前一消费者未提交的执行。
+        self.source.trusted_partitions.difference_update(assigned_partitions)
+        self.source.client.resume(*assigned_partitions)
 
 
 class KafkaConsumer:
@@ -92,6 +109,7 @@ class KafkaConsumer:
             max_poll_interval_ms=settings.max_poll_interval_ms,
         )
         self.pending: dict[TopicPartition, KafkaDelivery] = {}
+        self.trusted_partitions: set[TopicPartition] = set()
         self.generation = 0
         self.closed = False
         self._lock = asyncio.Lock()
@@ -109,7 +127,14 @@ class KafkaConsumer:
                 raise DeliveryLostError("Kafka 分区已有未确认任务")
             # 暂停当前分区可防止多个执行槽并行处理同一分区的后续消息。
             self.client.pause(partition)
-            delivery = KafkaDelivery(self, partition, record.offset, record.value or b"", self.generation)
+            delivery = KafkaDelivery(
+                self,
+                partition,
+                record.offset,
+                record.value or b"",
+                self.generation,
+                possibly_redelivered=partition not in self.trusted_partitions,
+            )
             self.pending[partition] = delivery
             return delivery
 

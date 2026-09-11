@@ -1,6 +1,7 @@
 """验证 FastAPI lifespan 的容器暴露和日志事件。"""
 
 import logging
+from dataclasses import replace
 
 import pytest
 
@@ -57,7 +58,9 @@ async def test_application_lifecycle_is_logged(caplog: pytest.LogCaptureFixture)
     caplog.set_level(logging.INFO, logger="app.bootstrap.lifecycle")
 
     async with app.router.lifespan_context(app):
-        pass
+        assert app.state.container is not None
+
+    assert not hasattr(app.state, "container")
 
     events = [getattr(record, "event", None) for record in caplog.records]
     assert events == [
@@ -95,3 +98,59 @@ async def test_application_startup_failure_is_logged(caplog: pytest.LogCaptureFi
     events = [getattr(record, "event", None) for record in caplog.records]
     assert ApplicationLogEvent.START_FAILED in events
     assert ApplicationLogEvent.STOPPED in events
+
+
+@pytest.mark.asyncio
+async def test_application_logs_base_exception_during_startup(caplog: pytest.LogCaptureFixture) -> None:
+    settings = build_settings()
+
+    class FatalStartup(BaseException):
+        pass
+
+    async def fail_startup() -> None:
+        raise FatalStartup()
+
+    container = build_application_container(settings)
+    container = ApplicationContainer(
+        queues=container.queues,
+        databases=container.databases,
+        caches=container.caches,
+        http=container.http,
+        vectors=container.vectors,
+        users=container.users,
+        startup_callbacks=(fail_startup,),
+        async_shutdown_callbacks=container.async_shutdown_callbacks,
+    )
+    app = create_app(settings, container_builder=lambda _settings: container)
+    caplog.set_level(logging.INFO, logger="app.bootstrap.lifecycle")
+
+    with pytest.raises(FatalStartup):
+        async with app.router.lifespan_context(app):
+            pass
+
+    events = [getattr(record, "event", None) for record in caplog.records]
+    assert ApplicationLogEvent.START_FAILED in events
+    assert ApplicationLogEvent.STOPPED in events
+
+
+@pytest.mark.asyncio
+async def test_application_clears_exposed_container_when_shutdown_fails(caplog: pytest.LogCaptureFixture) -> None:
+    settings = build_settings()
+
+    async def fail_shutdown() -> None:
+        raise RuntimeError("shutdown failed")
+
+    container = replace(
+        build_application_container(settings),
+        async_shutdown_callbacks=(fail_shutdown,),
+    )
+    app = create_app(settings, container_builder=lambda _settings: container)
+    caplog.set_level(logging.INFO, logger="app.bootstrap.lifecycle")
+
+    with pytest.raises(ExceptionGroup, match="shutdown callbacks failed"):
+        async with app.router.lifespan_context(app):
+            assert app.state.container is container
+
+    assert not hasattr(app.state, "container")
+    events = [getattr(record, "event", None) for record in caplog.records]
+    assert ApplicationLogEvent.STOP_FAILED in events

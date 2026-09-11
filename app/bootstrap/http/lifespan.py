@@ -23,16 +23,18 @@ def create_lifespan(container_factory: ContainerFactory):
         _APPLICATION_LOGGER.info("Application starting", extra=log_extra(ApplicationLogEvent.STARTING))
 
         runtime = ApplicationRuntime(container_factory)
+        container_exposed = False
 
         try:
             try:
                 container = await runtime.start()
-            except Exception:
+            except BaseException:
                 _APPLICATION_LOGGER.exception("Application startup failed", extra=log_extra(ApplicationLogEvent.START_FAILED))
                 raise
 
             # 仅在完整启动成功后暴露容器，防止请求读取半初始化依赖。
             app.state.container = container
+            container_exposed = True
             _APPLICATION_LOGGER.info("Application started", extra=log_extra(ApplicationLogEvent.STARTED))
             yield
         finally:
@@ -41,9 +43,12 @@ def create_lifespan(container_factory: ContainerFactory):
 
             try:
                 await runtime.aclose()
-            except Exception:
+            except BaseException:
                 _APPLICATION_LOGGER.exception("Application shutdown failed", extra=log_extra(ApplicationLogEvent.STOP_FAILED))
                 raise
+            finally:
+                if container_exposed:
+                    del app.state.container
 
             _APPLICATION_LOGGER.info("Application stopped", extra=log_extra(ApplicationLogEvent.STOPPED))
 

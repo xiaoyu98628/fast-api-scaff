@@ -81,6 +81,35 @@ async def test_worker_logs_startup_failure_and_completed_cleanup(caplog: pytest.
 
 
 @pytest.mark.asyncio
+async def test_worker_logs_base_exception_during_startup(caplog: pytest.LogCaptureFixture) -> None:
+    settings = build_settings()
+
+    class FatalStartup(BaseException):
+        pass
+
+    async def fail_startup() -> None:
+        raise FatalStartup()
+
+    container = replace(
+        build_application_container(settings),
+        startup_callbacks=(fail_startup,),
+    )
+    application = WorkerHost(settings, container_builder=lambda _: container)
+
+    caplog.set_level(logging.INFO, logger="app.bootstrap.worker.lifecycle")
+    with pytest.raises(FatalStartup):
+        await application.serve(connection=None, queue=None, concurrency=None, stop=asyncio.Event())
+
+    events = [getattr(record, "event", None) for record in caplog.records if record.name == "app.bootstrap.worker.lifecycle"]
+    assert events == [
+        "worker.starting",
+        "worker.start_failed",
+        "worker.stopping",
+        "worker.stopped",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_worker_logs_shutdown_failure(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,

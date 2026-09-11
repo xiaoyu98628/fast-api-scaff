@@ -38,10 +38,11 @@ async def test_rabbit_publish_declares_durable_queue_and_waits_for_confirmation(
 
 @pytest.mark.asyncio
 async def test_rabbit_delivery_does_not_ack_before_execution() -> None:
-    message = Mock(body=b"one", message_id="id", delivery_tag=1)
+    message = Mock(body=b"one", message_id="id", delivery_tag=1, redelivered=True)
     message.ack = AsyncMock()
     delivery = RabbitDelivery(cast(AbstractIncomingMessage, message))
     assert delivery.payload == b"one"
+    assert delivery.possibly_redelivered is True
     message.ack.assert_not_awaited()
     await delivery.acknowledge()
     message.ack.assert_awaited_once()
@@ -148,6 +149,7 @@ async def test_redis_pending_recovery_and_owner_checked_ack() -> None:
     await consumer.start()
     delivery = await consumer.receive()
     assert delivery.payload == b"old"
+    assert delivery.possibly_redelivered is True
     client.xreadgroup.assert_not_awaited()
     await delivery.acknowledge()
     assert "XACK" in client.eval.call_args.args[0]
@@ -162,7 +164,7 @@ async def test_redis_pending_recovery_and_owner_checked_ack() -> None:
 async def test_redis_owner_loss_does_not_ack() -> None:
     client = Mock(eval=AsyncMock(return_value=0))
     consumer = RedisConsumer(cast(Redis, client), "jobs", RedisQueueSettings(driver="redis", host="localhost"))
-    delivery = RedisDelivery(consumer, "1-0", b"message")
+    delivery = RedisDelivery(consumer, "1-0", b"message", possibly_redelivered=True)
     consumer.pending[delivery.identity] = delivery
     with pytest.raises(DeliveryLostError):
         await delivery.acknowledge()
@@ -179,6 +181,7 @@ async def test_redis_new_message_uses_manual_group_read() -> None:
     consumer = RedisConsumer(cast(Redis, client), "jobs", RedisQueueSettings(driver="redis", host="localhost"))
     delivery = await consumer.receive()
     assert delivery.payload == b"new"
+    assert delivery.possibly_redelivered is False
     assert client.xreadgroup.call_args.args == ("workers", consumer.name, {"jobs": ">"})
     await consumer.aclose()
 
@@ -248,11 +251,40 @@ async def test_kafka_pauses_partition_until_explicit_offset_commit(monkeypatch: 
     assert constructor.call_args.kwargs["enable_auto_commit"] is False
     delivery = await consumer.receive()
     partition = TopicPartition("jobs", 1)
+    assert delivery.possibly_redelivered is True
     client.pause.assert_called_once_with(partition)
     client.commit.assert_not_awaited()
     await delivery.acknowledge()
     client.commit.assert_awaited_once_with({partition: 8})
     client.resume.assert_called_once_with(partition)
+    await consumer.aclose()
+
+
+@pytest.mark.asyncio
+async def test_kafka_marks_only_first_delivery_after_assignment_as_possible_replay(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = Mock()
+    client.getone = AsyncMock(
+        side_effect=[
+            SimpleNamespace(topic="jobs", partition=1, offset=7, value=b"first"),
+            SimpleNamespace(topic="jobs", partition=1, offset=8, value=b"second"),
+        ]
+    )
+    client.commit = AsyncMock()
+    client.stop = AsyncMock()
+    monkeypatch.setattr("app.infrastructure.queue.drivers.kafka.AIOKafkaConsumer", Mock(return_value=client))
+    consumer = KafkaConsumer(KafkaQueueSettings(driver="kafka", bootstrap_servers=["localhost:9092"]), "jobs")
+
+    first = await consumer.receive()
+    assert first.possibly_redelivered is True
+    await first.acknowledge()
+    second = await consumer.receive()
+    assert second.possibly_redelivered is False
+
+    await second.acknowledge()
+    await RebalanceListener(consumer).on_partitions_assigned([TopicPartition("jobs", 1)])
+    assert TopicPartition("jobs", 1) not in consumer.trusted_partitions
     await consumer.aclose()
 
 

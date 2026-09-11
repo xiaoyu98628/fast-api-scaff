@@ -54,7 +54,7 @@ class WorkerHost:
             try:
                 try:
                     container = await runtime.start()
-                except Exception:
+                except BaseException:
                     _logger.exception(
                         "Worker startup failed",
                         extra=log_extra(WorkerLogEvent.START_FAILED),
@@ -74,7 +74,7 @@ class WorkerHost:
                 _logger.info("Worker stopping", extra=log_extra(WorkerLogEvent.STOPPING))
                 try:
                     await runtime.aclose()
-                except Exception:
+                except BaseException:
                     _logger.exception(
                         "Worker shutdown failed",
                         extra=log_extra(WorkerLogEvent.STOP_FAILED),

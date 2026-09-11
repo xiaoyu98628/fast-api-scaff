@@ -32,12 +32,20 @@ return 1
 class RedisDelivery:
     """持有一条属于当前 Redis Consumer 的未确认 Stream 消息。"""
 
-    def __init__(self, consumer: RedisConsumer, identity: str, payload: bytes) -> None:
+    def __init__(
+        self,
+        consumer: RedisConsumer,
+        identity: str,
+        payload: bytes,
+        *,
+        possibly_redelivered: bool,
+    ) -> None:
         """绑定消息、当前消费者和负责执行该消息的任务。"""
 
         self._consumer = consumer
         self.identity = identity
         self.payload = payload
+        self.possibly_redelivered = possibly_redelivered
         self.owner = asyncio.current_task()
         self.settled = False
 
@@ -91,9 +99,17 @@ class RedisConsumer:
                 if self._renewal is not None and self._renewal.done():
                     # 续租故障必须终止消费，不能继续执行可能已被接管的消息。
                     await self._renewal
-                claimed = await self.client.xautoclaim(self.stream, self.group, self.name, int(self.lease * 1000), self._cursor, count=1)
+                claimed = await self.client.xautoclaim(
+                    self.stream,
+                    self.group,
+                    self.name,
+                    int(self.lease * 1000),
+                    self._cursor,
+                    count=1,
+                )
                 self._cursor = claimed[0]
                 entries = cast(list[tuple[bytes, dict[bytes, bytes]]], claimed[1])
+                possibly_redelivered = bool(entries)
                 if not entries:
                     result = await self.client.xreadgroup(self.group, self.name, {self.stream: ">"}, count=1, block=_READ_BLOCK_MS)
                     entries = cast(list[tuple[bytes, list[tuple[bytes, dict[bytes, bytes]]]]], result)[0][1] if result else []
@@ -102,7 +118,12 @@ class RedisConsumer:
                     key = identity.decode() if isinstance(identity, bytes) else identity
                     if key in self.pending:
                         raise DeliveryLostError("Redis 在途消息租约已过期，停止重复执行")
-                    delivery = RedisDelivery(self, key, fields.get(b"payload", b""))
+                    delivery = RedisDelivery(
+                        self,
+                        key,
+                        fields.get(b"payload", b""),
+                        possibly_redelivered=possibly_redelivered,
+                    )
                     self.pending[key] = delivery
                     return delivery
         raise QueueError("Redis 消费者已关闭")

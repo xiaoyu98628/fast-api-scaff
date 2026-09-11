@@ -1,6 +1,6 @@
 # fast-api-scaff
 
-面向 Python 3.14+ 的 FastAPI 模块化单体脚手架。项目以限界上下文组织业务，以 Domain/Application/Infrastructure 分层保护依赖方向，并让 HTTP、Console 等宿主复用同一套应用用例、配置和资源生命周期。
+面向 Python 3.14+ 的 FastAPI 模块化单体脚手架。项目以限界上下文组织业务，以 Domain/Application/Infrastructure 分层保护依赖方向，并让 HTTP、Console、Worker 等宿主复用同一套应用用例、配置和资源生命周期。
 
 ## 已实现能力
 
@@ -14,7 +14,7 @@
 - Milvus（本地 Lite/远程）、Chroma（本地持久化/远程）和 Elasticsearch 统一异步向量存储；
 - 普通与流式 HTTP 出站请求、独立连接池、阶段超时、池压力诊断和结构化日志；
 - Redis Streams、Kafka、RabbitMQ 队列适配器和独立 Worker；
-- QueueJob 动态解析与分发、投递内重试、SQL 失败存储及 Console 重放；
+- QueueJob 动态解析与分发、显式历史版本解码、投递内重试、SQL 失败存储及 Console 重放；
 - JSON/Text 结构化日志、HTTP request ID、Console command ID、Worker 任务关联、访问日志和数据库查询日志；
 - 架构依赖测试、pytest、Ruff、ty 与 GitHub Actions 质量检查；
 - CI 使用临时 MySQL/PostgreSQL 服务验证 Alembic upgrade、downgrade 和再次 upgrade。
@@ -111,7 +111,7 @@ docker compose up --build service
 
 默认命令同时启动 HTTP 应用和独立 Worker；指定 `service` 时只启动 HTTP 应用。Compose 不提供 MySQL、PostgreSQL、Redis、Kafka、RabbitMQ、Memcached、Milvus、Chroma Server 或 Elasticsearch。容器内 `127.0.0.1` 指向容器自身；应用可以使用 SQLite、Milvus Lite 或 Chroma 本地持久化，但缓存必须配置容器可访问的 Redis 或 Memcached，队列 Worker 必须配置容器可访问的 Redis、Kafka 或 RabbitMQ 地址。Compose 使用 Uvicorn reload，仅适合本地开发。
 
-Worker 复用应用镜像、`.env` 和网络且不暴露端口。镜像本身不声明健康检查，Compose 只为 HTTP 服务配置 `/health` 检测。脚手架内置登录成功日志 Job；Worker 根据消息携带的类路径动态加载并执行它，不扫描业务目录，也不需要在组合根注册。
+Worker 复用应用镜像、`.env` 和网络且不暴露端口。镜像本身不声明健康检查，Compose 只为 HTTP 服务配置 `/health` 检测。脚手架内置登录成功日志 Job；Worker 根据消息携带的类路径动态加载并执行它，不扫描业务目录，也不需要在组合根注册。Worker 持有与 HTTP、Console 同样完整且按需初始化的应用容器，Job 可以使用已装配的数据库、缓存、HTTP、队列和向量能力；Application/Domain 仍只接收明确的窄依赖。
 
 生产镜像以 UID/GID 1000 的非 root 用户运行。镜像中的应用代码和虚拟环境由 root 持有，运行用户只对 `storage/data`、`storage/logs` 和自己的 home 目录拥有写权限。Compose 会把项目目录挂载到 `/app`；若使用 SQLite、Milvus Lite 或 Chroma 本地持久化，请确保宿主机对应目录允许该用户写入。本地向量模式只用于单进程开发和小规模数据，不要让 HTTP 多 worker、HTTP 与 Worker 或多个容器共享同一路径。需要适配其他运行平台时，可通过 `APP_UID`、`APP_GID` 构建参数覆盖镜像用户。
 

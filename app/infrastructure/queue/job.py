@@ -1,13 +1,15 @@
 """定义可投递 QueueJob 及其类型描述和编码规则。"""
 
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import cache
+from types import MappingProxyType
 from typing import Any, ClassVar, cast
 
 from app.infrastructure.queue.codecs.job_json import JsonJobCodec
-from app.infrastructure.queue.contracts.codec import JobCodec
-from app.infrastructure.queue.errors import QueueConfigurationError
+from app.infrastructure.queue.contracts.codec import JobCodec, JobDecoder
+from app.infrastructure.queue.errors import QueueConfigurationError, UnsupportedJobVersionError
 from app.infrastructure.queue.policies import JobPolicy
 
 
@@ -17,6 +19,7 @@ class QueueJob[TContext](ABC):
     version: ClassVar[int] = 1
     policy: ClassVar[JobPolicy] = JobPolicy()
     codec: ClassVar[JobCodec[Any] | None] = None
+    legacy_decoders: ClassVar[Mapping[int, JobDecoder[Any]]] = MappingProxyType({})
 
     @abstractmethod
     async def handle(self, context: TContext) -> None:
@@ -42,6 +45,7 @@ class JobDescriptor[T: QueueJob[Any]]:
     version: int
     job_type: type[T]
     codec: JobCodec[T]
+    legacy_decoders: Mapping[int, JobDecoder[T]]
     policy: JobPolicy
 
     def encode(self, job: object) -> EncodedJob:
@@ -50,6 +54,18 @@ class JobDescriptor[T: QueueJob[Any]]:
         if type(job) is not self.job_type:
             raise TypeError("任务类型与描述类型不一致")
         return EncodedJob(self.reference, self.version, self.codec.encode(cast(T, job)))
+
+    def decoder_for(self, version: int) -> JobDecoder[T]:
+        """返回消息版本对应的 Decoder，不支持时保留独立错误分类。"""
+
+        if type(version) is not int or version < 1:
+            raise UnsupportedJobVersionError("任务消息版本不受支持")
+        if version == self.version:
+            return self.codec
+        try:
+            return self.legacy_decoders[version]
+        except KeyError:
+            raise UnsupportedJobVersionError("任务消息版本不受支持") from None
 
 
 def job_reference(job_type: type[QueueJob[Any]]) -> str:
@@ -67,7 +83,7 @@ def job_reference(job_type: type[QueueJob[Any]]) -> str:
 
 @cache
 def describe_job[T: QueueJob[Any]](job_type: type[T]) -> JobDescriptor[T]:
-    """验证并缓存任务类型配置，未声明 Codec 时使用 JSON。"""
+    """验证并缓存任务类型、当前 Codec 和历史版本 Decoder。"""
 
     if not issubclass(job_type, QueueJob):
         raise QueueConfigurationError("任务类型必须继承 QueueJob")
@@ -79,7 +95,28 @@ def describe_job[T: QueueJob[Any]](job_type: type[T]) -> JobDescriptor[T]:
         raise QueueConfigurationError("任务策略不合法")
     configured_codec = job_type.codec
     codec = JsonJobCodec(job_type) if configured_codec is None else cast(JobCodec[T], configured_codec)
-    return JobDescriptor(job_reference(job_type), version, job_type, codec, policy)
+    if not callable(getattr(codec, "encode", None)) or not callable(getattr(codec, "decode", None)):
+        raise QueueConfigurationError("任务 Codec 不合法")
+
+    configured_decoders = job_type.legacy_decoders
+    if not isinstance(configured_decoders, Mapping):
+        raise QueueConfigurationError("任务历史 Decoder 配置不合法")
+    legacy_decoders: dict[int, JobDecoder[T]] = {}
+    for legacy_version, decoder in configured_decoders.items():
+        if type(legacy_version) is not int or not 1 <= legacy_version < version:
+            raise QueueConfigurationError("任务历史版本必须是小于当前版本的正整数")
+        if not callable(getattr(decoder, "decode", None)):
+            raise QueueConfigurationError("任务历史 Decoder 不合法")
+        legacy_decoders[legacy_version] = cast(JobDecoder[T], decoder)
+
+    return JobDescriptor(
+        job_reference(job_type),
+        version,
+        job_type,
+        codec,
+        MappingProxyType(legacy_decoders),
+        policy,
+    )
 
 
 def encode_job(job: object) -> EncodedJob:

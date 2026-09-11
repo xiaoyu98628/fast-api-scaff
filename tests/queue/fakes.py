@@ -15,7 +15,7 @@ from app.config.queue import QueueConnection, QueueSettings
 from app.infrastructure.database.manager import DatabaseManager
 from app.infrastructure.queue.contracts.failed_store import FailedJobRecord
 from app.infrastructure.queue.contracts.provider import QueueBackend
-from app.infrastructure.queue.errors import QueueError
+from app.infrastructure.queue.errors import JobDecodeError, QueueError
 from app.infrastructure.queue.job import QueueJob
 from app.infrastructure.queue.manager import QueueManager
 from app.interfaces.worker.context import JobExecutionContext
@@ -26,7 +26,10 @@ class Codec:
         return str(job.value).encode()
 
     def decode(self, payload: bytes) -> Job:
-        return Job(int(payload))
+        try:
+            return Job(int(payload))
+        except ValueError as error:
+            raise JobDecodeError("测试任务 payload 不合法") from error
 
 
 @dataclass(frozen=True)
@@ -41,11 +44,13 @@ class Job(QueueJob[JobExecutionContext]):
 class RecordingFailedJobStore:
     def __init__(self) -> None:
         self._records: dict[UUID, FailedJobRecord] = {}
+        self.find_calls = 0
 
     async def save(self, record: FailedJobRecord) -> None:
         self._records.setdefault(record.failure_id, record)
 
     async def find(self, failure_id: UUID) -> FailedJobRecord | None:
+        self.find_calls += 1
         return self._records.get(failure_id)
 
     async def list(self, *, limit: int = 20, offset: int = 0) -> builtins.list[FailedJobRecord]:
@@ -59,9 +64,17 @@ class RecordingFailedJobStore:
 
 
 class FakeDelivery:
-    def __init__(self, payload: bytes, *, identity: str | None = None, consumer: FakeQueueConsumer | None = None) -> None:
+    def __init__(
+        self,
+        payload: bytes,
+        *,
+        identity: str | None = None,
+        consumer: FakeQueueConsumer | None = None,
+        possibly_redelivered: bool = False,
+    ) -> None:
         self.payload = payload
         self.identity = str(uuid4()) if identity is None else identity
+        self.possibly_redelivered = possibly_redelivered
         self._consumer = consumer
         self.settled = False
 
@@ -86,14 +99,16 @@ class FakeQueueBuffer:
         self.messages.put_nowait((str(uuid4()), payload))
         self.changed.set()
 
-    async def take(self, consumer: FakeQueueConsumer) -> tuple[str, bytes]:
+    async def take(self, consumer: FakeQueueConsumer) -> tuple[str, bytes, bool]:
         while True:
             if self.closed or consumer.closed:
                 raise QueueError("测试消费者已关闭")
             if self.recovered:
-                return self.recovered.popleft()
+                identity, payload = self.recovered.popleft()
+                return identity, payload, True
             if not self.messages.empty():
-                return self.messages.get_nowait()
+                identity, payload = self.messages.get_nowait()
+                return identity, payload, False
             self.changed.clear()
             await self.changed.wait()
 
@@ -105,8 +120,13 @@ class FakeQueueConsumer:
         self.closed = False
 
     async def receive(self) -> FakeDelivery:
-        identity, payload = await self.buffer.take(self)
-        delivery = FakeDelivery(payload, identity=identity, consumer=self)
+        identity, payload, possibly_redelivered = await self.buffer.take(self)
+        delivery = FakeDelivery(
+            payload,
+            identity=identity,
+            consumer=self,
+            possibly_redelivered=possibly_redelivered,
+        )
         self.pending[identity] = delivery
         return delivery
 

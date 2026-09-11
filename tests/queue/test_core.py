@@ -3,13 +3,14 @@
 import asyncio
 from dataclasses import replace
 from datetime import UTC, datetime
+from typing import cast
 from uuid import uuid4
 
 import pytest
 from pydantic import ValidationError
 
 from app.config.database import DatabaseSettings
-from app.config.queue import QueueConnection, QueueSettings, RabbitMQQueueSettings, RedisQueueSettings, parse_connection
+from app.config.queue import QueueConnection, QueueSettings, RabbitMQQueueSettings, RedisQueueSettings, WorkerSettings, parse_connection
 from app.infrastructure.database.manager import DatabaseManager
 from app.infrastructure.queue.codecs.envelope_json import EnvelopeJsonCodec
 from app.infrastructure.queue.contracts.message import MessageEnvelope
@@ -53,6 +54,18 @@ def test_worker_settings_are_nested_under_queue(monkeypatch: pytest.MonkeyPatch)
 
     assert settings.worker.concurrency == 8
     assert settings.worker.shutdown_timeout_seconds == 45
+
+
+@pytest.mark.parametrize("concurrency", [True, False, 1.0, 4.5, "4.0", " 4 ", object()])
+def test_worker_concurrency_rejects_implicit_numeric_conversion(concurrency: object) -> None:
+    with pytest.raises(ValidationError):
+        WorkerSettings.model_validate({"concurrency": concurrency})
+
+
+@pytest.mark.parametrize("queue", ["", ".", "..", "jobs/urgent", "jobs urgent", "任务"])
+def test_connection_rejects_non_portable_queue_names(queue: str) -> None:
+    with pytest.raises(ValidationError):
+        RedisQueueSettings(driver="redis", host="localhost", default_queue=queue)
 
 
 @pytest.mark.parametrize("raw", [{"driver": "redis"}, {"driver": "rabbitmq"}])
@@ -134,6 +147,34 @@ async def test_dispatch_inherits_runtime_correlation_and_allows_explicit_overrid
     assert inherited.correlation_id == "request-123"
     assert overridden.job_id == overridden_id
     assert overridden.correlation_id == "manual-456"
+    await queues.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("queue", [".", "..", "jobs/urgent", "jobs urgent", "任务"])
+async def test_runtime_queue_overrides_use_the_same_portable_validation(queue: str) -> None:
+    queues = create_queue_manager()
+
+    with pytest.raises(QueueError, match="队列名不合法"):
+        await queues.dispatch(Job(1), queue=queue)
+    with pytest.raises(QueueConfigurationError, match="队列名不合法"):
+        queues.queue_name(queue=queue)
+    with pytest.raises(QueueConfigurationError, match="消费参数不合法"):
+        async with queues.consume(queue=queue):
+            pass
+
+    await queues.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("concurrency", [True, 1.0])
+async def test_runtime_consumer_rejects_non_integer_concurrency(concurrency: object) -> None:
+    queues = create_queue_manager()
+
+    with pytest.raises(QueueConfigurationError, match="消费参数不合法"):
+        async with queues.consume(concurrency=cast(int, concurrency)):
+            pass
+
     await queues.aclose()
 
 
