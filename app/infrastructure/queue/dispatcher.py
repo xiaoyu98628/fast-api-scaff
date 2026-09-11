@@ -11,6 +11,7 @@ from app.infrastructure.queue.contracts.message import MessageEnvelope
 from app.infrastructure.queue.contracts.publisher import QueuePublisher
 from app.infrastructure.queue.errors import QueueError
 from app.infrastructure.queue.job import encode_job
+from app.runtime.trace import current_correlation_id
 
 
 def _always_active() -> None:
@@ -30,10 +31,18 @@ class Dispatcher:
     ensure_active: Callable[[], None] = field(default=_always_active, repr=False, compare=False)
 
     async def dispatch(self, job: object, *, queue: str | None = None, correlation_id: str | None = None) -> UUID:
-        """编码并投递一个 QueueJob，成功时返回新任务 ID。"""
+        """编码并投递 QueueJob；未显式指定时继承当前关联 ID。"""
 
         encoded = encode_job(job)
-        message = MessageEnvelope(self.new_id(), encoded.job_type, encoded.version, encoded.payload, self.clock(), correlation_id)
+        active_correlation_id = current_correlation_id() if correlation_id is None else correlation_id
+        message = MessageEnvelope(
+            self.new_id(),
+            encoded.job_type,
+            encoded.version,
+            encoded.payload,
+            self.clock(),
+            active_correlation_id,
+        )
         await self.publish_envelope(message, queue=queue)
         return message.job_id
 

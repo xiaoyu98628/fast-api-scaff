@@ -78,7 +78,7 @@ uv run python -m app.console users list \
 
 结果由 `ConsolePresenter` 序列化为 JSON：dataclass 转对象，UUID 转字符串，枚举转值，日期时间使用 ISO 8601。当前时间是本地无时区值，所以 ISO 字符串通常不带 offset。
 
-正常进程入口为每次 Console 调用生成 UUID 格式的 `command_id`，并在参数解析、命令处理和资源生命周期期间绑定到当前执行流。需要应用容器的 operation 还可以通过 `context.command_id` 显式读取它。结构化日志会自动附加该字段，但 stdout 结果不会额外包裹或混入 command ID，现有脚本数据协议保持不变。直接调用 `ConsoleHost.run()` 且外层没有命令上下文时，宿主会为该次 operation 单独生成 ID。
+正常进程入口通过 Runtime 与 HTTP 共用的生成器，为每次 Console 调用创建 32 位 UUID4 十六进制 `command_id`，并在参数解析、命令处理和资源生命周期期间绑定到当前执行流，同时作为该调用的 `correlation_id`。需要应用容器的 operation 还可以通过 `context.command_id` 显式读取它。结构化日志和新发布的队列消息会自动取得关联 ID，但 stdout 结果不会额外包裹或混入 command ID，现有脚本数据协议保持不变。直接调用 `ConsoleHost.run()` 且外层没有命令上下文时，宿主会为该次 operation 单独生成 ID。
 
 不要在命令处理器里用 `print()` 随意输出调试信息，否则会破坏 stdout 的机器可读契约。诊断信息应走日志或 stderr。
 
@@ -132,7 +132,7 @@ class ExampleConsoleCommand(ConsoleCommand):
         self._console.presenter.text("ok")
 ```
 
-需要应用依赖时，把异步业务操作写成接收 `ConsoleContext` 的函数，再通过 `self._console.run(operation)` 执行。命令应调用 `context.container.<context>.service`，不应直接创建 Repository、Session 或具体缓存驱动；需要把 Console 发起的新任务关联到当前命令时，显式传递 `correlation_id=context.command_id`。
+需要应用依赖时，把异步业务操作写成接收 `ConsoleContext` 的函数，再通过 `self._console.run(operation)` 执行。命令应调用 `context.container.<context>.service`，不应直接创建 Repository、Session 或具体缓存驱动。通过 `context.container.queues.dispatch(job)` 发布的新任务会自动继承当前 command ID，无需逐层传递；只有要建立另一条调用链时才显式覆盖 `correlation_id`。
 
 自动发现规则：
 

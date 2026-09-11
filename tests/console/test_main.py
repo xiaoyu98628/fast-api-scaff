@@ -291,7 +291,7 @@ def test_run_console_preserves_unexpected_programming_error() -> None:
 
 
 def test_run_console_binds_command_id_without_leaking(caplog: pytest.LogCaptureFixture) -> None:
-    command_id = UUID("00000000-0000-4000-8000-000000000002")
+    command_id = "00000000000040008000000000000002"
     logger = logging.getLogger("app.test.console.context")
     runtime_filter = RuntimeContextFilter()
     caplog.handler.addFilter(runtime_filter)
@@ -309,8 +309,10 @@ def test_run_console_binds_command_id_without_leaking(caplog: pytest.LogCaptureF
 
     inside = next(record for record in caplog.records if record.getMessage() == "inside command")
     outside = next(record for record in caplog.records if record.getMessage() == "outside command")
-    assert getattr(inside, "command_id", None) == str(command_id)
+    assert getattr(inside, "command_id", None) == command_id
+    assert getattr(inside, "correlation_id", None) == command_id
     assert getattr(outside, "command_id", None) is None
+    assert getattr(outside, "correlation_id", None) is None
 
 
 @pytest.mark.parametrize(("name", "value"), [("HTTP_POOL__MAX_CONNECTIONS", "0"), ("LOG_LEVEL", "invalid")])

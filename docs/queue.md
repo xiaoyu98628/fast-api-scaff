@@ -18,10 +18,10 @@ async def submit(container: ApplicationContainer, job: object):
 只有在任务需要独立优先级、并发或扩缩容时，才覆盖连接或队列：
 
 ```python
-await container.queues.dispatch(job, connection="redis", queue="reports", correlation_id="request-123")
+await container.queues.dispatch(job, connection="redis", queue="reports")
 ```
 
-`correlation_id` 是跨宿主关联字段，不等同于某一种入口 ID。HTTP 生产者传入必有的 request ID；Console 命令主动创建新任务时可传入 `context.command_id`。队列公共入口仍允许省略该字段，以兼容没有 HTTP 或 Console 上游的根任务和既有消息。Console 的失败任务 retry 保留原信封的 correlation ID，并通过新 `job_id` 和 `replay_of` 表达重放关系，不用当前 command ID 覆盖原调用链。
+`correlation_id` 是跨宿主关联字段，不等同于某一种入口 ID。HTTP、Console 与 Worker 分别在入口把 request ID、command ID 或消息 correlation ID 绑定到宿主无关的追踪上下文；Dispatcher 未收到显式值时自动继承它。因此正常调用只需 `dispatch(job)`，特殊场景仍可通过 `correlation_id="..."` 覆盖。没有追踪上游的根任务仍允许该字段为空。Console 的失败任务 retry 直接发布原信封，保留原 correlation ID，并通过新 `job_id` 和 `replay_of` 表达重放关系，不用当前 command ID 覆盖原调用链。
 
 `dispatch()` 不启动消费者；构建容器也不连接队列服务。第一次发布时 Kafka 才建立 Producer，RabbitMQ 在第一次获取 Dispatcher 时建立发布连接，Redis 客户端在首次命令时连接。Kafka Worker 只消费时不会初始化 Producer。后端首次创建、连接或消费者创建阶段的驱动异常会在 `QueueManager` 边界转换为 `QueueError`，已有 `QueueError` 与任务取消保持原语义。
 
@@ -66,7 +66,7 @@ Job 属于 Worker 入站适配边界。业务任务应通过 `context.container.
 
 类路径属于队列消息契约。移动或重命名 Job 时，尚未消费的消息仍引用旧路径；应在旧模块暂时保留一个指向新类的显式导入，待旧队列排空后再删除。动态导入以队列服务是内部可信资源为前提，默认拒绝应用根包之外的类路径。
 
-当前内置 `LoginSucceededJob` 作为最小业务示例：登录 HTTP 适配器在会话提交后向默认队列尽力投递 `user_id` 参数和固定文案，并把当前 request ID 显式写入消息的 `correlation_id`；Worker 调用其 `handle(context)` 记录该文案和结构化用户 ID。任务不携带用户名、密码或 Token；发布失败不改变登录响应。`user_id` 暂时可空，以兼容队列中已经存在的旧消息。该通知不具备 Outbox 或 exactly-once 保证，不应用于审计或安全决策。
+当前内置 `LoginSucceededJob` 作为最小业务示例：登录 HTTP 适配器在会话提交后向默认队列尽力投递 `user_id` 参数和固定文案，Dispatcher 自动把当前 request ID 写入消息的 `correlation_id`；Worker 调用其 `handle(context)` 记录该文案和结构化用户 ID。任务不携带用户名、密码或 Token；发布失败不改变登录响应。`user_id` 暂时可空，以兼容队列中已经存在的旧消息。该通知不具备 Outbox 或 exactly-once 保证，不应用于审计或安全决策。
 
 ## 3. 信封与交付保证
 

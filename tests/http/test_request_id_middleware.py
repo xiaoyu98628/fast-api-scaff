@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from uuid import UUID, uuid4
 
 import pytest
-from fastapi import FastAPI
+from fastapi import BackgroundTasks, FastAPI
 from httpx2 import ASGITransport, AsyncClient
 from starlette_context import context
 from starlette_context.header_keys import HeaderKeys
@@ -17,9 +17,10 @@ from app.config.cache import CacheSettings
 from app.config.cors import CorsSettings
 from app.config.database import DatabaseSettings
 from app.config.settings import Settings
-from app.interfaces.http.context import require_request_id
 from app.interfaces.http.logging import HttpLogEvent
-from app.interfaces.http.middleware.request_id import RequestIdMiddleware
+from app.interfaces.http.middleware.request_id import ApplicationRequestIdPlugin, RequestIdMiddleware
+from app.interfaces.http.middleware.trace_context import TraceContextMiddleware
+from app.runtime.trace import TraceContext, current_trace_context
 
 REQUEST_ID_HEADER = HeaderKeys.request_id.value
 
@@ -44,16 +45,27 @@ def test_request_id_is_registered_as_outermost_middleware() -> None:
     app = create_app(build_settings())
 
     assert app.user_middleware[1].cls is RequestIdMiddleware
+    assert app.user_middleware[2].cls is TraceContextMiddleware
+
+
+def test_request_id_plugin_uses_shared_injectable_generator() -> None:
+    request_id = "00000000000040008000000000000003"
+
+    assert ApplicationRequestIdPlugin(lambda: request_id).get_new_uuid() == request_id
 
 
 @pytest.mark.asyncio
 async def test_missing_request_id_is_generated_and_available_in_context() -> None:
     app = create_app(build_settings())
+    observed_trace_contexts: list[TraceContext | None] = []
 
     @app.get("/request-id")
     async def read_request_id() -> dict[str, str]:
-        request_id = require_request_id()
-        return {"request_id": request_id}
+        trace_context = current_trace_context()
+        assert trace_context is not None
+        assert trace_context.request_id is not None
+        observed_trace_contexts.append(trace_context)
+        return {"request_id": trace_context.request_id}
 
     async with create_test_client(app) as client:
         response = await client.get("/request-id")
@@ -62,13 +74,30 @@ async def test_missing_request_id_is_generated_and_available_in_context() -> Non
 
     assert response.status_code == 200
     assert UUID(request_id).version == 4
+    assert len(request_id) == 32
+    assert "-" not in request_id
     assert response.json() == {"request_id": request_id}
+    assert observed_trace_contexts == [TraceContext(correlation_id=request_id, request_id=request_id)]
     assert context.exists() is False
+    assert current_trace_context() is None
 
 
-def test_required_request_id_rejects_calls_outside_http_context() -> None:
-    with pytest.raises(RuntimeError, match="请求上下文不存在"):
-        require_request_id()
+@pytest.mark.asyncio
+async def test_request_trace_context_remains_available_to_background_tasks() -> None:
+    app = create_app(build_settings())
+    observed_trace_contexts: list[TraceContext | None] = []
+
+    @app.get("/background-trace")
+    async def schedule_capture(background_tasks: BackgroundTasks) -> None:
+        background_tasks.add_task(lambda: observed_trace_contexts.append(current_trace_context()))
+
+    async with create_test_client(app) as client:
+        response = await client.get("/background-trace")
+
+    request_id = response.headers[REQUEST_ID_HEADER]
+    assert response.status_code == 200
+    assert observed_trace_contexts == [TraceContext(correlation_id=request_id, request_id=request_id)]
+    assert current_trace_context() is None
 
 
 @pytest.mark.asyncio

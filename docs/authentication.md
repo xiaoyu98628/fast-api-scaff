@@ -40,7 +40,7 @@ curl -X POST http://127.0.0.1:8000/api/v1/auth/logout \
 
 `/auth/me` 返回统一响应中的用户 DTO，不包含密码或哈希。退出返回 204，没有 JSON 响应体。OpenAPI 的 `SessionBearer` 安全方案可在 Swagger Authorize 中使用。
 
-登录成功并提交会话后，HTTP 适配器通过后台任务向默认连接配置的默认逻辑队列（`sample.env` 为 `default`）投递 `LoginSucceededJob`。普通登录路由受 Request ID 中间件保护，因此发布函数要求传入非空 `request_id`，并显式写入消息的 `correlation_id`。消息以 `user_id` 参数标识登录用户，并包含固定文案“用户登录成功，队列任务已执行。”，不包含用户名、密码或 Token。独立 Worker 消费后使用当前 `JobExecutionContext` 调用任务的 `handle(context)`，记录该文案和结构化用户 ID，并使任务调用链日志能够与原请求关联：
+登录成功并提交会话后，HTTP 适配器通过后台任务向默认连接配置的默认逻辑队列（`sample.env` 为 `default`）投递 `LoginSucceededJob`。Request ID 中间件建立请求 ID 后，追踪中间件在完整请求及后台任务期间把它绑定为当前 `correlation_id`；Dispatcher 自动写入消息，发布函数不需要接收或传递该 ID。消息以 `user_id` 参数标识登录用户，并包含固定文案“用户登录成功，队列任务已执行。”，不包含用户名、密码或 Token。独立 Worker 消费后使用当前 `JobExecutionContext` 调用任务的 `handle(context)`，记录该文案和结构化用户 ID，并使任务调用链日志能够与原请求关联：
 
 ```bash
 uv run python -m app.worker

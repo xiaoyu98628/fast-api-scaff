@@ -21,6 +21,7 @@ from app.contexts.user.jobs.login_succeeded import LoginSucceededJob
 from app.interfaces.http.controllers.v1.auth.router import _publish_login_succeeded
 from app.interfaces.http.shared.response.codes.error_code import ErrorCode
 from app.runtime.container import ApplicationContainer
+from app.runtime.trace import TraceContext, bind_trace_context, current_trace_context
 from database.main.model_registry import load_main_database_metadata
 
 
@@ -47,7 +48,12 @@ async def client() -> AsyncIterator[AsyncClient]:
 
 @pytest.mark.asyncio
 async def test_http_login_me_logout_and_public_crud(client: AsyncClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    publish_login_succeeded = AsyncMock()
+    observed_trace_contexts: list[TraceContext | None] = []
+
+    async def capture_trace_context(_container: ApplicationContainer, _user_id: UUID) -> None:
+        observed_trace_contexts.append(current_trace_context())
+
+    publish_login_succeeded = AsyncMock(side_effect=capture_trace_context)
     monkeypatch.setattr("app.interfaces.http.controllers.v1.auth.router._publish_login_succeeded", publish_login_succeeded)
     created = await client.post("/api/v1/users", json={"username": "alice", "email": "alice@example.com", "password": "password123"})
     assert created.status_code == 201
@@ -63,8 +69,13 @@ async def test_http_login_me_logout_and_public_crud(client: AsyncClient, monkeyp
     publish_login_succeeded.assert_awaited_once_with(
         ANY,
         UUID(user["id"]),
-        login.headers["X-Request-ID"],
     )
+    assert observed_trace_contexts == [
+        TraceContext(
+            correlation_id=login.headers["X-Request-ID"],
+            request_id=login.headers["X-Request-ID"],
+        )
+    ]
     headers = {"Authorization": f"Bearer {token['access_token']}"}
 
     me = await client.get("/api/v1/auth/me", headers=headers)
@@ -142,17 +153,15 @@ async def test_login_queue_failure_does_not_change_successful_response(client: A
 
 
 @pytest.mark.asyncio
-async def test_login_publisher_uses_default_queue() -> None:
+async def test_login_publisher_uses_default_queue_without_manual_correlation() -> None:
     queues = Mock(dispatch=AsyncMock())
     container = cast(ApplicationContainer, SimpleNamespace(queues=queues))
     user_id = uuid7()
 
-    await _publish_login_succeeded(container, user_id, request_id="request-123")
+    with bind_trace_context(TraceContext(correlation_id="request-123", request_id="request-123")):
+        await _publish_login_succeeded(container, user_id)
 
-    queues.dispatch.assert_awaited_once_with(
-        LoginSucceededJob(user_id=user_id),
-        correlation_id="request-123",
-    )
+    queues.dispatch.assert_awaited_once_with(LoginSucceededJob(user_id=user_id))
 
 
 @pytest.mark.asyncio

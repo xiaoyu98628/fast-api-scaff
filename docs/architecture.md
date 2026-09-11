@@ -28,7 +28,7 @@ app/
 │   ├── http/               # FastAPI 请求、响应、中间件和路由
 │   ├── console/            # Typer 命令、参数、展示和退出码
 │   └── worker/             # 队列 Job 动态解析、执行和消费并发
-└── runtime/                # 宿主无关的容器、生命周期和进程路径约定
+└── runtime/                # 宿主无关的容器、生命周期、追踪上下文和进程路径约定
 
 database/main/              # main 数据库的 Alembic 环境与模型注册
 tests/                      # 分层测试与架构约束
@@ -55,7 +55,7 @@ bootstrap/composition 负责选择实现并完成装配
 - Infrastructure 可以依赖 Application/Domain 协议并实现它们；
 - Interfaces 依赖 Application DTO/错误，不把 FastAPI/Typer 传入业务层；
 - Interfaces 不依赖 Bootstrap，避免协议适配器反向控制启动装配；
-- Runtime 保存宿主无关的 `ApplicationContainer` 和 `ApplicationRuntime`；
+- Runtime 保存宿主无关的 `ApplicationContainer`、`ApplicationRuntime` 和 `TraceContext`；
 - Bootstrap/Composition 是允许知道具体实现、Interfaces 和 Runtime 的装配边界。
 
 `tests/test_architecture.py` 用 AST 检查 Domain、Application、Infrastructure、Interfaces 与 Bootstrap 的导入。它不仅保护核心层，还禁止共享 Infrastructure 反向依赖业务或宿主、上下文 Infrastructure 跨上下文依赖、Interfaces 依赖 Bootstrap，以及 Interfaces 直接穿透到上下文 Infrastructure。相对导入也会被视为违规，项目统一要求绝对、显式导入。这类测试防止边界在日常迭代中悄悄腐化。
@@ -204,7 +204,7 @@ HTTP 与 Console 都调用 `UserApplicationService`，Worker 则解析消息携�
 - Worker 负责消息解码、宿主上下文注入、执行策略、并发消费和确认；
 - 三者都不实现业务规则，不直接操作 ORM，也不负责全局启动装配。
 
-HTTP 独立定义 `page/limit` 查询协议和 `items + meta` 分页响应，并在调用应用服务前把页码换算为 `offset/limit`。Console 的 `users list` 也在宿主边界约束 `page` 和 `limit`，但直接输出应用 DTO；Console 根入口为每次调用生成 command ID，`ConsoleHost` 在 operation 中复用它，外层没有命令上下文的直接宿主调用则生成独立 ID。后台批处理应根据任务语义使用 `batch_size`、进度、stdout/stderr 和退出码，而不是复用 HTTP 分页响应。
+HTTP 独立定义 `page/limit` 查询协议和 `items + meta` 分页响应，并在调用应用服务前把页码换算为 `offset/limit`。Console 的 `users list` 也在宿主边界约束 `page` 和 `limit`，但直接输出应用 DTO；HTTP 缺少调用方 ID 和 Console 启动命令时都通过 Runtime 的同一个生成器创建 32 位 UUID4 十六进制 ID，`ConsoleHost` 在 operation 中复用 command ID，外层没有命令上下文的直接宿主调用则生成独立 ID。HTTP、Console 和 Worker 分别在入口把 request ID、command ID 或消息 correlation ID 绑定到宿主无关的 `TraceContext`，日志和新发布的队列消息从中自动取得关联字段，业务调用不逐层传递 ID。后台批处理应根据任务语义使用 `batch_size`、进度、stdout/stderr 和退出码，而不是复用 HTTP 分页响应。
 
 新增宿主时，`interfaces` 只承担协议边界，`bootstrap` 负责日志、组合、生命周期、取消和进程入口。不能因为某个适配器能够 import service，就把启动装配重新放回 `interfaces`。
 
@@ -274,6 +274,6 @@ HTTP 独立定义 `page/limit` 查询协议和 `items + meta` 分页响应，并
 
 独立 `app.worker` 入口由 `app.bootstrap.worker` 完成装配并复用 ApplicationRuntime；`app.interfaces.worker` 负责 Job 类路径解析、宿主上下文注入、消息执行、重试和消费并发。QueueJob 将可序列化数据与 `handle(context)` 收敛在同一类，投递时自动把类路径写入消息，Worker 动态导入并验证该类型；框架不扫描 `contexts`、`jobs` 或其他业务目录，不维护业务注册表，应用组合根也不收集 Job。当前示例把任务放在上下文级 `jobs/` 包并按类名使用蛇形命名模块，但这只是组织习惯。
 
-`WorkerContext` 是进程级宿主上下文，与 `ConsoleContext` 一样只在宿主/入站适配边界暴露当前配置和已经启动的 `ApplicationContainer`。执行器从它为每条消息创建独立、不可变的 `JobExecutionContext`，其中 `settings` 和 `container` 保持直接访问，任务、队列和关联元数据组合在 `context.job`；同一投递内重试复用同一个对象。Job 应优先从容器选择当前上下文的公开应用服务；需要数据库、缓存或外部服务的业务流程，仍由 Application 层定义窄协议并经 composition 注入实现。Application/Domain 不导入 Worker、具体 Manager、队列驱动或全局容器，共享 Infrastructure 不导入具体业务。所有消费槽共享应用级 Manager，任务级 Session、UoW 和事务不能跨 Job 共享。内置 `LoginSucceededJob` 由登录 HTTP 适配器在会话提交后尽力投递，HTTP request ID 显式进入消息 correlation ID，作为默认队列、跨宿主日志关联和 `handle(context)` 输出的最小示例；它不进入认证 Application/Domain，也不参与登录事务。
+`WorkerContext` 是进程级宿主上下文，与 `ConsoleContext` 一样只在宿主/入站适配边界暴露当前配置和已经启动的 `ApplicationContainer`。执行器从它为每条消息创建独立、不可变的 `JobExecutionContext`，其中 `settings` 和 `container` 保持直接访问，任务、队列和关联元数据组合在 `context.job`；同一投递内重试复用同一个对象。Job 应优先从容器选择当前上下文的公开应用服务；需要数据库、缓存或外部服务的业务流程，仍由 Application 层定义窄协议并经 composition 注入实现。Application/Domain 不导入 Worker、具体 Manager、队列驱动或全局容器，共享 Infrastructure 不导入具体业务。所有消费槽共享应用级 Manager，任务级 Session、UoW 和事务不能跨 Job 共享。内置 `LoginSucceededJob` 由登录 HTTP 适配器在会话提交后尽力投递，HTTP request ID 通过 `TraceContext` 自动进入消息 correlation ID，作为默认队列、跨宿主日志关联和 `handle(context)` 输出的最小示例；它不进入认证 Application/Domain，也不参与登录事务。
 
 SQL 失败表属于共享技术能力，在 main metadata 注册；失败写入使用独立短事务，不借用业务 UoW。任务执行和消息确认不是跨系统原子事务。详见[队列](queue.md)、[Worker](worker.md)。

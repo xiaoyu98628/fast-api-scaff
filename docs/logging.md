@@ -38,7 +38,8 @@ LOG_FORMAT=text
 | `command_id` | 有 Console 命令上下文时附加 |
 | `job_id`、`job_type`、`job_version` | 有 Worker 任务上下文时附加 |
 | `queue_connection`、`queue_name` | 有 Worker 任务上下文时附加 |
-| `correlation_id`、`replay_of` | 当前任务存在对应值时附加 |
+| `correlation_id` | 当前 HTTP、Console 或 Worker 追踪上下文存在对应值时附加 |
+| `replay_of` | 当前 Worker 任务是重放消息时附加 |
 | `event` | 稳定、可查询的事件名 |
 | `details` | 该事件的结构化细节 |
 | `exception` | `type`、`message`、`stacktrace`，仅异常日志出现 |
@@ -126,11 +127,11 @@ CORS 预检在最外层直接返回，不生成应用访问日志或 Request ID�
 
 ## 6. 请求与任务关联上下文
 
-日志 handler 上的 `RuntimeContextFilter` 在记录进入 handler 时读取当前宿主上下文。HTTP 请求补充 `request_id`，Console 命令补充 `command_id`，Worker 任务补充任务与队列字段；Application 和 Infrastructure 不需要依赖具体入站协议也能产生可关联日志。
+HTTP、Console 与 Worker 在各自入口绑定宿主无关的 `TraceContext`：HTTP 使用 request ID，Console 使用 command ID，Worker 继承消息 correlation ID。日志 handler 上的 `RuntimeContextFilter` 在记录进入 handler 时读取该追踪上下文和 Worker 任务上下文，分别补充 `request_id`、`command_id`、`correlation_id` 以及任务与队列字段；Application 和 Infrastructure 不需要依赖具体入站协议也能产生可关联日志。
 
-Console 不伪造 request ID。正常 Console 入口在调用 Typer 前生成一个 command ID，容器型 operation 通过 `ConsoleContext.command_id` 获得相同值；直接调用 `ConsoleHost.run()` 时，如果外层没有命令上下文，宿主会为该次 operation 生成一个。绑定退出后按 token 恢复，不会泄漏到下一次调用。启动配置发生在 Console 命令入口之前，因此配置加载失败的日志可能没有 command ID。
+Console 不伪造 request ID。HTTP 缺少调用方 ID 和 Console 启动命令时都调用 Runtime 的 `new_trace_id()`，生成相同格式的 32 位 UUID4 十六进制 ID。容器型 operation 通过 `ConsoleContext.command_id` 获得相同值；直接调用 `ConsoleHost.run()` 时，如果外层没有命令上下文，宿主会为该次 operation 生成一个。绑定退出后按 token 恢复，不会泄漏到下一次调用。启动配置发生在 Console 命令入口之前，因此配置加载失败的日志可能没有 command ID。
 
-登录 HTTP 适配器要求当前 request ID，并显式传给队列 Dispatcher 作为消息的 correlation ID。Console 主动发布新任务时同样可以把 `context.command_id` 映射为 correlation ID。Worker 执行每条消息时使用独立 `ContextVar` 绑定任务字段，因此 `QueueJob.handle(context)`、Application 服务、数据库、缓存和出站 HTTP 客户端在当前异步执行流内产生的日志都会自动携带同一组任务标识。绑定在消息处理结束后按 token 恢复，并发槽之间不会共享任务级上下文。Worker 不把 correlation ID 伪装成 request ID 或 command ID；三者在日志中保持不同字段。
+Dispatcher 未收到显式 `correlation_id` 时会读取当前 `TraceContext`。因此 HTTP 后台任务、Console 命令和 Worker Job 调用 `dispatch(job)` 都会自动延续同一条调用链；显式值仍可用于建立或覆盖调用链。Worker 执行每条消息时使用独立 `ContextVar` 绑定追踪及任务字段，因此 `QueueJob.handle(context)`、Application 服务、数据库、缓存和出站 HTTP 客户端在当前异步执行流内产生的日志都会自动携带同一组任务标识。绑定在消息处理结束后按 token 恢复，并发槽之间不会共享任务级上下文。Worker 不把 correlation ID 伪装成 request ID 或 command ID；三者在日志中保持不同字段。
 
 `JobExecutionContext` 同时通过 `context.job` 向 Job 显式提供这些元数据，供幂等键、低基数 operation 选择等执行逻辑使用。不要把整个上下文继续传入 Application/Domain，也不要把任务 payload 或敏感值放入日志关联字段。Scheduler 仍应采用自己的执行上下文。
 

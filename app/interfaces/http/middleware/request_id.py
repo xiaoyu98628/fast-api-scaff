@@ -5,17 +5,33 @@ import logging
 from starlette.middleware import Middleware
 from starlette.requests import HTTPConnection, Request
 from starlette.responses import JSONResponse as StarletteJsonResponse
-from starlette_context import plugins
 from starlette_context.errors import MiddleWareValidationError
 from starlette_context.middleware import RawContextMiddleware
+from starlette_context.plugins import RequestIdPlugin as StarletteRequestIdPlugin
 
 from app.infrastructure.logging.record import log_extra
 from app.interfaces.http.logging import HttpLogEvent
 from app.interfaces.http.shared.response.codes.builder import ResponseCodeBuilder
 from app.interfaces.http.shared.response.codes.error_code import ErrorCode
 from app.interfaces.http.shared.response.factory import JsonResponseFactory
+from app.runtime.trace import TraceIdFactory, new_trace_id
 
 _REQUEST_ID_LOGGER = logging.getLogger("app.interfaces.http.request_id")
+
+
+class ApplicationRequestIdPlugin(StarletteRequestIdPlugin):
+    """使用应用统一生成器创建缺失的 HTTP Request ID。"""
+
+    def __init__(self, id_factory: TraceIdFactory = new_trace_id) -> None:
+        """保存可替换的追踪 ID 生成器并启用 UUID4 校验。"""
+
+        super().__init__()
+        self._id_factory = id_factory
+
+    def get_new_uuid(self) -> str:
+        """从应用运行时生成新的 Request ID。"""
+
+        return self._id_factory()
 
 
 class RequestIdMiddleware(RawContextMiddleware):
@@ -43,7 +59,7 @@ def build_request_id_middleware(service_code: str) -> Middleware:
 
     return Middleware(
         RequestIdMiddleware,
-        plugins=(plugins.RequestIdPlugin(),),
+        plugins=(ApplicationRequestIdPlugin(),),
         default_error_response=_build_invalid_request_id_response(service_code),
     )
 

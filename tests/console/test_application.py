@@ -1,7 +1,5 @@
 """验证 Console 宿主的容器生命周期和操作执行。"""
 
-from uuid import UUID
-
 import pytest
 
 from app.bootstrap.console.application import ConsoleHost
@@ -17,11 +15,11 @@ from app.contexts.user.composition import build_user_context
 from app.infrastructure.cache.manager import CacheManager
 from app.infrastructure.database.manager import DatabaseManager
 from app.infrastructure.http.manager import HttpClientManager
-from app.infrastructure.logging.context import bind_console_log_context
 from app.infrastructure.queue.manager import QueueManager
 from app.infrastructure.vector.manager import VectorStoreManager
 from app.interfaces.console.context import ConsoleContext
 from app.runtime.container import ApplicationContainer
+from app.runtime.trace import TraceContext, bind_trace_context, current_correlation_id
 
 
 def build_settings() -> Settings:
@@ -59,7 +57,7 @@ def build_container(settings: Settings, events: list[str]) -> ApplicationContain
 def test_console_application_provides_context_and_closes_runtime() -> None:
     settings = build_settings()
     events: list[str] = []
-    command_id = UUID("00000000-0000-4000-8000-000000000001")
+    command_id = "00000000000040008000000000000001"
     console = ConsoleHost(
         settings,
         container_builder=lambda active_settings: build_container(active_settings, events),
@@ -68,7 +66,8 @@ def test_console_application_provides_context_and_closes_runtime() -> None:
 
     async def operation(context: ConsoleContext) -> str:
         assert context.settings is settings
-        assert context.command_id == str(command_id)
+        assert context.command_id == command_id
+        assert current_correlation_id() == command_id
         events.append("operation")
         return context.settings.app.name
 
@@ -98,7 +97,7 @@ def test_console_application_reuses_outer_command_id() -> None:
     settings = build_settings()
     events: list[str] = []
 
-    def reject_new_command_id() -> UUID:
+    def reject_new_command_id() -> str:
         raise AssertionError("已有命令上下文时不应生成新 ID")
 
     console = ConsoleHost(
@@ -110,5 +109,6 @@ def test_console_application_reuses_outer_command_id() -> None:
     async def operation(context: ConsoleContext) -> str:
         return context.command_id
 
-    with bind_console_log_context("outer-command-id"):
+    trace_context = TraceContext(correlation_id="outer-command-id", command_id="outer-command-id")
+    with bind_trace_context(trace_context):
         assert console.run(operation) == "outer-command-id"

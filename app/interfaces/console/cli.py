@@ -1,7 +1,6 @@
 """创建 Console 命令树并统一转换进程级失败。"""
 
 from collections.abc import Callable
-from uuid import UUID, uuid4
 
 import typer
 from pydantic import ValidationError
@@ -9,7 +8,6 @@ from pydantic import ValidationError
 from app.infrastructure.cache.errors import CacheError
 from app.infrastructure.database.errors import DatabaseError
 from app.infrastructure.http.errors import HttpError
-from app.infrastructure.logging.context import bind_console_log_context
 from app.infrastructure.logging.errors import LoggingConfigurationError
 from app.infrastructure.queue.errors import QueueError
 from app.infrastructure.vector.errors import VectorError
@@ -18,9 +16,9 @@ from app.interfaces.console.discovery import discover_console_commands
 from app.interfaces.console.exit_codes import ConsoleExitCode
 from app.interfaces.console.presentation import ConsolePresenter
 from app.interfaces.console.registry import ConsoleCommandRegistry
+from app.runtime.trace import TraceContext, TraceIdFactory, bind_trace_context, new_trace_id
 
 type ConsoleEntrypoint = Callable[[], None]
-type CommandIdFactory = Callable[[], UUID]
 
 
 def create_console(console: ConsoleExecutor) -> typer.Typer:
@@ -67,11 +65,13 @@ def run_console(
     entrypoint: ConsoleEntrypoint,
     presenter: ConsolePresenter,
     *,
-    command_id_factory: CommandIdFactory = uuid4,
+    command_id_factory: TraceIdFactory = new_trace_id,
 ) -> None:
     """执行 Console 入口并将可预期运行错误转换为稳定退出码。"""
 
-    with bind_console_log_context(str(command_id_factory())):
+    command_id = command_id_factory()
+    trace_context = TraceContext(correlation_id=command_id, command_id=command_id)
+    with bind_trace_context(trace_context):
         try:
             entrypoint()
         except (ValidationError, LoggingConfigurationError, DatabaseError, CacheError, HttpError, QueueError, VectorError) as error:

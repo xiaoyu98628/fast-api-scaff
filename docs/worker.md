@@ -19,7 +19,7 @@ docker compose up --build worker
 
 `docker compose up --build` 默认同时启动 `service` 和 `worker`；只需要 HTTP 时使用 `docker compose up --build service`。Compose 中的 `worker` 服务复用应用镜像、`.env` 和网络，不暴露端口，也不配置只适用于 HTTP 的健康检查。镜像本身不声明健康检查，Compose 只为 HTTP 服务检测 `/health`。Worker 不会自动创建队列服务；`.env` 必须配置容器可访问的 Redis、Kafka 或 RabbitMQ 地址。容器内的 `127.0.0.1` 是 Worker 容器自身。
 
-脚手架内置 `LoginSucceededJob` 最小任务。登录接口向默认连接配置的默认队列（`sample.env` 为 `default`）尽力投递 `user_id` 参数和固定文案，并把当前 HTTP request ID 作为 correlation ID；Worker 调用它的 `handle(context)` 输出“用户登录成功，队列任务已执行。”并记录结构化用户 ID。任务不含用户名、密码或 Token。`user_id` 暂时可空，以兼容队列中已经存在的旧消息。`sample.env` 以 Redis 为默认连接，因此 Worker 可以不带参数启动。
+脚手架内置 `LoginSucceededJob` 最小任务。登录接口向默认连接配置的默认队列（`sample.env` 为 `default`）尽力投递 `user_id` 参数和固定文案，Dispatcher 自动把当前 HTTP request ID 作为 correlation ID；Worker 调用它的 `handle(context)` 输出“用户登录成功，队列任务已执行。”并记录结构化用户 ID。任务不含用户名、密码或 Token。`user_id` 暂时可空，以兼容队列中已经存在的旧消息。`sample.env` 以 Redis 为默认连接，因此 Worker 可以不带参数启动。
 
 新增任务时，继承 `QueueJob[JobExecutionContext]`、声明可序列化字段并实现异步 `handle(context)`。投递端自动把实际类路径写入消息；Worker 收到后动态导入、验证、解码并执行，不扫描业务目录，也不需要修改上下文 composition 或应用组合根。完整示例见[队列](queue.md)。
 
@@ -53,7 +53,7 @@ SIGINT/SIGTERM 设置停止信号：停止安排新任务，取消等待消息�
 
 Worker 生命周期使用 `worker.starting`、`worker.started`、`worker.start_failed`、`worker.stopping`、`worker.stopped` 和 `worker.stop_failed`。执行器的完成日志使用事件 `queue.job.finished`，details 中包含 job_id、queue_name、queue_connection、attempts、failure_reason、correlation_id 和 duration_ms；捕获到异常的失败任务使用 ERROR 级别，并额外记录异常类型及仅含模块、函数和行号的调用栈位置。Worker 进程级故障使用 `worker.failed` 事件记录相同的安全诊断。
 
-任务执行期间，日志过滤器会给 Job、Application 和 Infrastructure 产生的日志自动附加 `job_id`、`job_type`、`job_version`、`queue_connection`、`queue_name`，以及存在时的 `correlation_id` 和 `replay_of`。这些字段通过异步上下文绑定，任务结束后恢复，不会跨并发槽泄漏。任务日志和失败诊断都不记录异常消息、运行时局部变量或任务数据。
+任务执行期间，Worker 把消息 correlation ID 绑定到追踪上下文。日志过滤器会给 Job、Application 和 Infrastructure 产生的日志自动附加 `job_id`、`job_type`、`job_version`、`queue_connection`、`queue_name`，以及存在时的 `correlation_id` 和 `replay_of`；Job 发布后续任务时也自动继承 correlation ID。这些字段通过异步上下文绑定，任务结束后恢复，不会跨并发槽泄漏。任务日志和失败诊断都不记录异常消息、运行时局部变量或任务数据。
 
 ## 质量检查
 

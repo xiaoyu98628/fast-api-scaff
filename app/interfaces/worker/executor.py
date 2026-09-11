@@ -18,6 +18,7 @@ from app.infrastructure.queue.contracts.message import MessageEnvelope
 from app.infrastructure.queue.errors import InvalidMessageError, RetryableJobError
 from app.interfaces.worker.context import JobExecutionContext, JobMetadata, WorkerContext
 from app.interfaces.worker.resolver import ExecutableJob, JobTypeResolver
+from app.runtime.trace import TraceContext, bind_trace_context
 
 _logger = logging.getLogger(__name__)
 
@@ -127,10 +128,10 @@ class JobExecutor:
             job_version=context.job.version,
             queue_connection=context.job.queue_connection,
             queue_name=context.job.queue_name,
-            correlation_id=context.job.correlation_id,
             replay_of=str(context.job.replay_of) if context.job.replay_of is not None else None,
         )
-        with bind_job_log_context(log_context):
+        trace_context = TraceContext(correlation_id=context.job.correlation_id)
+        with bind_trace_context(trace_context), bind_job_log_context(log_context):
             if await self.failures.find(failure_id) is not None:
                 await delivery.acknowledge()
                 return

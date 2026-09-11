@@ -207,6 +207,35 @@ async def test_job_logs_receive_execution_context_without_leaking(caplog: pytest
 
 
 @pytest.mark.asyncio
+async def test_job_dispatch_automatically_propagates_incoming_correlation() -> None:
+    queues = create_queue_manager()
+
+    async def publish_child(_job: Job) -> None:
+        await queues.dispatch(Job(2))
+
+    parent_id = await queues.dispatch(Job(1), correlation_id="request-789")
+    async with queues.consume() as consumer:
+        parent = await consumer.receive()
+        await JobExecutor(
+            "main",
+            "default",
+            resolver(publish_child),
+            queues.failed_jobs,
+            queues.codec,
+            _WORKER_CONTEXT,
+        ).execute(parent)
+
+        child_delivery = await consumer.receive()
+        child = queues.codec.decode(child_delivery.payload)
+        await child_delivery.acknowledge()
+
+    assert child.job_id != parent_id
+    assert child.payload == b"2"
+    assert child.correlation_id == "request-789"
+    await queues.aclose()
+
+
+@pytest.mark.asyncio
 async def test_malformed_envelope_and_unknown_job_are_recorded() -> None:
     queues = create_queue_manager()
     active_resolver = StubResolver()
