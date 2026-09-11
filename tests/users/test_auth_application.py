@@ -10,7 +10,7 @@ from sqlalchemy import func, select
 
 from app.config.database import DatabaseSettings
 from app.contexts.user.application.auth_dto import LoginCommand
-from app.contexts.user.application.auth_errors import AuthenticationRequiredError, InvalidCredentialsError, LoginUserNotFoundError
+from app.contexts.user.application.auth_errors import AuthenticationRequiredError, InvalidCredentialsError
 from app.contexts.user.application.dto import ChangeUserStatusCommand, CreateUserCommand, ResetUserPasswordCommand
 from app.contexts.user.application.session_token import SessionCredential
 from app.contexts.user.composition import UserContext, build_user_context
@@ -23,17 +23,17 @@ from database.main.model_registry import load_main_database_metadata
 
 class TrackingPasswordHasher:
     def __init__(self) -> None:
-        self.checked: list[PasswordHash] = []
+        self.checked: list[PasswordHash | None] = []
         self.after_verify: Callable[[], Awaitable[None]] | None = None
 
     async def hash(self, password: Password) -> PasswordHash:
         return PasswordHash(f"hash::{password.value}")
 
-    async def verify(self, password: str, password_hash: PasswordHash) -> bool:
+    async def verify_or_dummy(self, password: str, password_hash: PasswordHash | None) -> bool:
         self.checked.append(password_hash)
         if self.after_verify is not None:
             await self.after_verify()
-        return password_hash.value == f"hash::{password}"
+        return password_hash is not None and password_hash.value == f"hash::{password}"
 
 
 @dataclass
@@ -132,14 +132,12 @@ async def test_login_failure_verifies_a_hash_and_creates_no_session(harness: Aut
     assert await harness.session_count() == 0
 
 
-@pytest.mark.parametrize(("username", "error_type"), [("missing", LoginUserNotFoundError), ("!", InvalidCredentialsError)])
+@pytest.mark.parametrize("username", ["missing", "!"])
 @pytest.mark.asyncio
-async def test_login_rejects_missing_or_invalid_username_without_verifying_password(
-    harness: AuthHarness, username: str, error_type: type[Exception]
-) -> None:
-    with pytest.raises(error_type):
+async def test_login_rejects_missing_or_invalid_username_with_dummy_verification(harness: AuthHarness, username: str) -> None:
+    with pytest.raises(InvalidCredentialsError):
         await harness.users.auth.login(LoginCommand(username=username, password="password123"))
-    assert harness.hasher.checked == []
+    assert harness.hasher.checked == [None]
     assert await harness.session_count() == 0
 
 
@@ -185,7 +183,7 @@ async def test_login_rechecks_account_after_password_verification(harness: AuthH
             await harness.users.service.delete(user.id)
 
     harness.hasher.after_verify = modify_user
-    with pytest.raises(LoginUserNotFoundError if change == "delete" else InvalidCredentialsError):
+    with pytest.raises(InvalidCredentialsError):
         await harness.users.auth.login(LoginCommand(username="alice", password="password123"))
     assert await harness.session_count() == 0
 

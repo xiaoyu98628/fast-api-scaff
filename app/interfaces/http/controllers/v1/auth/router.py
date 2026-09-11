@@ -14,7 +14,7 @@ from app.infrastructure.queue.errors import QueueError
 from app.infrastructure.queue.job import job_reference
 from app.interfaces.http.controllers.v1.auth.dependencies import AuthServiceDependency, SessionCredentialDependency
 from app.interfaces.http.controllers.v1.auth.errors import auth_error_to_http
-from app.interfaces.http.controllers.v1.auth.openapi import AUTH_REQUIRED_RESPONSE, AUTH_USER_NOT_FOUND_RESPONSE, AUTH_VALIDATION_RESPONSE
+from app.interfaces.http.controllers.v1.auth.openapi import AUTH_REQUIRED_RESPONSE, AUTH_VALIDATION_RESPONSE
 from app.interfaces.http.controllers.v1.auth.schemas import LoginRequest, TokenResponse
 from app.interfaces.http.controllers.v1.users.schemas import UserResponse
 from app.interfaces.http.dependencies.container import provide_application_container
@@ -45,7 +45,7 @@ async def _publish_login_succeeded(
 @router.post(
     "/login",
     response_model=JsonResponse[TokenResponse],
-    responses={401: AUTH_REQUIRED_RESPONSE, 404: AUTH_USER_NOT_FOUND_RESPONSE, 422: AUTH_VALIDATION_RESPONSE},
+    responses={401: AUTH_REQUIRED_RESPONSE, 422: AUTH_VALIDATION_RESPONSE},
 )
 async def login(
     payload: LoginRequest,

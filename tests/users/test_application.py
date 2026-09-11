@@ -23,8 +23,8 @@ class FakePasswordHasher:
         self.passwords.append(password.value)
         return PasswordHash(f"hashed::{password.value}")
 
-    async def verify(self, password: str, password_hash: PasswordHash) -> bool:
-        return password_hash.value == f"hashed::{password}"
+    async def verify_or_dummy(self, password: str, password_hash: PasswordHash | None) -> bool:
+        return password_hash is not None and password_hash.value == f"hashed::{password}"
 
 
 class FakeUserRepository:
@@ -51,7 +51,7 @@ class FakeUserRepository:
     async def add(self, user: User) -> None:
         self.items[user.id.value] = user
 
-    async def update(self, user: User) -> bool:
+    async def _update(self, user: User) -> bool:
         if self.remove_before_update:
             self.items.pop(user.id.value, None)
 
@@ -60,6 +60,15 @@ class FakeUserRepository:
 
         self.items[user.id.value] = user
         return True
+
+    async def update_profile(self, user: User) -> bool:
+        return await self._update(user)
+
+    async def change_status(self, user: User) -> bool:
+        return await self._update(user)
+
+    async def reset_password(self, user: User) -> bool:
+        return await self._update(user)
 
     async def remove(self, user_id: UserId) -> bool:
         return self.items.pop(user_id.value, None) is not None

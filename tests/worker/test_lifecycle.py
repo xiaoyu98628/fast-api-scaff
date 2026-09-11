@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 import subprocess
 import sys
 from dataclasses import FrozenInstanceError, replace
@@ -18,10 +19,9 @@ from app.config.queue import QueueSettings
 from app.infrastructure.queue.errors import QueueError
 from app.infrastructure.queue.failed.sql.model import FailedJobModel
 from app.infrastructure.queue.manager import QueueManager
-from app.interfaces.worker.cli import run_worker
+from app.interfaces.worker.cli import create_worker, run_worker
 from app.interfaces.worker.context import JobExecutionContext
 from app.interfaces.worker.resolver import JobResolver
-from app.worker import app as worker_cli
 from tests.console.test_application import build_settings
 from tests.queue.fakes import FakeQueueBackend, Job, queue_backend_factory
 
@@ -185,6 +185,7 @@ async def test_worker_uses_production_resolver_and_drains_job(
 
 
 def test_worker_help_has_independent_connection_queue_and_concurrency() -> None:
+    worker_cli = create_worker(WorkerHost(build_settings()).run)
     result = CliRunner().invoke(worker_cli, ["--help"])
     assert result.exit_code == 0
     assert "connection" in result.output
@@ -204,3 +205,20 @@ def test_worker_module_is_executable() -> None:
 
     assert result.returncode == 0, result.stderr
     assert "connection" in result.stdout
+
+
+def test_worker_configuration_failure_is_sanitized() -> None:
+    environment = dict(os.environ)
+    environment["HTTP_POOL__MAX_CONNECTIONS"] = "0"
+    result = subprocess.run(
+        [sys.executable, "-m", "app.worker", "--help"],
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert "Worker 运行失败：ValidationError" in result.stderr
+    assert "Traceback" not in result.stderr

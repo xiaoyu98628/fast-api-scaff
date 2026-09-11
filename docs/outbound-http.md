@@ -63,7 +63,7 @@ async def consume_events(container: ApplicationContainer) -> None:
 - `operation`：稳定的低基数操作名，用于日志检索；
 - `headers`、`params`；
 - `content` 或 `json`，二者不能同时提供；
-- `timeout`：可选的单次请求覆盖值，正数秒。
+- `timeout`：可选的单次请求覆盖值，必须是有限正数秒；`nan` 和正负无穷都会在进入驱动前被拒绝。
 
 不传 `json` 表示没有 JSON 请求体；显式传入 `json=None` 会发送 JSON `null` 和 `Content-Type: application/json`。这两个状态不会混用。
 

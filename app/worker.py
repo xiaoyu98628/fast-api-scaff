@@ -5,18 +5,20 @@ from app.bootstrap.worker.logging import configure_worker_logging
 from app.config.settings import load_settings
 from app.interfaces.worker.cli import create_worker, run_worker
 
-# CLI 回调复用同一个宿主对象，但每次执行仍由 WorkerHost 创建独立运行时。
-settings = load_settings()
-configure_worker_logging(settings)
 
-_worker = WorkerHost(settings)
-app = create_worker(_worker.run)
+def _run() -> None:
+    """在统一错误边界内加载配置并执行 Worker 命令。"""
+
+    settings = load_settings()
+    configure_worker_logging(settings)
+    worker = WorkerHost(settings)
+    create_worker(worker.run)()
 
 
 def main() -> None:
     """解析 Worker CLI 参数并启动消费循环。"""
 
-    run_worker(app)
+    run_worker(_run)
 
 
 if __name__ == "__main__":

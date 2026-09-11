@@ -35,13 +35,29 @@ def user_to_domain(model: UserModel) -> User:
     )
 
 
-def user_update_values(user: User) -> dict[str, object]:
-    """提取允许更新的字段，不修改用户 ID 和创建时间。"""
+def user_profile_update_values(user: User) -> dict[str, object]:
+    """提取用户资料用例允许更新的字段。"""
 
     return {
         "username": user.username.value,
         "email": user.email.value,
-        "password": user.password_hash.value,
+        "updated_at": user.updated_at,
+    }
+
+
+def user_status_update_values(user: User) -> dict[str, object]:
+    """提取账户状态用例允许更新的字段。"""
+
+    return {
         "status": user.status.value,
+        "updated_at": user.updated_at,
+    }
+
+
+def user_password_update_values(user: User) -> dict[str, object]:
+    """提取密码重置用例允许更新的字段。"""
+
+    return {
+        "password": user.password_hash.value,
         "updated_at": user.updated_at,
     }

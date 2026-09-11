@@ -97,7 +97,7 @@ class UserApplicationService:
                 now=self.clock(),
             )
             await self._ensure_unique(unit_of_work.users, user)
-            if not await unit_of_work.users.update(user):
+            if not await unit_of_work.users.update_profile(user):
                 raise UserNotFoundError(command.user_id)
 
             await unit_of_work.commit()
@@ -115,7 +115,7 @@ class UserApplicationService:
                 raise UserNotFoundError(command.user_id)
 
             user.change_status(status=command.status, now=self.clock())
-            if not await unit_of_work.users.update(user):
+            if not await unit_of_work.users.change_status(user):
                 raise UserNotFoundError(command.user_id)
 
             await unit_of_work.commit()
@@ -142,7 +142,7 @@ class UserApplicationService:
                 raise UserNotFoundError(command.user_id)
 
             user.reset_password(password_hash=password_hash, now=self.clock())
-            if not await unit_of_work.users.update(user):
+            if not await unit_of_work.users.reset_password(user):
                 raise UserNotFoundError(command.user_id)
 
             await unit_of_work.commit()

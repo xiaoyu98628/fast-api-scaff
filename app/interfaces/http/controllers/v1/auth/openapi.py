@@ -15,8 +15,3 @@ AUTH_VALIDATION_RESPONSE: dict[str, Any] = {
     "model": JsonResponse[list[ValidationErrorDetail]],
     "description": "登录请求字段不合法",
 }
-
-AUTH_USER_NOT_FOUND_RESPONSE: dict[str, Any] = {
-    "model": JsonResponse[None],
-    "description": "登录用户不存在",
-}

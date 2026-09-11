@@ -2,7 +2,7 @@
 
 配置由 `pydantic-settings` 从项目根目录 `.env` 和进程环境变量读取。进程环境变量优先于 `.env`；未知字段会被忽略；配置对象创建后不可变，并由 `load_settings()` 在当前进程内缓存。
 
-导入配置模块不会读取或校验环境变量。HTTP、Console 和 Worker 顶层入口均在导入时通过 `load_settings()` 显式创建各组配置并初始化各自的日志；因此即使 Console 或 Worker 只请求 `--help`，也会先校验完整配置。手动构造 `Settings` 时，未提供的认证、HTTP、向量和日志配置由默认值工厂在实例化时创建。默认值工厂的 `_env_file=None` 只跳过 `.env`，仍读取进程环境变量；显式注入这些配置时不会调用对应工厂。
+导入配置模块不会读取或校验环境变量。HTTP 顶层入口在导入时通过 `load_settings()` 显式创建各组配置并初始化日志；Console 和 Worker 则在 `main()` 的进程错误边界内完成相同步骤，单纯导入入口模块没有配置副作用。Console 或 Worker 即使只请求 `--help`，仍会先校验完整配置，但配置错误会转换成稳定的 stderr 输出和退出码 1。手动构造 `Settings` 时，未提供的认证、HTTP、向量和日志配置由默认值工厂在实例化时创建。默认值工厂的 `_env_file=None` 只跳过 `.env`，仍读取进程环境变量；显式注入这些配置时不会调用对应工厂。
 
 ## 1. 命名和嵌套规则
 
@@ -107,18 +107,18 @@ HTTP 出站配置在 `load_settings()` 时严格校验，普通请求和流式�
 
 | 变量 | 类型 | 默认值 | 约束与说明 |
 | --- | --- | --- | --- |
-| `HTTP_TIMEOUT__CONNECT` | `float` | `3.0` | 建立 TCP/TLS 连接，正数秒 |
-| `HTTP_TIMEOUT__READ` | `float` | `10.0` | 等待响应数据，正数秒 |
-| `HTTP_TIMEOUT__WRITE` | `float` | `10.0` | 发送请求数据，正数秒 |
+| `HTTP_TIMEOUT__CONNECT` | `float` | `3.0` | 建立 TCP/TLS 连接，有限正数秒 |
+| `HTTP_TIMEOUT__READ` | `float` | `10.0` | 等待响应数据，有限正数秒 |
+| `HTTP_TIMEOUT__WRITE` | `float` | `10.0` | 发送请求数据，有限正数秒 |
 
 普通连接池使用 `HTTP_POOL__*`，流式连接池使用 `HTTP_STREAM_POOL__*`：
 
 | 后缀 | 普通池默认值 | 流式池默认值 | 约束与说明 |
 | --- | --- | --- | --- |
-| `TIMEOUT` | `5.0` | `10.0` | 等待连接池容量，正数秒 |
+| `TIMEOUT` | `5.0` | `10.0` | 等待连接池容量，有限正数秒 |
 | `MAX_CONNECTIONS` | `100` | `100` | 总连接数，至少 1 |
 | `MAX_KEEPALIVE_CONNECTIONS` | `20` | `10` | keep-alive 容量，0 到总连接数 |
-| `KEEPALIVE_EXPIRY` | `30.0` | `30.0` | 空闲连接过期时间，正数秒 |
+| `KEEPALIVE_EXPIRY` | `30.0` | `30.0` | 空闲连接过期时间，有限正数秒 |
 
 其他配置：
 

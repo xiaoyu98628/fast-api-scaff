@@ -335,7 +335,8 @@ def test_console_help_loads_and_validates_environment(name: str, value: str, col
     )
     assert result.returncode == 1
     assert result.stdout == ""
-    assert "ValidationError" in result.stderr
+    assert "配置" in result.stderr
+    assert "Traceback" not in result.stderr
 
 
 @pytest.mark.parametrize(
@@ -362,7 +363,7 @@ main()
     assert result.returncode == 1
     assert result.stdout == ""
     assert location in result.stderr
-    assert "ValidationError" in result.stderr
+    assert "Traceback" not in result.stderr
 
 
 def test_settings_accept_explicit_overrides_in_invalid_environment(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -8,7 +8,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.contexts.user.domain.user import User
 from app.contexts.user.domain.values import EmailAddress, UserId, Username
-from app.contexts.user.infrastructure.persistence.mapper import user_to_domain, user_to_model, user_update_values
+from app.contexts.user.infrastructure.persistence.mapper import (
+    user_password_update_values,
+    user_profile_update_values,
+    user_status_update_values,
+    user_to_domain,
+    user_to_model,
+)
 from app.contexts.user.infrastructure.persistence.models.user import UserModel
 
 
@@ -66,15 +72,25 @@ class SqlAlchemyUserRepository:
 
         self._session.add(user_to_model(user))
 
-    async def update(self, user: User) -> bool:
-        """按 ID 更新可变字段，并用受影响行数表示记录是否存在。"""
+    async def update_profile(self, user: User) -> bool:
+        """按 ID 更新用户名和邮箱，不覆盖其他用例负责的字段。"""
 
-        statement = (
-            update(UserModel)
-            .where(UserModel.id == str(user.id.value))
-            .values(**user_update_values(user))
-            .execution_options(synchronize_session=False)
-        )
+        return await self._update(user.id, user_profile_update_values(user))
+
+    async def change_status(self, user: User) -> bool:
+        """按 ID 更新账户状态，不覆盖用户资料或密码。"""
+
+        return await self._update(user.id, user_status_update_values(user))
+
+    async def reset_password(self, user: User) -> bool:
+        """按 ID 更新密码哈希，不覆盖用户资料或账户状态。"""
+
+        return await self._update(user.id, user_password_update_values(user))
+
+    async def _update(self, user_id: UserId, values: dict[str, object]) -> bool:
+        """执行一个用例专属更新，并用受影响行数表示记录是否存在。"""
+
+        statement = update(UserModel).where(UserModel.id == str(user_id.value)).values(**values).execution_options(synchronize_session=False)
         result = cast(CursorResult[tuple[object, ...]], await self._session.execute(statement))
         return result.rowcount == 1
 

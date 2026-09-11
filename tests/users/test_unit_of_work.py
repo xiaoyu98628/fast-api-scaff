@@ -177,7 +177,7 @@ async def test_unique_conflicts_are_translated_and_rolled_back(stage: str, field
                     await unit_of_work.commit()
                 else:
                     second.update_profile(username=username, email=email, now=datetime.now())
-                    await unit_of_work.users.update(second)
+                    await unit_of_work.users.update_profile(second)
                 pytest.fail("The conflicting write must raise immediately")
 
         assert captured.value.field == field

@@ -5,7 +5,7 @@ import os
 import pytest
 from pydantic import ValidationError
 
-from app.config.http import HttpPoolSettings, HttpSettings
+from app.config.http import HttpPoolSettings, HttpSettings, HttpTimeoutSettings
 from app.runtime.paths import PROJECT_ROOT
 
 
@@ -35,6 +35,16 @@ def test_keepalive_capacity_cannot_exceed_total_capacity() -> None:
 @pytest.mark.parametrize("value", [0, -0.1, 1.1])
 def test_pool_warning_ratio_must_be_within_valid_range(value: float) -> None:
     with pytest.raises(ValidationError, match="pool_warning_ratio"):
+        HttpSettings(pool_warning_ratio=value, _env_file=None)
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_http_float_settings_must_be_finite(value: float) -> None:
+    with pytest.raises(ValidationError):
+        HttpTimeoutSettings(connect=value)
+    with pytest.raises(ValidationError):
+        HttpPoolSettings(timeout=value)
+    with pytest.raises(ValidationError):
         HttpSettings(pool_warning_ratio=value, _env_file=None)
 
 

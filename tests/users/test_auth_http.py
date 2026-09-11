@@ -111,7 +111,7 @@ async def test_missing_malformed_and_unknown_credentials_use_unified_401(client:
 
 
 @pytest.mark.asyncio
-async def test_login_reports_missing_user_and_does_not_log_secrets(
+async def test_login_hides_missing_user_and_does_not_log_secrets(
     client: AsyncClient,
     caplog: pytest.LogCaptureFixture,
     monkeypatch: pytest.MonkeyPatch,
@@ -125,14 +125,14 @@ async def test_login_reports_missing_user_and_does_not_log_secrets(
     incorrect = await client.post("/api/v1/auth/login", json={"username": "alice", "password": "wrong-password"})
     await client.patch(f"/api/v1/users/{user_id}/status", json={"status": "disabled"})
     disabled = await client.post("/api/v1/auth/login", json={"username": "alice", "password": password})
-    assert missing.status_code == 404
-    assert missing.json()["message"] == "用户不存在"
+    assert missing.status_code == 401
+    assert missing.json()["message"] == "用户名或密码错误"
     assert missing.json()["success"] is False
     assert missing.json()["data"] is None
     assert missing.headers["Cache-Control"] == "no-store"
-    assert "WWW-Authenticate" not in missing.headers
+    assert missing.headers["WWW-Authenticate"] == "Bearer"
     assert password not in missing.text
-    for result in (incorrect, disabled):
+    for result in (missing, incorrect, disabled):
         assert result.status_code == 401
         assert result.json()["message"] == "用户名或密码错误"
         assert result.headers["WWW-Authenticate"] == "Bearer"
@@ -179,9 +179,7 @@ def test_auth_openapi_documents_bearer_and_unified_responses() -> None:
     paths = schema["paths"]
     assert schema["components"]["securitySchemes"]["SessionBearer"]["scheme"] == "bearer"
     assert "security" not in paths["/api/v1/auth/login"]["post"]
-    not_found = paths["/api/v1/auth/login"]["post"]["responses"]["404"]
-    assert not_found["description"] == "登录用户不存在"
-    assert "JsonResponse" in not_found["content"]["application/json"]["schema"]["$ref"]
+    assert "404" not in paths["/api/v1/auth/login"]["post"]["responses"]
     assert "security" not in paths["/api/v1/users"]["get"]
     for path, method in (("/api/v1/auth/me", "get"), ("/api/v1/auth/logout", "post")):
         operation = paths[path][method]

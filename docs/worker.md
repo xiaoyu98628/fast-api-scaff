@@ -15,6 +15,8 @@ docker compose up --build worker
 
 省略 connection/queue 时采用默认连接和该连接的默认队列。省略 concurrency 时采用 QUEUE_WORKER__CONCURRENCY。
 
+配置加载、日志初始化和宿主装配在 `main()` 的进程错误边界内执行；包括 `--help` 在内的调用都会校验完整配置。配置失败输出稳定错误和退出码 1，不暴露 Python traceback；单纯导入 `app.worker` 不读取环境配置。
+
 只要默认队列连接配置有效且后端可访问，即使队列当前没有消息、项目也没有预先注册的 Job，Worker 仍可启动并等待。Job 在消息到达后根据类路径动态解析，不存在启动前注册清单。
 
 `docker compose up --build` 默认同时启动 `service` 和 `worker`；只需要 HTTP 时使用 `docker compose up --build service`。Compose 中的 `worker` 服务复用应用镜像、`.env` 和网络，不暴露端口，也不配置只适用于 HTTP 的健康检查。镜像本身不声明健康检查，Compose 只为 HTTP 服务检测 `/health`。Worker 不会自动创建队列服务；`.env` 必须配置容器可访问的 Redis、Kafka 或 RabbitMQ 地址。容器内的 `127.0.0.1` 是 Worker 容器自身。

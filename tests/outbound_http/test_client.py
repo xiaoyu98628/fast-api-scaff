@@ -93,6 +93,9 @@ async def test_regular_request_rejects_response_larger_than_buffer_limit() -> No
         pytest.param(lambda: HttpRequest(method="GET", url="/relative"), id="relative-url"),
         pytest.param(lambda: HttpRequest(method="GET", url="https://example.com:notaport"), id="invalid-port"),
         pytest.param(lambda: HttpRequest(method="GET", url="https://example.com:65536"), id="out-of-range-port"),
+        pytest.param(lambda: HttpRequest(method="GET", url="https://example.com", timeout=float("nan")), id="nan-timeout"),
+        pytest.param(lambda: HttpRequest(method="GET", url="https://example.com", timeout=float("inf")), id="infinite-timeout"),
+        pytest.param(lambda: HttpRequest(method="GET", url="https://example.com", timeout=float("-inf")), id="negative-infinite-timeout"),
         pytest.param(
             lambda: HttpRequest(method="POST", url="https://example.com", content=b"x", json={}),
             id="multiple-bodies",

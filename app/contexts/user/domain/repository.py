@@ -39,8 +39,18 @@ class UserRepository(Protocol):
 
         ...
 
-    async def update(self, user: User) -> bool:
-        """持久化现有聚合，并返回记录是否仍然存在。"""
+    async def update_profile(self, user: User) -> bool:
+        """只持久化现有聚合的用户名、邮箱和更新时间。"""
+
+        ...
+
+    async def change_status(self, user: User) -> bool:
+        """只持久化现有聚合的账户状态和更新时间。"""
+
+        ...
+
+    async def reset_password(self, user: User) -> bool:
+        """只持久化现有聚合的密码哈希和更新时间。"""
 
         ...
 
