@@ -14,8 +14,8 @@ from app.config.cors import CorsSettings
 from app.config.database import DatabaseSettings
 from app.config.logging import LoggingSettings
 from app.config.settings import Settings
-from app.interfaces.http.logging import HttpLogEvent
 from app.interfaces.http.middleware.access_log import AccessLogMiddleware
+from app.interfaces.http.middleware.logging import HttpLogEvent
 from app.interfaces.http.middleware.query_param_decode import encode_query_param
 from app.interfaces.http.middleware.request_id import RequestIdMiddleware
 from app.interfaces.http.middleware.trace_context import TraceContextMiddleware

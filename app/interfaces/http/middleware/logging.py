@@ -1,4 +1,4 @@
-"""定义 HTTP 入站链路使用的稳定结构化日志事件。"""
+"""定义 HTTP 入站中间件使用的稳定结构化日志事件。"""
 
 from enum import StrEnum
 

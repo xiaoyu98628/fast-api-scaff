@@ -8,7 +8,7 @@ from starlette.middleware import Middleware
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.infrastructure.logging.record import log_extra
-from app.interfaces.http.logging import HttpLogEvent
+from app.interfaces.http.middleware.logging import HttpLogEvent
 
 _ACCESS_LOGGER = logging.getLogger("app.interfaces.http.access")
 

@@ -8,7 +8,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.infrastructure.logging.record import log_extra
 from app.interfaces.http.exceptions.handlers import render_exception
-from app.interfaces.http.logging import HttpLogEvent
+from app.interfaces.http.middleware.logging import HttpLogEvent
 
 _EXCEPTION_LOGGER = logging.getLogger("app.interfaces.http.exception")
 

@@ -11,7 +11,7 @@ from app.infrastructure.logging.context import (
 )
 from app.infrastructure.logging.formatter import JsonLogFormatter, TextLogFormatter
 from app.infrastructure.logging.record import log_extra, safe_exception_details
-from app.interfaces.http.logging import HttpLogEvent
+from app.interfaces.http.middleware.logging import HttpLogEvent
 from app.runtime.trace import TraceContext, bind_trace_context
 
 

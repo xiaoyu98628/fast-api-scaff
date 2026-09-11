@@ -15,7 +15,7 @@ from app.config.database import DatabaseSettings
 from app.config.settings import Settings
 from app.infrastructure.logging.context import RuntimeContextFilter
 from app.interfaces.http.exceptions.error import HttpError
-from app.interfaces.http.logging import HttpLogEvent
+from app.interfaces.http.middleware.logging import HttpLogEvent
 from app.interfaces.http.shared.response.codes.error_code import ErrorCode
 from app.interfaces.http.shared.response.codes.success_code import SuccessCode
 

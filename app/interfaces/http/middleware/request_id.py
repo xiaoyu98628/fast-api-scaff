@@ -10,7 +10,7 @@ from starlette_context.middleware import RawContextMiddleware
 from starlette_context.plugins import RequestIdPlugin as StarletteRequestIdPlugin
 
 from app.infrastructure.logging.record import log_extra
-from app.interfaces.http.logging import HttpLogEvent
+from app.interfaces.http.middleware.logging import HttpLogEvent
 from app.interfaces.http.shared.response.codes.builder import ResponseCodeBuilder
 from app.interfaces.http.shared.response.codes.error_code import ErrorCode
 from app.interfaces.http.shared.response.factory import JsonResponseFactory

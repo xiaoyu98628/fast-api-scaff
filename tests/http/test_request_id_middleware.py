@@ -17,7 +17,7 @@ from app.config.cache import CacheSettings
 from app.config.cors import CorsSettings
 from app.config.database import DatabaseSettings
 from app.config.settings import Settings
-from app.interfaces.http.logging import HttpLogEvent
+from app.interfaces.http.middleware.logging import HttpLogEvent
 from app.interfaces.http.middleware.request_id import ApplicationRequestIdPlugin, RequestIdMiddleware
 from app.interfaces.http.middleware.trace_context import TraceContextMiddleware
 from app.runtime.trace import TraceContext, current_trace_context
