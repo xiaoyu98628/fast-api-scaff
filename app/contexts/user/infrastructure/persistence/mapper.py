@@ -18,6 +18,7 @@ def user_to_model(user: User) -> UserModel:
         status=user.status.value,
         created_at=user.created_at,
         updated_at=user.updated_at,
+        version=user.version,
     )
 
 
@@ -32,32 +33,18 @@ def user_to_domain(model: UserModel) -> User:
         status=UserStatus(model.status),
         created_at=model.created_at,
         updated_at=model.updated_at,
+        version=model.version,
     )
 
 
-def user_profile_update_values(user: User) -> dict[str, object]:
-    """提取用户资料用例允许更新的字段。"""
+def user_update_values(user: User) -> dict[str, object]:
+    """提取完整聚合的下一版本更新值。"""
 
     return {
         "username": user.username.value,
         "email": user.email.value,
-        "updated_at": user.updated_at,
-    }
-
-
-def user_status_update_values(user: User) -> dict[str, object]:
-    """提取账户状态用例允许更新的字段。"""
-
-    return {
+        "password": user.password_hash.value,
         "status": user.status.value,
         "updated_at": user.updated_at,
-    }
-
-
-def user_password_update_values(user: User) -> dict[str, object]:
-    """提取密码重置用例允许更新的字段。"""
-
-    return {
-        "password": user.password_hash.value,
-        "updated_at": user.updated_at,
+        "version": user.version + 1,
     }

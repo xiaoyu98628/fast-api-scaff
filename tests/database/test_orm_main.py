@@ -1,6 +1,6 @@
 """验证 main 数据库 ORM 元数据和命名约定。"""
 
-from sqlalchemy import DateTime, String
+from sqlalchemy import DateTime, DefaultClause, Integer, String
 
 from app.contexts.user.infrastructure.persistence.models.user import UserModel
 from app.infrastructure.database.orm.main import MainBase
@@ -23,6 +23,10 @@ def test_main_database_model_registry_loads_user_model() -> None:
     assert isinstance(users_table.c.updated_at.type, DateTime)
     assert users_table.c.created_at.type.timezone is False
     assert users_table.c.updated_at.type.timezone is False
+    assert isinstance(users_table.c.version.type, Integer)
+    assert users_table.c.version.nullable is False
+    assert isinstance(users_table.c.version.server_default, DefaultClause)
+    assert str(users_table.c.version.server_default.arg) == "1"
     assert {column.name: column.comment for column in users_table.columns} == {
         "id": "用户 ID",
         "username": "用户名",
@@ -31,6 +35,7 @@ def test_main_database_model_registry_loads_user_model() -> None:
         "status": "用户状态",
         "created_at": "创建时间",
         "updated_at": "更新时间",
+        "version": "并发版本",
     }
 
 

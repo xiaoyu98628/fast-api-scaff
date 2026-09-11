@@ -28,3 +28,13 @@ class UserConflictError(UserApplicationError):
 
         self.field = field
         super().__init__(f"用户唯一标识 {field} 已存在")
+
+
+class ConcurrentUserUpdateError(UserApplicationError):
+    """表示目标用户已被另一个事务更新。"""
+
+    def __init__(self, user_id: UUID) -> None:
+        """保留冲突用户 ID，供入站适配器生成稳定响应。"""
+
+        self.user_id = user_id
+        super().__init__(f"用户 {user_id} 已被并发修改")

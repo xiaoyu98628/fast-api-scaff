@@ -19,6 +19,7 @@ class User:
     _status: UserStatus
     _created_at: datetime
     _updated_at: datetime
+    _version: int
 
     def __post_init__(self) -> None:
         """确保任意构造路径都不能绕过领域值和时间类型检查。"""
@@ -26,6 +27,7 @@ class User:
         _validate_value_types(self._id, self._username, self._email, self._password_hash, self._status)
         _validate_local_datetime(self._created_at, "创建时间")
         _validate_local_datetime(self._updated_at, "更新时间")
+        _validate_version(self._version)
 
     @property
     def id(self) -> UserId:
@@ -69,6 +71,12 @@ class User:
 
         return self._updated_at
 
+    @property
+    def version(self) -> int:
+        """返回聚合当前用于乐观并发控制的版本。"""
+
+        return self._version
+
     @classmethod
     def create(
         cls,
@@ -89,6 +97,7 @@ class User:
             _status=UserStatus.ACTIVE,
             _created_at=now,
             _updated_at=now,
+            _version=1,
         )
 
     @classmethod
@@ -102,6 +111,7 @@ class User:
         status: UserStatus,
         created_at: datetime,
         updated_at: datetime,
+        version: int,
     ) -> User:
         """从持久化数据恢复聚合，同时重新检查领域不变量。"""
 
@@ -113,7 +123,13 @@ class User:
             _status=status,
             _created_at=created_at,
             _updated_at=updated_at,
+            _version=version,
         )
+
+    def advance_version(self) -> None:
+        """在仓储确认成功写入后推进聚合的并发版本。"""
+
+        self._version += 1
 
     def update_profile(
         self,
@@ -183,6 +199,13 @@ def _validate_user_status(value: UserStatus) -> UserStatus:
         raise InvalidUserDataError("用户状态不正确")
 
     return value
+
+
+def _validate_version(value: int) -> None:
+    """确保并发版本是从 1 开始递增的普通整数。"""
+
+    if type(value) is not int or value < 1:
+        raise InvalidUserDataError("用户版本必须是大于等于 1 的整数")
 
 
 def _validate_local_datetime(value: datetime, name: str) -> None:

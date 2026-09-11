@@ -34,7 +34,7 @@
 
 - FastAPI HTTP 宿主与 Typer Console 宿主；
 - 用户限界上下文的增、查、改、删示例；
-- 简单会话认证，用户表不增加角色或版本字段；
+- 简单会话认证，用户表不增加角色或认证版本字段，数据写入使用内部乐观锁版本；
 - MySQL、PostgreSQL、SQLite 异步数据库连接；
 - Redis、Memcached 字节级 KV 缓存；
 - Milvus、Chroma 与 Elasticsearch 统一向量 CRUD 和近邻检索；

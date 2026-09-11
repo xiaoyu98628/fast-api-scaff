@@ -72,7 +72,7 @@ bootstrap/composition 负责选择实现并完成装配
 - SQLAlchemy mapper/repository/UoW/model 与 pwdlib 密码哈希适配器；
 - HTTP 与 Console 入口。
 
-它覆盖用户 CRUD、密码重置和简单会话认证。`AuthApplicationService` 提供登录、当前用户和退出，独立的 `UserSession` 记录令牌摘要与有效期，并通过 `UserUnitOfWork.sessions` 与用户仓储共享事务。用户表没有角色、认证版本或数据版本字段；公开 CRUD 不受登录校验保护，也不包含用户自行修改密码和角色权限体系。它是示例上下文，并非完整 IAM。
+它覆盖用户 CRUD、密码重置和简单会话认证。`AuthApplicationService` 提供登录、当前用户和退出，独立的 `UserSession` 记录令牌摘要与有效期，并通过 `UserUnitOfWork.sessions` 与用户仓储共享事务。用户表没有角色或认证版本字段，但使用内部数据版本执行乐观并发控制；公开 CRUD 不受登录校验保护，也不包含用户自行修改密码和角色权限体系。它是示例上下文，并非完整 IAM。
 
 ## 4. 聚合与不变量
 
@@ -127,7 +127,7 @@ Python 无法提供绝对私有性；下划线是协作契约。真正的保证�
 
 Application 不知道 FastAPI、Typer、SQLAlchemy、pwdlib 或具体数据库。时钟和 `PasswordHasher` 窄端口由组合根注入，测试可提供固定时间和确定性的假哈希实现。端口提供 `async def hash(self, password: Password) -> PasswordHash` 和 `async def verify_or_dummy(self, password: str, password_hash: PasswordHash | None) -> bool`。基础设施适配器在线程中执行 Argon2 哈希和验证，两类操作共享同一个默认容量为 2 的限制器；用户服务和认证服务复用该实例。创建用户在哈希前做规范化与唯一性预检查，写入前再次检查；密码重置在确认目标存在后才哈希，并在写入事务中重新读取。这些预检查减少无效请求的计算占用，最终正确性仍由事务内检查和数据库约束保证。取消调用时会等待本次工作结束再传播取消，避免提前释放仍在计算的额度。聚合不会接触明文密码。
 
-会话令牌通过应用层 `SessionTokenCodec` 窄协议注入，基础设施使用 `secrets.token_urlsafe(32)` 和 SHA-256。登录凭据失败统一抛出 `InvalidCredentialsError`；用户不存在或用户名格式错误时，密码适配器使用固定占位哈希执行等成本校验。用户存在时，慢密码验证在数据库事务外执行，签发前重新读取密码哈希与账户状态。没有版本字段或锁定串行化，重新读取不是并发改密撤销保证；已有会话也不会因密码重置失效。完整契约见[认证](authentication.md)。
+会话令牌通过应用层 `SessionTokenCodec` 窄协议注入，基础设施使用 `secrets.token_urlsafe(32)` 和 SHA-256。登录凭据失败统一抛出 `InvalidCredentialsError`；用户不存在或用户名格式错误时，密码适配器使用固定占位哈希执行等成本校验。用户存在时，慢密码验证在数据库事务外执行，签发前重新读取密码哈希与账户状态。用户数据版本只保护聚合写入，不是认证版本，因此重新读取仍不构成并发改密撤销保证；已有会话也不会因密码重置失效。完整契约见[认证](authentication.md)。
 
 Application Service 可以做跨聚合的流程编排和权限决策，但不应承载实体自身的核心规则。反过来，Domain 也不应执行数据库/缓存/网络 I/O。
 
@@ -142,7 +142,7 @@ Application Service 可以做跨聚合的流程编排和权限决策，但不应
 | Mapper | Domain 与 ORM 的显式转换 | 不编排用例 |
 | Provider | 把驱动配置转为资源定义 | 不暴露给业务层 |
 
-用户 UoW 在 commit 阶段和事务体退出阶段处理唯一约束异常，覆盖 INSERT 提交和 UPDATE 立即执行两条路径；执行阶段的异常在回滚、关闭成功后转换。未知 `IntegrityError` 原样保留，因为错误映射是语义承诺，过宽映射会把真实数据缺陷伪装成普通冲突。用户仓储按资料、状态和密码三个用例提供独立写操作，每次只更新当前用例负责的字段及 `updated_at`，避免陈旧聚合跨字段覆盖；当前没有版本字段，同一字段并发写入仍以后提交者为准。
+用户 UoW 在 commit 阶段和事务体退出阶段处理唯一约束异常，覆盖 INSERT 提交和 UPDATE 立即执行两条路径；执行阶段的异常在回滚、关闭成功后转换。未知 `IntegrityError` 原样保留，因为错误映射是语义承诺，过宽映射会把真实数据缺陷伪装成普通冲突。用户仓储以完整聚合执行 `WHERE id = ? AND version = ?` 条件更新，成功时同时把版本递增；零匹配会进一步区分目标已删除和版本冲突，分别映射为 404 与独立的 409。
 
 ## 8. Runtime Container 与 Composition Root
 

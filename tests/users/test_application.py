@@ -7,9 +7,9 @@ from uuid import UUID
 import pytest
 
 from app.contexts.user.application.dto import ChangeUserStatusCommand, CreateUserCommand, ResetUserPasswordCommand, UpdateUserCommand
-from app.contexts.user.application.errors import UserConflictError, UserNotFoundError
+from app.contexts.user.application.errors import ConcurrentUserUpdateError, UserConflictError, UserNotFoundError
 from app.contexts.user.application.service import UserApplicationService
-from app.contexts.user.domain.repository import UserRepository
+from app.contexts.user.domain.repository import UserRepository, UserUpdateResult
 from app.contexts.user.domain.session_repository import SessionRepository
 from app.contexts.user.domain.user import User
 from app.contexts.user.domain.values import EmailAddress, Password, PasswordHash, UserId, Username, UserStatus
@@ -31,6 +31,7 @@ class FakeUserRepository:
     def __init__(self) -> None:
         self.items: dict[UUID, User] = {}
         self.remove_before_update = False
+        self.update_result: UserUpdateResult | None = None
 
     async def find(self, user_id: UserId) -> User | None:
         return self.items.get(user_id.value)
@@ -51,24 +52,19 @@ class FakeUserRepository:
     async def add(self, user: User) -> None:
         self.items[user.id.value] = user
 
-    async def _update(self, user: User) -> bool:
+    async def update(self, user: User) -> UserUpdateResult:
         if self.remove_before_update:
             self.items.pop(user.id.value, None)
 
         if user.id.value not in self.items:
-            return False
+            return UserUpdateResult.NOT_FOUND
+
+        if self.update_result is not None:
+            return self.update_result
 
         self.items[user.id.value] = user
-        return True
-
-    async def update_profile(self, user: User) -> bool:
-        return await self._update(user)
-
-    async def change_status(self, user: User) -> bool:
-        return await self._update(user)
-
-    async def reset_password(self, user: User) -> bool:
-        return await self._update(user)
+        user.advance_version()
+        return UserUpdateResult.UPDATED
 
     async def remove(self, user_id: UserId) -> bool:
         return self.items.pop(user_id.value, None) is not None
@@ -267,6 +263,17 @@ async def test_user_service_reports_not_found_when_password_target_disappears() 
 
     with pytest.raises(UserNotFoundError):
         await service.reset_password(ResetUserPasswordCommand(user_id=created.id, password="replacement-password"))
+
+
+@pytest.mark.asyncio
+async def test_user_service_reports_concurrent_update() -> None:
+    repository = FakeUserRepository()
+    service = build_service(repository)
+    created = await service.create(CreateUserCommand(username="alice", email="alice@example.com", password="password123"))
+    repository.update_result = UserUpdateResult.CONFLICT
+
+    with pytest.raises(ConcurrentUserUpdateError):
+        await service.change_status(ChangeUserStatusCommand(user_id=created.id, status=UserStatus.DISABLED))
 
 
 @pytest.mark.asyncio

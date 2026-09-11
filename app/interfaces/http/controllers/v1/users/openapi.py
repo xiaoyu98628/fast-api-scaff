@@ -17,5 +17,5 @@ USER_NOT_FOUND_RESPONSE: dict[str, Any] = {
 
 USER_CONFLICT_RESPONSE: dict[str, Any] = {
     "model": JsonResponse[None],
-    "description": "用户名或邮箱已存在",
+    "description": "用户名、邮箱已存在，或用户已被并发修改",
 }

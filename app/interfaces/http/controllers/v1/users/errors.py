@@ -1,6 +1,6 @@
 """把用户领域与应用层错误映射为 HTTP 边界异常。"""
 
-from app.contexts.user.application.errors import UserApplicationError, UserConflictError, UserNotFoundError
+from app.contexts.user.application.errors import ConcurrentUserUpdateError, UserApplicationError, UserConflictError, UserNotFoundError
 from app.contexts.user.domain.errors import InvalidUserDataError, UserDomainError
 from app.interfaces.http.controllers.v1.users.codes import UserErrorCode
 from app.interfaces.http.exceptions.error import HttpError
@@ -20,6 +20,9 @@ def user_error_to_http(error: UserBoundaryError) -> HttpError:
             "email": UserErrorCode.EMAIL_CONFLICT,
         }[error.field]
         return HttpError(code)
+
+    if isinstance(error, ConcurrentUserUpdateError):
+        return HttpError(UserErrorCode.CONCURRENT_UPDATE)
 
     if isinstance(error, InvalidUserDataError):
         return HttpError(UserErrorCode.INVALID_USER_DATA, message=str(error))
