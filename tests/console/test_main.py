@@ -113,7 +113,14 @@ def build_console(service: FakeUserService) -> tuple[CliRunner, typer.Typer]:
 
 
 def test_app_info_displays_runtime_configuration() -> None:
-    settings = build_settings()
+    settings = build_settings().model_copy(
+        update={
+            "queue": QueueSettings(
+                _env_file=None,
+                connections={"events": {"driver": "redis", "host": "localhost"}},
+            )
+        }
+    )
 
     def reject_container_build(_settings: Settings) -> ApplicationContainer:
         raise AssertionError("app info 不应构建应用容器")
@@ -137,6 +144,7 @@ def test_app_info_displays_runtime_configuration() -> None:
         "debug": False,
         "database_connections": [],
         "cache_connections": [],
+        "queue_connections": ["events"],
         "vector_connections": [],
     }
     assert timezone

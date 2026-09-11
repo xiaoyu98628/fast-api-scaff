@@ -197,7 +197,7 @@ HTTP lifespan、ConsoleHost 和 WorkerHost 都复用 runtime。这样资源的�
 
 ## 11. HTTP、Console 与 Worker 适配器
 
-HTTP 与 Console 都调用 `UserApplicationService`，Worker 则解析消息携带的 QueueJob 类型，并通过 `WorkerContext` 调用其 `handle(context)`：
+HTTP 与 Console 都调用 `UserApplicationService`，Worker 则解析消息携带的 QueueJob 类型，并通过每条消息的 `JobExecutionContext` 调用其 `handle(context)`：
 
 - HTTP 负责 schema、status、统一 JSON 和异常到 HTTP 映射；
 - Console 负责 Typer 参数、JSON stdout、错误 stderr 和退出码；
@@ -274,6 +274,6 @@ HTTP 独立定义 `page/limit` 查询协议和 `items + meta` 分页响应，并
 
 独立 `app.worker` 入口由 `app.bootstrap.worker` 完成装配并复用 ApplicationRuntime；`app.interfaces.worker` 负责 Job 类路径解析、宿主上下文注入、消息执行、重试和消费并发。QueueJob 将可序列化数据与 `handle(context)` 收敛在同一类，投递时自动把类路径写入消息，Worker 动态导入并验证该类型；框架不扫描 `contexts`、`jobs` 或其他业务目录，不维护业务注册表，应用组合根也不收集 Job。当前示例把任务放在上下文级 `jobs/` 包并按类名使用蛇形命名模块，但这只是组织习惯。
 
-`WorkerContext` 与 `ConsoleContext` 一样，只在宿主/入站适配边界暴露当前配置和已经启动的 `ApplicationContainer`。Job 应优先从容器选择当前上下文的公开应用服务；需要数据库、缓存或外部服务的业务流程，仍由 Application 层定义窄协议并经 composition 注入实现。Application/Domain 不导入 Worker、具体 Manager、队列驱动或全局容器，共享 Infrastructure 不导入具体业务。所有消费槽共享应用级 Manager，任务级 Session、UoW 和事务不能跨 Job 共享。内置 `LoginSucceededJob` 由登录 HTTP 适配器在会话提交后尽力投递，作为默认队列和 `handle(context)` 日志输出的最小示例，不进入认证 Application/Domain，也不参与登录事务。
+`WorkerContext` 是进程级宿主上下文，与 `ConsoleContext` 一样只在宿主/入站适配边界暴露当前配置和已经启动的 `ApplicationContainer`。执行器从它为每条消息创建独立、不可变的 `JobExecutionContext`，其中 `settings` 和 `container` 保持直接访问，任务、队列和关联元数据组合在 `context.job`；同一投递内重试复用同一个对象。Job 应优先从容器选择当前上下文的公开应用服务；需要数据库、缓存或外部服务的业务流程，仍由 Application 层定义窄协议并经 composition 注入实现。Application/Domain 不导入 Worker、具体 Manager、队列驱动或全局容器，共享 Infrastructure 不导入具体业务。所有消费槽共享应用级 Manager，任务级 Session、UoW 和事务不能跨 Job 共享。内置 `LoginSucceededJob` 由登录 HTTP 适配器在会话提交后尽力投递，HTTP request ID 显式进入消息 correlation ID，作为默认队列、跨宿主日志关联和 `handle(context)` 输出的最小示例；它不进入认证 Application/Domain，也不参与登录事务。
 
 SQL 失败表属于共享技术能力，在 main metadata 注册；失败写入使用独立短事务，不借用业务 UoW。任务执行和消息确认不是跨系统原子事务。详见[队列](queue.md)、[Worker](worker.md)。

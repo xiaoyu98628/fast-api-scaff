@@ -160,7 +160,7 @@ uv run python -m app.worker --connection redis --queue reports --concurrency 4
 docker compose up --build worker
 ```
 
-内置 `LoginSucceededJob` 由登录接口尽力投递到默认连接配置的默认队列（`sample.env` 为 `default`），消息以 `user_id` 参数标识登录用户，不包含用户名、密码或 Token；Worker 收到后调用它的 `handle(context)` 记录固定文案和结构化用户 ID。`WorkerContext` 提供当前配置和正在运行的 `ApplicationContainer`，Job 可以像 Console operation 一样选择已装配的应用服务以及数据库、缓存、HTTP、队列和向量能力；业务 Job 应优先调用应用服务，不把容器继续传入 Application/Domain。新增任务无需注册、扫描目录或修改组合根。HTTP 与 Console 负责发布，独立 Worker 通过 Redis、Kafka 或 RabbitMQ 消费。
+内置 `LoginSucceededJob` 由登录接口尽力投递到默认连接配置的默认队列（`sample.env` 为 `default`），消息以 `user_id` 参数标识登录用户，不包含用户名、密码或 Token；HTTP request ID 会作为 correlation ID 进入消息。Worker 收到后调用它的 `handle(context)` 记录固定文案和结构化用户 ID。每条消息获得不可变 `JobExecutionContext`，其中既有当前配置和正在运行的 `ApplicationContainer`，也有任务、队列和关联元数据；Job 可以像 Console operation 一样选择已装配的应用服务以及数据库、缓存、HTTP、队列和向量能力。业务 Job 应优先调用应用服务，不把容器继续传入 Application/Domain。新增任务无需注册、扫描目录或修改组合根。HTTP 与 Console 负责发布，独立 Worker 通过 Redis、Kafka 或 RabbitMQ 消费。
 
 失败任务固定使用 SQL 存储，需配置 QUEUE_FAILED__DATABASE 并执行对应 Alembic migration。外部适配器目前由模拟客户端测试覆盖，未进行真实 Redis/Kafka/RabbitMQ 服务集成验证。重试是投递内重试，不包含持久延迟调度或 exactly-once 保证。
 

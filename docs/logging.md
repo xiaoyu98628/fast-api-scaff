@@ -1,6 +1,6 @@
 # 日志
 
-项目使用 Python 标准库 logging，并在应用边界统一配置结构化字段、输出格式、request ID 和驱动。默认是单行 JSON 写 stdout；Console 会把 stream 日志强制写 stderr，以保护命令结果的 stdout 协议。
+项目使用 Python 标准库 logging，并在应用边界统一配置结构化字段、输出格式、HTTP request ID、Worker 任务上下文和驱动。默认是单行 JSON 写 stdout；Console 会把 stream 日志强制写 stderr，以保护命令结果的 stdout 协议。
 
 ## 1. 最小配置
 
@@ -35,6 +35,9 @@ LOG_FORMAT=text
 | `service_version` | `APP_VERSION` |
 | `message` | 人类可读消息 |
 | `request_id` | 有 HTTP 请求上下文时附加 |
+| `job_id`、`job_type`、`job_version` | 有 Worker 任务上下文时附加 |
+| `queue_connection`、`queue_name` | 有 Worker 任务上下文时附加 |
+| `correlation_id`、`replay_of` | 当前任务存在对应值时附加 |
 | `event` | 稳定、可查询的事件名 |
 | `details` | 该事件的结构化细节 |
 | `exception` | `type`、`message`、`stacktrace`，仅异常日志出现 |
@@ -47,7 +50,7 @@ JSON 示例：
 
 业务和基础设施日志应把稳定分类放在 `event`，把可检索维度放在 `details`，不要把所有信息拼进 message。
 
-Worker 的任务失败和进程级故障采用更严格的安全诊断：捕获到异常时只额外记录异常类型，以及由模块、函数和行号组成的栈位置，不记录异常消息、运行时局部变量或任务 payload。任务完成事件为 `queue.job.finished`，进程级故障事件为 `worker.failed`。
+Worker 的任务失败和进程级故障采用更严格的安全诊断：捕获到异常时只额外记录异常类型，以及由模块、函数和行号组成的栈位置，不记录异常消息、运行时局部变量或任务 payload。任务完成事件为 `queue.job.finished`，details 还包含本次处理的 `duration_ms`；进程级故障事件为 `worker.failed`。
 
 ## 3. 记录结构化日志
 
@@ -120,13 +123,15 @@ route 记录实际请求路径，如 `/api/v1/users/019c...`，包含全部应�
 
 CORS 预检在最外层直接返回，不生成应用访问日志或 Request ID。非法 Request ID 的普通请求在建立上下文前被拒绝，只记录专门的拒绝警告，不产生普通访问日志；其响应仍会经过外层 CORS。
 
-## 6. Request ID
+## 6. 请求与任务关联上下文
 
-日志 handler 上的 `RequestContextFilter` 在记录进入 handler 时读取当前 HTTP 上下文，并补充 `request_id`。这意味着同一个请求内 controller、application 和 infrastructure 的日志都可被关联，而这些层不必依赖 FastAPI request。
+日志 handler 上的 `RuntimeContextFilter` 在记录进入 handler 时读取当前 HTTP 上下文，并补充 `request_id`。这意味着同一个请求内 controller、application 和 infrastructure 的日志都可被关联，而这些层不必依赖 FastAPI request。
 
 Console 和启动/关闭阶段没有 HTTP 上下文，日志自然不含 request ID。不要用空字符串伪造 ID；无上下文时省略字段语义更清楚。
 
-队列 Worker 的 `queue.job.finished` 日志会显式记录 job ID 和 correlation ID，但当前不会把这些字段自动绑定到 `QueueJob.handle(context)` 内部产生的任意业务日志。未来若需要整条任务调用链自动关联，应建立独立的 correlation/job ID 上下文；Scheduler 也应采用自己的执行上下文，而不是假装它们有 HTTP request ID。
+登录 HTTP 适配器会把当前 request ID 显式传给队列 Dispatcher，作为消息的 correlation ID。Worker 执行每条消息时使用独立 `ContextVar` 绑定任务字段，因此 `QueueJob.handle(context)`、Application 服务、数据库、缓存和出站 HTTP 客户端在当前异步执行流内产生的日志都会自动携带同一组任务标识。绑定在消息处理结束后按 token 恢复，并发槽之间不会共享任务级上下文。Worker 不把 correlation ID 伪装成 request ID；两者在日志中保持不同字段。
+
+`JobExecutionContext` 同时通过 `context.job` 向 Job 显式提供这些元数据，供幂等键、低基数 operation 选择等执行逻辑使用。不要把整个上下文继续传入 Application/Domain，也不要把任务 payload 或敏感值放入日志关联字段。Scheduler 仍应采用自己的执行上下文。
 
 ## 7. 应用生命周期日志
 
@@ -139,7 +144,16 @@ HTTP lifespan 产生：
 - `application.stopped`；
 - `application.stop_failed`。
 
-资源层还记录数据库资源创建/关闭和失败事件。启动失败时 runtime 会尝试关闭已经构建的容器，日志顺序可用于判断失败发生在配置、容器启动还是关闭阶段。
+Worker 进程对应产生：
+
+- `worker.starting`；
+- `worker.started`；
+- `worker.start_failed`；
+- `worker.stopping`；
+- `worker.stopped`；
+- `worker.stop_failed`。
+
+资源层还记录数据库资源创建/关闭和失败事件。HTTP 与 Worker 启动失败时，runtime 都会尝试关闭已经构建的容器；日志顺序可用于判断失败发生在配置、容器启动还是关闭阶段。
 
 ## 8. 数据库日志
 

@@ -60,7 +60,11 @@ async def test_http_login_me_logout_and_public_crud(client: AsyncClient, monkeyp
     assert token["token_type"] == "bearer"
     assert token["expires_in"] == 120
     assert len(token["access_token"]) == 43
-    publish_login_succeeded.assert_awaited_once_with(ANY, UUID(user["id"]))
+    publish_login_succeeded.assert_awaited_once_with(
+        ANY,
+        UUID(user["id"]),
+        login.headers["X-Request-ID"],
+    )
     headers = {"Authorization": f"Bearer {token['access_token']}"}
 
     me = await client.get("/api/v1/auth/me", headers=headers)
@@ -143,9 +147,12 @@ async def test_login_publisher_uses_default_queue() -> None:
     container = cast(ApplicationContainer, SimpleNamespace(queues=queues))
     user_id = uuid7()
 
-    await _publish_login_succeeded(container, user_id)
+    await _publish_login_succeeded(container, user_id, "request-123")
 
-    queues.dispatch.assert_awaited_once_with(LoginSucceededJob(user_id=user_id))
+    queues.dispatch.assert_awaited_once_with(
+        LoginSucceededJob(user_id=user_id),
+        correlation_id="request-123",
+    )
 
 
 @pytest.mark.asyncio

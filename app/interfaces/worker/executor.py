@@ -6,15 +6,17 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from hashlib import sha256
-from uuid import NAMESPACE_URL, uuid5
+from time import perf_counter
+from uuid import NAMESPACE_URL, UUID, uuid5
 
+from app.infrastructure.logging.context import JobLogContext, bind_job_log_context
 from app.infrastructure.logging.record import ExceptionStackFrame, safe_exception_details
 from app.infrastructure.queue.codecs.envelope_json import EnvelopeJsonCodec
 from app.infrastructure.queue.contracts.consumer import Delivery
 from app.infrastructure.queue.contracts.failed_store import FailedJobRecord, FailedJobStore
 from app.infrastructure.queue.contracts.message import MessageEnvelope
 from app.infrastructure.queue.errors import InvalidMessageError, RetryableJobError
-from app.interfaces.worker.context import WorkerContext
+from app.interfaces.worker.context import JobExecutionContext, JobMetadata, WorkerContext
 from app.interfaces.worker.resolver import ExecutableJob, JobTypeResolver
 
 _logger = logging.getLogger(__name__)
@@ -30,7 +32,7 @@ class ExecutionResult:
     stacktrace: tuple[ExceptionStackFrame, ...] = ()
 
 
-async def run_attempts(binding: ExecutableJob, payload: bytes, context: WorkerContext) -> ExecutionResult:
+async def run_attempts(binding: ExecutableJob, payload: bytes, context: JobExecutionContext) -> ExecutionResult:
     """按照 JobPolicy 执行任务，并把异常压缩为稳定失败原因。"""
 
     policy = binding.policy
@@ -86,6 +88,7 @@ class JobExecutor:
     async def execute(self, delivery: Delivery) -> None:
         """处理一条 delivery；未抛异常时该消息已经被确认。"""
 
+        started_at = perf_counter()
         message = None
         try:
             message = self.codec.decode(delivery.payload)
@@ -96,18 +99,60 @@ class JobExecutor:
         # 确定性 ID 让 ACK 失败后的重复投递只补做确认，不再次执行已记录的失败任务。
         # 连接与队列也参与身份，避免跨队列投递同一个 job_id 相互抑制。
         failure_id = uuid5(NAMESPACE_URL, repr(("queue-failure", self.connection, self.queue, identity)))
-        if await self.failures.find(failure_id) is not None:
-            await delivery.acknowledge()
-            return
         if message is None:
+            if await self.failures.find(failure_id) is not None:
+                await delivery.acknowledge()
+                return
             result = ExecutionResult(0, "invalid_envelope")
-        else:
+            await self._finish(delivery, message, result, failure_id=failure_id, started_at=started_at)
+            return
+
+        context = JobExecutionContext(
+            settings=self.context.settings,
+            container=self.context.container,
+            job=JobMetadata(
+                id=message.job_id,
+                reference=message.job_type,
+                version=message.job_version,
+                enqueued_at=message.enqueued_at,
+                queue_connection=self.connection,
+                queue_name=self.queue,
+                correlation_id=message.correlation_id,
+                replay_of=message.replay_of,
+            ),
+        )
+        log_context = JobLogContext(
+            job_id=str(context.job.id),
+            job_type=context.job.reference,
+            job_version=context.job.version,
+            queue_connection=context.job.queue_connection,
+            queue_name=context.job.queue_name,
+            correlation_id=context.job.correlation_id,
+            replay_of=str(context.job.replay_of) if context.job.replay_of is not None else None,
+        )
+        with bind_job_log_context(log_context):
+            if await self.failures.find(failure_id) is not None:
+                await delivery.acknowledge()
+                return
             try:
                 binding = self.resolver.resolve(message.job_type, message.job_version)
             except KeyError:
                 result = ExecutionResult(0, "unknown_job")
             else:
-                result = await run_attempts(binding, message.payload, self.context)
+                result = await run_attempts(binding, message.payload, context)
+            await self._finish(delivery, message, result, failure_id=failure_id, started_at=started_at)
+
+    async def _finish(
+        self,
+        delivery: Delivery,
+        message: MessageEnvelope | None,
+        result: ExecutionResult,
+        *,
+        failure_id: UUID,
+        started_at: float,
+    ) -> None:
+        """保存最终失败、确认消息，并输出稳定的完成事件。"""
+
         if result.failure_reason is not None:
             # 保存成功后才能 ACK，否则失败记录和原消息可能同时丢失。
             await self.failures.save(
@@ -125,11 +170,23 @@ class JobExecutor:
                 )
             )
             # 失败现场已经可靠保存；即使随后 ACK 失败，也必须留下本次执行诊断。
-            _log_execution_result(message, result, connection=self.connection, queue=self.queue)
+            _log_execution_result(
+                message,
+                result,
+                connection=self.connection,
+                queue=self.queue,
+                started_at=started_at,
+            )
         # 成功任务不落失败表，但同样遵循“处理完成后确认”的至少一次语义。
         await delivery.acknowledge()
         if result.failure_reason is None:
-            _log_execution_result(message, result, connection=self.connection, queue=self.queue)
+            _log_execution_result(
+                message,
+                result,
+                connection=self.connection,
+                queue=self.queue,
+                started_at=started_at,
+            )
 
 
 def _log_execution_result(
@@ -138,6 +195,7 @@ def _log_execution_result(
     *,
     connection: str,
     queue: str,
+    started_at: float,
 ) -> None:
     """按最终执行结果写入成功或不含敏感值的失败日志。"""
 
@@ -148,6 +206,7 @@ def _log_execution_result(
         "attempts": result.attempts,
         "failure_reason": result.failure_reason,
         "correlation_id": message.correlation_id if message else None,
+        "duration_ms": round((perf_counter() - started_at) * 1000, 3),
     }
     if result.error_type is not None:
         details["error_type"] = result.error_type

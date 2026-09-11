@@ -1,6 +1,8 @@
-"""定义队列任务可访问的 Worker 宿主上下文。"""
+"""定义 Worker 进程上下文和单条队列任务的执行上下文。"""
 
 from dataclasses import dataclass
+from datetime import datetime
+from uuid import UUID
 
 from app.config.settings import Settings
 from app.runtime.container import ApplicationContainer
@@ -12,3 +14,26 @@ class WorkerContext:
 
     settings: Settings
     container: ApplicationContainer
+
+
+@dataclass(frozen=True, slots=True)
+class JobMetadata:
+    """描述当前队列消息及其投递来源。"""
+
+    id: UUID
+    reference: str
+    version: int
+    enqueued_at: datetime
+    queue_connection: str
+    queue_name: str
+    correlation_id: str | None = None
+    replay_of: UUID | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class JobExecutionContext:
+    """提供单条队列任务所需的应用能力和消息元数据。"""
+
+    settings: Settings
+    container: ApplicationContainer
+    job: JobMetadata

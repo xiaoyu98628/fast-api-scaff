@@ -1,6 +1,7 @@
 """验证 Worker 宿主、命令入口、资源生命周期和安全错误输出。"""
 
 import asyncio
+import logging
 import subprocess
 import sys
 from dataclasses import FrozenInstanceError, replace
@@ -18,7 +19,7 @@ from app.infrastructure.queue.errors import QueueError
 from app.infrastructure.queue.failed.sql.model import FailedJobModel
 from app.infrastructure.queue.manager import QueueManager
 from app.interfaces.worker.cli import run_worker
-from app.interfaces.worker.context import WorkerContext
+from app.interfaces.worker.context import JobExecutionContext
 from app.interfaces.worker.resolver import JobResolver
 from app.worker import app as worker_cli
 from tests.console.test_application import build_settings
@@ -54,7 +55,69 @@ def test_worker_cli_logs_sanitized_unexpected_failure(monkeypatch: pytest.Monkey
 
 
 @pytest.mark.asyncio
-async def test_worker_uses_production_resolver_and_drains_job(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_worker_logs_startup_failure_and_completed_cleanup(caplog: pytest.LogCaptureFixture) -> None:
+    settings = build_settings()
+
+    async def fail_startup() -> None:
+        raise RuntimeError("startup failed")
+
+    container = replace(
+        build_application_container(settings),
+        startup_callbacks=(fail_startup,),
+    )
+    application = WorkerHost(settings, container_builder=lambda _: container)
+
+    caplog.set_level(logging.INFO, logger="app.bootstrap.worker.lifecycle")
+    with pytest.raises(RuntimeError, match="startup failed"):
+        await application.serve(connection=None, queue=None, concurrency=None, stop=asyncio.Event())
+
+    events = [getattr(record, "event", None) for record in caplog.records if record.name == "app.bootstrap.worker.lifecycle"]
+    assert events == [
+        "worker.starting",
+        "worker.start_failed",
+        "worker.stopping",
+        "worker.stopped",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_worker_logs_shutdown_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    settings = build_settings()
+
+    async def fail_shutdown() -> None:
+        raise RuntimeError("shutdown failed")
+
+    async def consume_nothing(*_args, **_kwargs) -> None:
+        pass
+
+    container = replace(
+        build_application_container(settings),
+        async_shutdown_callbacks=(fail_shutdown,),
+    )
+    application = WorkerHost(settings, container_builder=lambda _: container)
+    monkeypatch.setattr(WorkerHost, "_consume", consume_nothing)
+
+    caplog.set_level(logging.INFO, logger="app.bootstrap.worker.lifecycle")
+    with pytest.raises(ExceptionGroup, match="shutdown callbacks failed"):
+        await application.serve(connection=None, queue=None, concurrency=None, stop=asyncio.Event())
+
+    events = [getattr(record, "event", None) for record in caplog.records if record.name == "app.bootstrap.worker.lifecycle"]
+    assert events == [
+        "worker.starting",
+        "worker.started",
+        "worker.stopping",
+        "worker.stop_failed",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_worker_uses_production_resolver_and_drains_job(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     settings = build_settings().model_copy(
         update={
             "database": DatabaseSettings(
@@ -73,9 +136,16 @@ async def test_worker_uses_production_resolver_and_drains_job(monkeypatch: pytes
     stop = asyncio.Event()
     values: list[int] = []
 
-    async def handle(job: Job, context: WorkerContext) -> None:
+    job_id = None
+
+    async def handle(job: Job, context: JobExecutionContext) -> None:
         assert context.settings is settings
         assert context.container is container
+        assert context.job.id == job_id
+        assert context.job.reference.endswith(":Job")
+        assert context.job.queue_connection == "main"
+        assert context.job.queue_name == "default"
+        assert context.job.correlation_id == "request-123"
         values.append(job.value)
         stop.set()
 
@@ -94,14 +164,22 @@ async def test_worker_uses_production_resolver_and_drains_job(monkeypatch: pytes
     engine = await container.databases.get_engine("main")
     async with engine.begin() as connection:
         await connection.run_sync(FailedJobModel.metadata.create_all)
-    await container.queues.dispatch(Job(17))
+    job_id = await container.queues.dispatch(Job(17), correlation_id="request-123")
     application = WorkerHost(
         settings,
         container_builder=lambda _: container,
         resolver_builder=lambda: JobResolver(("tests",)),
     )
+    caplog.set_level(logging.INFO, logger="app.bootstrap.worker.lifecycle")
     await asyncio.wait_for(application.serve(connection=None, queue=None, concurrency=2, stop=stop), 1)
     assert values == [17]
+    events = [getattr(record, "event", None) for record in caplog.records if record.name == "app.bootstrap.worker.lifecycle"]
+    assert events == [
+        "worker.starting",
+        "worker.started",
+        "worker.stopping",
+        "worker.stopped",
+    ]
     with pytest.raises(QueueError):
         await container.queues.get()
 

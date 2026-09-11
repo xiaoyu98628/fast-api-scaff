@@ -12,6 +12,7 @@ from app.contexts.user.jobs.login_succeeded import LoginSucceededJob
 from app.infrastructure.logging.record import log_extra
 from app.infrastructure.queue.errors import QueueError
 from app.infrastructure.queue.job import job_reference
+from app.interfaces.http.context import current_request_id
 from app.interfaces.http.controllers.v1.auth.dependencies import AuthServiceDependency, SessionCredentialDependency
 from app.interfaces.http.controllers.v1.auth.errors import auth_error_to_http
 from app.interfaces.http.controllers.v1.auth.openapi import AUTH_REQUIRED_RESPONSE, AUTH_USER_NOT_FOUND_RESPONSE, AUTH_VALIDATION_RESPONSE
@@ -26,11 +27,18 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 _logger = logging.getLogger(__name__)
 
 
-async def _publish_login_succeeded(container: ApplicationContainer, user_id: UUID) -> None:
+async def _publish_login_succeeded(
+    container: ApplicationContainer,
+    user_id: UUID,
+    correlation_id: str | None,
+) -> None:
     """在响应后尽力发布登录成功任务，并记录队列边界失败。"""
 
     try:
-        await container.queues.dispatch(LoginSucceededJob(user_id=user_id))
+        await container.queues.dispatch(
+            LoginSucceededJob(user_id=user_id),
+            correlation_id=correlation_id,
+        )
     except QueueError:
         # 异步副作用失败不能改变已经完成的认证结果，只记录稳定任务类型供诊断。
         _logger.exception(
@@ -60,7 +68,12 @@ async def login(
         raise auth_error_to_http(error) from None
 
     # 登录响应先返回，队列发布作为 FastAPI BackgroundTask 在响应后执行。
-    background_tasks.add_task(_publish_login_succeeded, container, token.user_id)
+    background_tasks.add_task(
+        _publish_login_succeeded,
+        container,
+        token.user_id,
+        current_request_id(),
+    )
     # Token 响应不得被浏览器或中间代理缓存。
     response.headers["Cache-Control"] = "no-store"
     return responses.success(TokenResponse.from_dto(token))

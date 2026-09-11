@@ -10,13 +10,16 @@ from unittest.mock import Mock
 import pytest
 
 import app.interfaces.worker.executor as worker_executor
+from app.config.settings import Settings
+from app.infrastructure.logging.context import RuntimeContextFilter
 from app.infrastructure.queue.errors import RetryableJobError
 from app.infrastructure.queue.job import job_reference
 from app.infrastructure.queue.policies import JobPolicy
-from app.interfaces.worker.context import WorkerContext
+from app.interfaces.worker.context import JobExecutionContext, WorkerContext
 from app.interfaces.worker.executor import JobExecutor
 from app.interfaces.worker.resolver import ExecutableJob
 from app.interfaces.worker.runner import WorkerRunner
+from app.runtime.container import ApplicationContainer
 from tests.queue.fakes import (
     Codec,
     FakeQueueBackend,
@@ -25,16 +28,18 @@ from tests.queue.fakes import (
     create_queue_manager,
 )
 
-_WORKER_CONTEXT = cast(WorkerContext, object())
+_SETTINGS = cast(Settings, object())
+_CONTAINER = cast(ApplicationContainer, object())
+_WORKER_CONTEXT = WorkerContext(settings=_SETTINGS, container=_CONTAINER)
 
 
 @dataclass(frozen=True, slots=True)
 class StubBinding:
     handler: Callable[[Job], Awaitable[None]]
     policy: JobPolicy = JobPolicy()
-    contexts: list[WorkerContext] | None = None
+    contexts: list[JobExecutionContext] | None = None
 
-    async def execute(self, payload: bytes, context: WorkerContext) -> None:
+    async def execute(self, payload: bytes, context: JobExecutionContext) -> None:
         if self.contexts is not None:
             self.contexts.append(context)
         await self.handler(Codec().decode(payload))
@@ -58,7 +63,7 @@ def resolver(
     handler: Callable[[Job], Awaitable[None]] = discard_job,
     *,
     policy: JobPolicy = JobPolicy(),
-    contexts: list[WorkerContext] | None = None,
+    contexts: list[JobExecutionContext] | None = None,
 ) -> StubResolver:
     return StubResolver(StubBinding(handler, policy, contexts))
 
@@ -67,7 +72,7 @@ def resolver(
 async def test_retry_and_ack_after_success() -> None:
     queues = create_queue_manager()
     attempts: list[int] = []
-    contexts: list[WorkerContext] = []
+    contexts: list[JobExecutionContext] = []
 
     async def handle(job: Job) -> None:
         attempts.append(job.value)
@@ -75,12 +80,22 @@ async def test_retry_and_ack_after_success() -> None:
             raise RetryableJobError()
 
     active_resolver = resolver(handle, policy=JobPolicy(backoff_seconds=()), contexts=contexts)
-    await queues.dispatch(Job(8))
+    job_id = await queues.dispatch(Job(8), correlation_id="request-123")
     async with queues.consume() as consumer:
         delivery = await consumer.receive()
         await JobExecutor("main", "default", active_resolver, queues.failed_jobs, queues.codec, _WORKER_CONTEXT).execute(delivery)
     assert attempts == [8, 8, 8]
-    assert contexts == [_WORKER_CONTEXT, _WORKER_CONTEXT, _WORKER_CONTEXT]
+    assert len(contexts) == 3
+    assert all(context is contexts[0] for context in contexts)
+    assert contexts[0].settings is _SETTINGS
+    assert contexts[0].container is _CONTAINER
+    assert contexts[0].job.id == job_id
+    assert contexts[0].job.reference == job_reference(Job)
+    assert contexts[0].job.version == 1
+    assert contexts[0].job.queue_connection == "main"
+    assert contexts[0].job.queue_name == "default"
+    assert contexts[0].job.correlation_id == "request-123"
+    assert contexts[0].job.replay_of is None
     assert await queues.failed_jobs.list() == []
     await queues.aclose()
 
@@ -120,6 +135,7 @@ async def test_failed_record_recovery_does_not_execute_again_and_replay_retains_
     assert message == "queue.job.finished"
     assert details["error_type"] == "builtins.ValueError"
     assert details["stacktrace"]
+    assert details["duration_ms"] >= 0
     assert "sensitive payload" not in repr(details)
     records = await queues.failed_jobs.list()
     assert len(records) == 1
@@ -129,13 +145,65 @@ async def test_failed_record_recovery_does_not_execute_again_and_replay_retains_
     assert "sensitive payload" not in repr((records[0].error_type, records[0].stacktrace))
     replay_id = await queues.replay(records[0].failure_id)
     assert replay_id != original_id
+    replay_contexts: list[JobExecutionContext] = []
+    replay_executor = JobExecutor(
+        "main",
+        "default",
+        resolver(contexts=replay_contexts),
+        queues.failed_jobs,
+        queues.codec,
+        _WORKER_CONTEXT,
+    )
     async with queues.consume() as consumer:
         delivery = await consumer.receive()
         message = queues.codec.decode(delivery.payload)
         assert message.replay_of == records[0].failure_id
-        await delivery.acknowledge()
+        await replay_executor.execute(delivery)
+    assert replay_contexts[0].job.id == replay_id
+    assert replay_contexts[0].job.replay_of == records[0].failure_id
     assert len(await queues.failed_jobs.list()) == 1
     await queues.aclose()
+
+
+@pytest.mark.asyncio
+async def test_job_logs_receive_execution_context_without_leaking(caplog: pytest.LogCaptureFixture) -> None:
+    queues = create_queue_manager()
+    logger = logging.getLogger("app.test.worker.context")
+    runtime_filter = RuntimeContextFilter()
+    caplog.handler.addFilter(runtime_filter)
+    caplog.set_level(logging.INFO)
+
+    async def handle(_job: Job) -> None:
+        logger.info("inside job")
+
+    try:
+        job_id = await queues.dispatch(Job(3), correlation_id="request-456")
+        async with queues.consume() as consumer:
+            executor = JobExecutor(
+                "main",
+                "default",
+                resolver(handle),
+                queues.failed_jobs,
+                queues.codec,
+                _WORKER_CONTEXT,
+            )
+            await executor.execute(await consumer.receive())
+        logger.info("outside job")
+    finally:
+        caplog.handler.removeFilter(runtime_filter)
+        await queues.aclose()
+
+    inside = next(record for record in caplog.records if record.getMessage() == "inside job")
+    outside = next(record for record in caplog.records if record.getMessage() == "outside job")
+    assert getattr(inside, "job_id", None) == str(job_id)
+    assert getattr(inside, "job_type", None) == job_reference(Job)
+    assert getattr(inside, "job_version", None) == 1
+    assert getattr(inside, "queue_connection", None) == "main"
+    assert getattr(inside, "queue_name", None) == "default"
+    assert getattr(inside, "correlation_id", None) == "request-456"
+    assert getattr(inside, "replay_of", None) is None
+    assert getattr(outside, "job_id", None) is None
+    assert getattr(outside, "correlation_id", None) is None
 
 
 @pytest.mark.asyncio

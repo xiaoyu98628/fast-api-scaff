@@ -12,7 +12,7 @@ from app.infrastructure.queue.policies import JobPolicy
 
 
 class QueueJob[TContext](ABC):
-    """把可序列化任务数据与宿主上下文执行入口收敛在同一类型。"""
+    """把可序列化任务数据与单次执行上下文入口收敛在同一类型。"""
 
     version: ClassVar[int] = 1
     policy: ClassVar[JobPolicy] = JobPolicy()
@@ -20,7 +20,7 @@ class QueueJob[TContext](ABC):
 
     @abstractmethod
     async def handle(self, context: TContext) -> None:
-        """使用宿主上下文执行已经从消息 payload 恢复的任务。"""
+        """使用单次执行上下文处理已经从消息 payload 恢复的任务。"""
 
         pass
 

@@ -18,6 +18,7 @@ from app.infrastructure.queue.contracts.provider import QueueBackend
 from app.infrastructure.queue.errors import QueueError
 from app.infrastructure.queue.job import QueueJob
 from app.infrastructure.queue.manager import QueueManager
+from app.interfaces.worker.context import JobExecutionContext
 
 
 class Codec:
@@ -29,11 +30,11 @@ class Codec:
 
 
 @dataclass(frozen=True)
-class Job(QueueJob[object]):
+class Job(QueueJob[JobExecutionContext]):
     value: int
     codec: ClassVar[Codec] = Codec()
 
-    async def handle(self, context: object) -> None:
+    async def handle(self, context: JobExecutionContext) -> None:
         pass
 
 

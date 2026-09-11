@@ -1,13 +1,16 @@
 """组装并运行独立队列 Worker 宿主。"""
 
 import asyncio
+import logging
 import signal
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
 
 from app.bootstrap.build import build_application_container
+from app.bootstrap.worker.logging import WorkerLogEvent
 from app.config.settings import Settings
+from app.infrastructure.logging.record import log_extra
 from app.interfaces.worker.context import WorkerContext
 from app.interfaces.worker.executor import JobExecutor
 from app.interfaces.worker.resolver import JobResolver, JobTypeResolver
@@ -17,6 +20,8 @@ from app.runtime.lifecycle import ApplicationRuntime
 
 type ContainerBuilder = Callable[[Settings], ApplicationContainer]
 type ResolverBuilder = Callable[[], JobTypeResolver]
+
+_logger = logging.getLogger("app.bootstrap.worker.lifecycle")
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,7 +49,19 @@ class WorkerHost:
                 loop.add_signal_handler(signum, active_stop.set)
                 installed.append(signum)
         try:
-            async with ApplicationRuntime(partial(self.container_builder, self.settings)) as container:
+            runtime = ApplicationRuntime(partial(self.container_builder, self.settings))
+            _logger.info("Worker starting", extra=log_extra(WorkerLogEvent.STARTING))
+            try:
+                try:
+                    container = await runtime.start()
+                except Exception:
+                    _logger.exception(
+                        "Worker startup failed",
+                        extra=log_extra(WorkerLogEvent.START_FAILED),
+                    )
+                    raise
+
+                _logger.info("Worker started", extra=log_extra(WorkerLogEvent.STARTED))
                 context = WorkerContext(settings=self.settings, container=container)
                 await self._consume(
                     context,
@@ -53,6 +70,17 @@ class WorkerHost:
                     concurrency=concurrency,
                     stop=active_stop,
                 )
+            finally:
+                _logger.info("Worker stopping", extra=log_extra(WorkerLogEvent.STOPPING))
+                try:
+                    await runtime.aclose()
+                except Exception:
+                    _logger.exception(
+                        "Worker shutdown failed",
+                        extra=log_extra(WorkerLogEvent.STOP_FAILED),
+                    )
+                    raise
+                _logger.info("Worker stopped", extra=log_extra(WorkerLogEvent.STOPPED))
         finally:
             for signum in installed:
                 loop.remove_signal_handler(signum)

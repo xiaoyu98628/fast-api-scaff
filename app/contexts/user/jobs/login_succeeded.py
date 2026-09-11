@@ -6,14 +6,14 @@ from uuid import UUID
 
 from app.infrastructure.logging.record import log_extra
 from app.infrastructure.queue.job import QueueJob
-from app.interfaces.worker.context import WorkerContext
+from app.interfaces.worker.context import JobExecutionContext
 
 LOGIN_SUCCEEDED_MESSAGE = "用户登录成功，队列任务已执行。"
 _logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
-class LoginSucceededJob(QueueJob[WorkerContext]):
+class LoginSucceededJob(QueueJob[JobExecutionContext]):
     """记录固定登录成功事件，不携带用户名、密码或 Token。"""
 
     # 可空用于兼容增加 user_id 字段前已经进入队列的消息。
@@ -28,7 +28,7 @@ class LoginSucceededJob(QueueJob[WorkerContext]):
         if self.message != LOGIN_SUCCEEDED_MESSAGE:
             raise ValueError("登录成功任务消息不合法")
 
-    async def handle(self, context: WorkerContext) -> None:
+    async def handle(self, context: JobExecutionContext) -> None:
         """输出固定文案，并把用户 ID 放入结构化日志详情。"""
 
         _logger.info(

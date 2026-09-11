@@ -41,7 +41,7 @@ def test_configure_logging_resolves_active_handler(monkeypatch: pytest.MonkeyPat
     assert captured["handlers"] == {
         "stdout": {
             "class": "logging.StreamHandler",
-            "filters": ["request_context"],
+            "filters": ["runtime_context"],
             "formatter": "json",
             "stream": "ext://sys.stdout",
         }
@@ -61,7 +61,7 @@ def test_configure_logging_selects_text_formatter(monkeypatch: pytest.MonkeyPatc
     assert captured["handlers"] == {
         "stdout": {
             "class": "logging.StreamHandler",
-            "filters": ["request_context"],
+            "filters": ["runtime_context"],
             "formatter": "text",
             "stream": "ext://sys.stdout",
         }
@@ -125,7 +125,7 @@ def test_configure_logging_accepts_extended_driver_registry(monkeypatch: pytest.
     assert captured["handlers"] == {
         "custom": {
             "class": "logging.NullHandler",
-            "filters": ["request_context"],
+            "filters": ["runtime_context"],
             "formatter": "json",
         }
     }
