@@ -126,7 +126,7 @@ CORS 预检在最外层直接返回，不生成应用访问日志或 Request ID�
 
 Console 和启动/关闭阶段没有 HTTP 上下文，日志自然不含 request ID。不要用空字符串伪造 ID；无上下文时省略字段语义更清楚。
 
-队列 Worker 的 `queue.job.finished` 日志会显式记录 job ID 和 correlation ID，但当前不会把这些字段自动绑定到 `QueueJob.handle()` 内部产生的任意业务日志。未来若需要整条任务调用链自动关联，应建立独立的 correlation/job ID 上下文；Scheduler 也应采用自己的执行上下文，而不是假装它们有 HTTP request ID。
+队列 Worker 的 `queue.job.finished` 日志会显式记录 job ID 和 correlation ID，但当前不会把这些字段自动绑定到 `QueueJob.handle(context)` 内部产生的任意业务日志。未来若需要整条任务调用链自动关联，应建立独立的 correlation/job ID 上下文；Scheduler 也应采用自己的执行上下文，而不是假装它们有 HTTP request ID。
 
 ## 7. 应用生命周期日志
 

@@ -1,6 +1,6 @@
 # 架构说明
 
-项目采用模块化单体：一个部署单元内按限界上下文划分业务，并在每个上下文内部保持 Domain、Application、Infrastructure 边界。HTTP、Console 与 Worker 是独立宿主，共享配置、组合根和资源生命周期；HTTP 与 Console 调用已装配的应用用例，当前 Worker 动态解析并执行自包含 QueueJob。
+项目采用模块化单体：一个部署单元内按限界上下文划分业务，并在每个上下文内部保持 Domain、Application、Infrastructure 边界。HTTP、Console 与 Worker 是独立宿主，共享配置、组合根和资源生命周期；HTTP、Console 与 Worker Job 都可以在各自的入站边界选择已装配的应用用例，Worker 通过不可变上下文向动态解析的 QueueJob 提供当前应用容器。
 
 这不是为了堆叠 DDD 名词，而是解决三个实际问题：业务规则不被框架入口绕过，基础设施可以替换/测试，多入口复用同一用例且不会出现行为分叉。
 
@@ -197,11 +197,11 @@ HTTP lifespan、ConsoleHost 和 WorkerHost 都复用 runtime。这样资源的�
 
 ## 11. HTTP、Console 与 Worker 适配器
 
-HTTP 与 Console 都调用 `UserApplicationService`，Worker 则解析消息携带的 QueueJob 类型并调用其 `handle()`：
+HTTP 与 Console 都调用 `UserApplicationService`，Worker 则解析消息携带的 QueueJob 类型，并通过 `WorkerContext` 调用其 `handle(context)`：
 
 - HTTP 负责 schema、status、统一 JSON 和异常到 HTTP 映射；
 - Console 负责 Typer 参数、JSON stdout、错误 stderr 和退出码；
-- Worker 负责消息解码、执行策略、并发消费和确认；
+- Worker 负责消息解码、宿主上下文注入、执行策略、并发消费和确认；
 - 三者都不实现业务规则，不直接操作 ORM，也不负责全局启动装配。
 
 HTTP 独立定义 `page/limit` 查询协议和 `items + meta` 分页响应，并在调用应用服务前把页码换算为 `offset/limit`。Console 的 `users list` 也在宿主边界约束 `page` 和 `limit`，但直接输出应用 DTO；后台批处理应根据任务语义使用 `batch_size`、进度、stdout/stderr 和退出码，而不是复用 HTTP 分页响应。
@@ -272,6 +272,8 @@ HTTP 独立定义 `page/limit` 查询协议和 `items + meta` 分页响应，并
 
 共享基础设施 queue 提供 QueueJob、Dispatcher、QueueManager、驱动和 FailedJobStore。ApplicationContainer.queues 与数据库等 Manager 一样按需使用；队列先关闭，数据库后关闭。HTTP 不订阅队列。
 
-独立 `app.worker` 入口由 `app.bootstrap.worker` 完成装配并复用 ApplicationRuntime；`app.interfaces.worker` 只负责 Job 类路径解析、消息执行、重试和消费并发。QueueJob 将可序列化数据与 `handle()` 收敛在同一类，投递时自动把类路径写入消息，Worker 动态导入并验证该类型；框架不扫描 `contexts`、`jobs` 或其他业务目录，不维护业务注册表，应用组合根也不收集 Job。当前示例把任务放在上下文级 `jobs/` 包并按类名使用蛇形命名模块，但这只是组织习惯。当前无参数 `handle()` 不提供应用服务依赖注入，只适合自包含任务；需要业务依赖时应先设计显式的窄接口装配边界。Application/Domain 不导入 Worker、具体队列驱动或全局容器，共享 Infrastructure 不导入具体业务。内置 `LoginSucceededJob` 由登录 HTTP 适配器在会话提交后尽力投递，作为默认队列和 `handle()` 日志输出的最小示例，不进入认证 Application/Domain，也不参与登录事务。
+独立 `app.worker` 入口由 `app.bootstrap.worker` 完成装配并复用 ApplicationRuntime；`app.interfaces.worker` 负责 Job 类路径解析、宿主上下文注入、消息执行、重试和消费并发。QueueJob 将可序列化数据与 `handle(context)` 收敛在同一类，投递时自动把类路径写入消息，Worker 动态导入并验证该类型；框架不扫描 `contexts`、`jobs` 或其他业务目录，不维护业务注册表，应用组合根也不收集 Job。当前示例把任务放在上下文级 `jobs/` 包并按类名使用蛇形命名模块，但这只是组织习惯。
+
+`WorkerContext` 与 `ConsoleContext` 一样，只在宿主/入站适配边界暴露当前配置和已经启动的 `ApplicationContainer`。Job 应优先从容器选择当前上下文的公开应用服务；需要数据库、缓存或外部服务的业务流程，仍由 Application 层定义窄协议并经 composition 注入实现。Application/Domain 不导入 Worker、具体 Manager、队列驱动或全局容器，共享 Infrastructure 不导入具体业务。所有消费槽共享应用级 Manager，任务级 Session、UoW 和事务不能跨 Job 共享。内置 `LoginSucceededJob` 由登录 HTTP 适配器在会话提交后尽力投递，作为默认队列和 `handle(context)` 日志输出的最小示例，不进入认证 Application/Domain，也不参与登录事务。
 
 SQL 失败表属于共享技术能力，在 main metadata 注册；失败写入使用独立短事务，不借用业务 UoW。任务执行和消息确认不是跨系统原子事务。详见[队列](queue.md)、[Worker](worker.md)。

@@ -3,7 +3,7 @@
 import asyncio
 import subprocess
 import sys
-from dataclasses import replace
+from dataclasses import FrozenInstanceError, replace
 from unittest.mock import Mock
 
 import pytest
@@ -18,10 +18,20 @@ from app.infrastructure.queue.errors import QueueError
 from app.infrastructure.queue.failed.sql.model import FailedJobModel
 from app.infrastructure.queue.manager import QueueManager
 from app.interfaces.worker.cli import run_worker
+from app.interfaces.worker.context import WorkerContext
 from app.interfaces.worker.resolver import JobResolver
 from app.worker import app as worker_cli
 from tests.console.test_application import build_settings
 from tests.queue.fakes import FakeQueueBackend, Job, queue_backend_factory
+
+
+def test_worker_host_keeps_an_immutable_settings_snapshot() -> None:
+    settings = build_settings()
+    application = WorkerHost(settings)
+
+    assert application.settings is settings
+    with pytest.raises(FrozenInstanceError):
+        setattr(application, "settings", build_settings())
 
 
 def test_worker_cli_logs_sanitized_unexpected_failure(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -63,7 +73,9 @@ async def test_worker_uses_production_resolver_and_drains_job(monkeypatch: pytes
     stop = asyncio.Event()
     values: list[int] = []
 
-    async def handle(job: Job) -> None:
+    async def handle(job: Job, context: WorkerContext) -> None:
+        assert context.settings is settings
+        assert context.container is container
         values.append(job.value)
         stop.set()
 

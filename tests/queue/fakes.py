@@ -29,11 +29,11 @@ class Codec:
 
 
 @dataclass(frozen=True)
-class Job(QueueJob):
+class Job(QueueJob[object]):
     value: int
     codec: ClassVar[Codec] = Codec()
 
-    async def handle(self) -> None:
+    async def handle(self, context: object) -> None:
         pass
 
 

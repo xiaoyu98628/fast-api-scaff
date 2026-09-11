@@ -8,6 +8,9 @@ import pytest
 
 from app.contexts.user.jobs.login_succeeded import LOGIN_SUCCEEDED_MESSAGE, LoginSucceededJob
 from app.infrastructure.queue.job import describe_job, encode_job, job_reference
+from app.interfaces.worker.context import WorkerContext
+
+_WORKER_CONTEXT = cast(WorkerContext, object())
 
 
 def test_login_succeeded_job_serializes_user_id_and_rejects_custom_message() -> None:
@@ -31,7 +34,7 @@ async def test_login_succeeded_job_logs_fixed_message(caplog: pytest.LogCaptureF
     caplog.set_level(logging.INFO, logger="app.contexts.user.jobs.login_succeeded")
     user_id = uuid7()
 
-    await LoginSucceededJob(user_id=user_id).handle()
+    await LoginSucceededJob(user_id=user_id).handle(_WORKER_CONTEXT)
 
     records = [record for record in caplog.records if getattr(record, "event", None) == "user.login_succeeded"]
     assert [record.getMessage() for record in records] == [LOGIN_SUCCEEDED_MESSAGE]

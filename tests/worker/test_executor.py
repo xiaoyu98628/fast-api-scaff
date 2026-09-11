@@ -4,6 +4,7 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from typing import cast
 from unittest.mock import Mock
 
 import pytest
@@ -12,6 +13,7 @@ import app.interfaces.worker.executor as worker_executor
 from app.infrastructure.queue.errors import RetryableJobError
 from app.infrastructure.queue.job import job_reference
 from app.infrastructure.queue.policies import JobPolicy
+from app.interfaces.worker.context import WorkerContext
 from app.interfaces.worker.executor import JobExecutor
 from app.interfaces.worker.resolver import ExecutableJob
 from app.interfaces.worker.runner import WorkerRunner
@@ -23,13 +25,18 @@ from tests.queue.fakes import (
     create_queue_manager,
 )
 
+_WORKER_CONTEXT = cast(WorkerContext, object())
+
 
 @dataclass(frozen=True, slots=True)
 class StubBinding:
     handler: Callable[[Job], Awaitable[None]]
     policy: JobPolicy = JobPolicy()
+    contexts: list[WorkerContext] | None = None
 
-    async def execute(self, payload: bytes) -> None:
+    async def execute(self, payload: bytes, context: WorkerContext) -> None:
+        if self.contexts is not None:
+            self.contexts.append(context)
         await self.handler(Codec().decode(payload))
 
 
@@ -51,26 +58,29 @@ def resolver(
     handler: Callable[[Job], Awaitable[None]] = discard_job,
     *,
     policy: JobPolicy = JobPolicy(),
+    contexts: list[WorkerContext] | None = None,
 ) -> StubResolver:
-    return StubResolver(StubBinding(handler, policy))
+    return StubResolver(StubBinding(handler, policy, contexts))
 
 
 @pytest.mark.asyncio
 async def test_retry_and_ack_after_success() -> None:
     queues = create_queue_manager()
     attempts: list[int] = []
+    contexts: list[WorkerContext] = []
 
     async def handle(job: Job) -> None:
         attempts.append(job.value)
         if len(attempts) < 3:
             raise RetryableJobError()
 
-    active_resolver = resolver(handle, policy=JobPolicy(backoff_seconds=()))
+    active_resolver = resolver(handle, policy=JobPolicy(backoff_seconds=()), contexts=contexts)
     await queues.dispatch(Job(8))
     async with queues.consume() as consumer:
         delivery = await consumer.receive()
-        await JobExecutor("main", "default", active_resolver, queues.failed_jobs, queues.codec).execute(delivery)
+        await JobExecutor("main", "default", active_resolver, queues.failed_jobs, queues.codec, _WORKER_CONTEXT).execute(delivery)
     assert attempts == [8, 8, 8]
+    assert contexts == [_WORKER_CONTEXT, _WORKER_CONTEXT, _WORKER_CONTEXT]
     assert await queues.failed_jobs.list() == []
     await queues.aclose()
 
@@ -88,7 +98,7 @@ async def test_failed_record_recovery_does_not_execute_again_and_replay_retains_
 
     active_resolver = resolver(handle)
     original_id = await queues.dispatch(Job(9))
-    executor = JobExecutor("main", "default", active_resolver, queues.failed_jobs, queues.codec)
+    executor = JobExecutor("main", "default", active_resolver, queues.failed_jobs, queues.codec, _WORKER_CONTEXT)
     async with queues.consume() as consumer:
         original = await consumer.receive()
 
@@ -137,7 +147,7 @@ async def test_malformed_envelope_and_unknown_job_are_recorded() -> None:
     async with queues.consume() as unused:
         del unused
         consumer = await backend.consumer("default", 1)
-        executor = JobExecutor("main", "default", active_resolver, queues.failed_jobs, queues.codec)
+        executor = JobExecutor("main", "default", active_resolver, queues.failed_jobs, queues.codec, _WORKER_CONTEXT)
         await executor.execute(await consumer.receive())
         await queues.dispatch(Job(1))
         async with queues.consume() as source:
@@ -159,7 +169,7 @@ async def test_failure_store_error_leaves_delivery_unacknowledged() -> None:
     await queues.dispatch(Job(1))
     async with queues.consume() as consumer:
         delivery = await consumer.receive()
-        executor = JobExecutor("main", "default", StubResolver(), BrokenStore(), queues.codec)
+        executor = JobExecutor("main", "default", StubResolver(), BrokenStore(), queues.codec, _WORKER_CONTEXT)
         with pytest.raises(OSError):
             await executor.execute(delivery)
     async with queues.consume() as consumer:
@@ -182,7 +192,7 @@ async def test_timeout_is_classified_without_confusing_business_timeout(own_time
     active_resolver = resolver(handle, policy=JobPolicy(max_attempts=1, timeout_seconds=0.01))
     await queues.dispatch(Job(1))
     async with queues.consume() as consumer:
-        await JobExecutor("main", "default", active_resolver, queues.failed_jobs, queues.codec).execute(await consumer.receive())
+        await JobExecutor("main", "default", active_resolver, queues.failed_jobs, queues.codec, _WORKER_CONTEXT).execute(await consumer.receive())
     reason = (await queues.failed_jobs.list())[0].reason
     assert reason == ("handler_timeout_error" if own_timeout else "execution_timeout")
     await queues.aclose()
@@ -199,7 +209,7 @@ async def test_runner_drains_active_job_and_stops_idle_receivers() -> None:
 
     active_resolver = resolver(handle)
     await queues.dispatch(Job(1))
-    executor = JobExecutor("main", "default", active_resolver, queues.failed_jobs, queues.codec)
+    executor = JobExecutor("main", "default", active_resolver, queues.failed_jobs, queues.codec, _WORKER_CONTEXT)
     async with queues.consume(concurrency=2) as consumer:
         runner = WorkerRunner(concurrency=2, shutdown_timeout=1)
         task = asyncio.create_task(runner.run(consumer, executor, stop))
@@ -225,7 +235,13 @@ async def test_runner_timeout_cancels_inflight_without_ack() -> None:
     await queues.dispatch(Job(1))
     async with queues.consume() as consumer:
         runner = WorkerRunner(concurrency=1, shutdown_timeout=0.01)
-        task = asyncio.create_task(runner.run(consumer, JobExecutor("main", "default", active_resolver, queues.failed_jobs, queues.codec), stop))
+        task = asyncio.create_task(
+            runner.run(
+                consumer,
+                JobExecutor("main", "default", active_resolver, queues.failed_jobs, queues.codec, _WORKER_CONTEXT),
+                stop,
+            )
+        )
         await asyncio.wait_for(started.wait(), 1)
         stop.set()
         await asyncio.wait_for(task, 1)

@@ -14,6 +14,7 @@ from app.infrastructure.queue.contracts.consumer import Delivery
 from app.infrastructure.queue.contracts.failed_store import FailedJobRecord, FailedJobStore
 from app.infrastructure.queue.contracts.message import MessageEnvelope
 from app.infrastructure.queue.errors import InvalidMessageError, RetryableJobError
+from app.interfaces.worker.context import WorkerContext
 from app.interfaces.worker.resolver import ExecutableJob, JobTypeResolver
 
 _logger = logging.getLogger(__name__)
@@ -29,7 +30,7 @@ class ExecutionResult:
     stacktrace: tuple[ExceptionStackFrame, ...] = ()
 
 
-async def run_attempts(binding: ExecutableJob, payload: bytes) -> ExecutionResult:
+async def run_attempts(binding: ExecutableJob, payload: bytes, context: WorkerContext) -> ExecutionResult:
     """按照 JobPolicy 执行任务，并把异常压缩为稳定失败原因。"""
 
     policy = binding.policy
@@ -38,7 +39,7 @@ async def run_attempts(binding: ExecutableJob, payload: bytes) -> ExecutionResul
         failure_error: BaseException | None = None
         try:
             async with timeout:
-                await binding.execute(payload)
+                await binding.execute(payload, context)
             # handler 若吞掉取消，asyncio 可能正常退出但 timeout 已经到期。
             if timeout.expired():
                 return ExecutionResult(attempt, "timeout_suppressed")
@@ -79,6 +80,7 @@ class JobExecutor:
     resolver: JobTypeResolver
     failures: FailedJobStore
     codec: EnvelopeJsonCodec
+    context: WorkerContext
     clock: Callable[[], datetime] = datetime.now
 
     async def execute(self, delivery: Delivery) -> None:
@@ -105,7 +107,7 @@ class JobExecutor:
             except KeyError:
                 result = ExecutionResult(0, "unknown_job")
             else:
-                result = await run_attempts(binding, message.payload)
+                result = await run_attempts(binding, message.payload, self.context)
         if result.failure_reason is not None:
             # 保存成功后才能 ACK，否则失败记录和原消息可能同时丢失。
             await self.failures.save(

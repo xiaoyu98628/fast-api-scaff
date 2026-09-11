@@ -231,7 +231,7 @@ Application Service
 
 合理边界：
 
-- HTTP/Console/Scheduler 等宿主和组合根可以使用容器；
+- HTTP/Console/Worker/Scheduler 等宿主和组合根可以使用容器；
 - 基础设施适配器可以使用指定的 `CacheClient`；
 - application service 依赖业务命名的窄协议；
 - domain 不依赖容器、Manager 或具体驱动。
