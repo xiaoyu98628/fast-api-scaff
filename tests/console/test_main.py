@@ -1,6 +1,7 @@
 """验证 Console 进程入口、退出码和标准流契约。"""
 
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -34,6 +35,7 @@ from app.infrastructure.cache.manager import CacheManager
 from app.infrastructure.database.manager import DatabaseManager
 from app.infrastructure.http.errors import HttpTransportError
 from app.infrastructure.http.manager import HttpClientManager
+from app.infrastructure.logging.context import RuntimeContextFilter
 from app.infrastructure.queue.manager import QueueManager
 from app.infrastructure.vector.manager import VectorStoreManager
 from app.interfaces.console.cli import create_console, run_console
@@ -286,6 +288,29 @@ def test_run_console_preserves_unexpected_programming_error() -> None:
 
     with pytest.raises(RuntimeError, match="unexpected failure"):
         run_console(fail, ConsolePresenter())
+
+
+def test_run_console_binds_command_id_without_leaking(caplog: pytest.LogCaptureFixture) -> None:
+    command_id = UUID("00000000-0000-4000-8000-000000000002")
+    logger = logging.getLogger("app.test.console.context")
+    runtime_filter = RuntimeContextFilter()
+    caplog.handler.addFilter(runtime_filter)
+    caplog.set_level(logging.INFO)
+
+    try:
+        run_console(
+            lambda: logger.info("inside command"),
+            ConsolePresenter(),
+            command_id_factory=lambda: command_id,
+        )
+        logger.info("outside command")
+    finally:
+        caplog.handler.removeFilter(runtime_filter)
+
+    inside = next(record for record in caplog.records if record.getMessage() == "inside command")
+    outside = next(record for record in caplog.records if record.getMessage() == "outside command")
+    assert getattr(inside, "command_id", None) == str(command_id)
+    assert getattr(outside, "command_id", None) is None
 
 
 @pytest.mark.parametrize(("name", "value"), [("HTTP_POOL__MAX_CONNECTIONS", "0"), ("LOG_LEVEL", "invalid")])

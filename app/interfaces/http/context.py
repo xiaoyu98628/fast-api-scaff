@@ -4,13 +4,13 @@ from starlette_context import context
 from starlette_context.header_keys import HeaderKeys
 
 
-def current_request_id() -> str | None:
-    """返回中间件已经校验的请求标识；无请求上下文时返回 None。"""
+def require_request_id() -> str:
+    """返回中间件已经校验的请求标识；上下文契约失效时抛出 RuntimeError。"""
 
     if not context.exists():
-        return None
+        raise RuntimeError("当前 HTTP 请求上下文不存在")
 
     try:
         return str(context[HeaderKeys.request_id])
     except KeyError, RuntimeError:
-        return None
+        raise RuntimeError("当前 HTTP 请求缺少 request ID") from None

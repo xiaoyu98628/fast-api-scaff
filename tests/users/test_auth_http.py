@@ -147,7 +147,7 @@ async def test_login_publisher_uses_default_queue() -> None:
     container = cast(ApplicationContainer, SimpleNamespace(queues=queues))
     user_id = uuid7()
 
-    await _publish_login_succeeded(container, user_id, "request-123")
+    await _publish_login_succeeded(container, user_id, request_id="request-123")
 
     queues.dispatch.assert_awaited_once_with(
         LoginSucceededJob(user_id=user_id),

@@ -17,6 +17,7 @@ from app.config.cache import CacheSettings
 from app.config.cors import CorsSettings
 from app.config.database import DatabaseSettings
 from app.config.settings import Settings
+from app.interfaces.http.context import require_request_id
 from app.interfaces.http.logging import HttpLogEvent
 from app.interfaces.http.middleware.request_id import RequestIdMiddleware
 
@@ -51,8 +52,7 @@ async def test_missing_request_id_is_generated_and_available_in_context() -> Non
 
     @app.get("/request-id")
     async def read_request_id() -> dict[str, str]:
-        request_id = context[HeaderKeys.request_id]
-        assert isinstance(request_id, str)
+        request_id = require_request_id()
         return {"request_id": request_id}
 
     async with create_test_client(app) as client:
@@ -64,6 +64,11 @@ async def test_missing_request_id_is_generated_and_available_in_context() -> Non
     assert UUID(request_id).version == 4
     assert response.json() == {"request_id": request_id}
     assert context.exists() is False
+
+
+def test_required_request_id_rejects_calls_outside_http_context() -> None:
+    with pytest.raises(RuntimeError, match="请求上下文不存在"):
+        require_request_id()
 
 
 @pytest.mark.asyncio

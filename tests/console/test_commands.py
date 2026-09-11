@@ -45,7 +45,11 @@ async def test_console_rejects_unconfigured_failure_database() -> None:
     container = build_application_container(settings)
     try:
         with pytest.raises(QueueError, match="SQL 失败存储数据库未配置"):
-            await list_failures(ConsoleContext(settings, container), limit=20, offset=0)
+            await list_failures(
+                ConsoleContext(settings, container, command_id="command-123"),
+                limit=20,
+                offset=0,
+            )
     finally:
         await container.aclose()
 

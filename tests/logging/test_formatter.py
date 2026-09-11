@@ -7,7 +7,12 @@ from datetime import datetime
 from starlette_context import request_cycle_context
 from starlette_context.header_keys import HeaderKeys
 
-from app.infrastructure.logging.context import JobLogContext, RuntimeContextFilter, bind_job_log_context
+from app.infrastructure.logging.context import (
+    JobLogContext,
+    RuntimeContextFilter,
+    bind_console_log_context,
+    bind_job_log_context,
+)
 from app.infrastructure.logging.formatter import JsonLogFormatter, TextLogFormatter
 from app.infrastructure.logging.record import log_extra, safe_exception_details
 from app.interfaces.http.logging import HttpLogEvent
@@ -66,6 +71,16 @@ def test_json_formatter_keeps_details_nested() -> None:
         "level": "business-value",
         "message": "detail-message",
     }
+
+
+def test_json_formatter_renders_scoped_console_command_id() -> None:
+    formatter = JsonLogFormatter(service="test-service", environment="test", service_version="1.2.3")
+    record = logging.LogRecord("app.test", logging.INFO, __file__, 10, "Command log", (), None)
+
+    with bind_console_log_context("command-123"):
+        RuntimeContextFilter().filter(record)
+
+    assert formatter.build_payload(record)["command_id"] == "command-123"
 
 
 def test_json_formatter_renders_scoped_job_context_and_clears_it() -> None:

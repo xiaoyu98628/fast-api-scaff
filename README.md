@@ -15,7 +15,7 @@
 - 普通与流式 HTTP 出站请求、独立连接池、阶段超时、池压力诊断和结构化日志；
 - Redis Streams、Kafka、RabbitMQ 队列适配器和独立 Worker；
 - QueueJob 动态解析与分发、投递内重试、SQL 失败存储及 Console 重放；
-- JSON/Text 结构化日志、request ID、访问日志和数据库查询日志；
+- JSON/Text 结构化日志、HTTP request ID、Console command ID、Worker 任务关联、访问日志和数据库查询日志；
 - 架构依赖测试、pytest、Ruff、ty 与 GitHub Actions 质量检查；
 - CI 使用临时 MySQL/PostgreSQL 服务验证 Alembic upgrade、downgrade 和再次 upgrade。
 
@@ -83,7 +83,7 @@ uv run python -m app.console users create \
 uv run python -m app.console users list --page 1 --limit 20
 ```
 
-`users create` 会交互式读取并确认密码，输入不回显。命令结果写 stdout，日志和错误写 stderr；退出码 0/1/2 分别表示成功、运行失败和用法错误。
+`users create` 会交互式读取并确认密码，输入不回显。每次 Console 调用生成独立 `command_id` 并自动附加到调用链日志；命令结果写 stdout，日志和错误写 stderr，结果 JSON 不额外包裹该 ID。退出码 0/1/2 分别表示成功、运行失败和用法错误。
 
 ## 登录示例
 

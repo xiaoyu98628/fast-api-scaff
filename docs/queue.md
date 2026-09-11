@@ -21,6 +21,8 @@ async def submit(container: ApplicationContainer, job: object):
 await container.queues.dispatch(job, connection="redis", queue="reports", correlation_id="request-123")
 ```
 
+`correlation_id` 是跨宿主关联字段，不等同于某一种入口 ID。HTTP 生产者传入必有的 request ID；Console 命令主动创建新任务时可传入 `context.command_id`。队列公共入口仍允许省略该字段，以兼容没有 HTTP 或 Console 上游的根任务和既有消息。Console 的失败任务 retry 保留原信封的 correlation ID，并通过新 `job_id` 和 `replay_of` 表达重放关系，不用当前 command ID 覆盖原调用链。
+
 `dispatch()` 不启动消费者；构建容器也不连接队列服务。第一次发布时 Kafka 才建立 Producer，RabbitMQ 在第一次获取 Dispatcher 时建立发布连接，Redis 客户端在首次命令时连接。Kafka Worker 只消费时不会初始化 Producer。后端首次创建、连接或消费者创建阶段的驱动异常会在 `QueueManager` 边界转换为 `QueueError`，已有 `QueueError` 与任务取消保持原语义。
 
 队列名映射为 Redis 的 `prefix + queue`、Kafka Topic、RabbitMQ 同名持久队列。RabbitMQ 使用默认 exchange 和同名 routing key；首版不提供自定义 exchange 或绑定。

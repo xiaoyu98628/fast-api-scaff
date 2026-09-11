@@ -200,11 +200,11 @@ HTTP lifespan、ConsoleHost 和 WorkerHost 都复用 runtime。这样资源的�
 HTTP 与 Console 都调用 `UserApplicationService`，Worker 则解析消息携带的 QueueJob 类型，并通过每条消息的 `JobExecutionContext` 调用其 `handle(context)`：
 
 - HTTP 负责 schema、status、统一 JSON 和异常到 HTTP 映射；
-- Console 负责 Typer 参数、JSON stdout、错误 stderr 和退出码；
+- Console 负责 Typer 参数、每次调用的 command ID、JSON stdout、错误 stderr 和退出码；
 - Worker 负责消息解码、宿主上下文注入、执行策略、并发消费和确认；
 - 三者都不实现业务规则，不直接操作 ORM，也不负责全局启动装配。
 
-HTTP 独立定义 `page/limit` 查询协议和 `items + meta` 分页响应，并在调用应用服务前把页码换算为 `offset/limit`。Console 的 `users list` 也在宿主边界约束 `page` 和 `limit`，但直接输出应用 DTO；后台批处理应根据任务语义使用 `batch_size`、进度、stdout/stderr 和退出码，而不是复用 HTTP 分页响应。
+HTTP 独立定义 `page/limit` 查询协议和 `items + meta` 分页响应，并在调用应用服务前把页码换算为 `offset/limit`。Console 的 `users list` 也在宿主边界约束 `page` 和 `limit`，但直接输出应用 DTO；Console 根入口为每次调用生成 command ID，`ConsoleHost` 在 operation 中复用它，外层没有命令上下文的直接宿主调用则生成独立 ID。后台批处理应根据任务语义使用 `batch_size`、进度、stdout/stderr 和退出码，而不是复用 HTTP 分页响应。
 
 新增宿主时，`interfaces` 只承担协议边界，`bootstrap` 负责日志、组合、生命周期、取消和进程入口。不能因为某个适配器能够 import service，就把启动装配重新放回 `interfaces`。
 

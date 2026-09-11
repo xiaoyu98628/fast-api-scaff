@@ -1,6 +1,7 @@
 """创建 Console 命令树并统一转换进程级失败。"""
 
 from collections.abc import Callable
+from uuid import UUID, uuid4
 
 import typer
 from pydantic import ValidationError
@@ -8,6 +9,7 @@ from pydantic import ValidationError
 from app.infrastructure.cache.errors import CacheError
 from app.infrastructure.database.errors import DatabaseError
 from app.infrastructure.http.errors import HttpError
+from app.infrastructure.logging.context import bind_console_log_context
 from app.infrastructure.logging.errors import LoggingConfigurationError
 from app.infrastructure.queue.errors import QueueError
 from app.infrastructure.vector.errors import VectorError
@@ -18,6 +20,7 @@ from app.interfaces.console.presentation import ConsolePresenter
 from app.interfaces.console.registry import ConsoleCommandRegistry
 
 type ConsoleEntrypoint = Callable[[], None]
+type CommandIdFactory = Callable[[], UUID]
 
 
 def create_console(console: ConsoleExecutor) -> typer.Typer:
@@ -60,12 +63,18 @@ def create_console(console: ConsoleExecutor) -> typer.Typer:
     return application
 
 
-def run_console(entrypoint: ConsoleEntrypoint, presenter: ConsolePresenter) -> None:
+def run_console(
+    entrypoint: ConsoleEntrypoint,
+    presenter: ConsolePresenter,
+    *,
+    command_id_factory: CommandIdFactory = uuid4,
+) -> None:
     """执行 Console 入口并将可预期运行错误转换为稳定退出码。"""
 
-    try:
-        entrypoint()
-    except (ValidationError, LoggingConfigurationError, DatabaseError, CacheError, HttpError, QueueError, VectorError) as error:
-        # 仅转换配置和基础设施边界错误，未知编程错误保留原始堆栈。
-        presenter.error(error)
-        raise SystemExit(ConsoleExitCode.FAILURE) from None
+    with bind_console_log_context(str(command_id_factory())):
+        try:
+            entrypoint()
+        except (ValidationError, LoggingConfigurationError, DatabaseError, CacheError, HttpError, QueueError, VectorError) as error:
+            # 仅转换配置和基础设施边界错误，未知编程错误保留原始堆栈。
+            presenter.error(error)
+            raise SystemExit(ConsoleExitCode.FAILURE) from None
