@@ -153,6 +153,8 @@ Repository 的 `update()` 使用 `id + version` 条件写入完整聚合并递�
 
 无法识别的完整性错误原样抛出，最终按内部错误处理。这样做很重要：外键失败、非空约束、check constraint 或未知唯一约束都不应该被谎报为“用户名已存在”。
 
+Console 根入口会把 SQLAlchemy 的连接中断、接口错误、连接池超时和 `OperationalError` 转换为 `DatabaseOperationError`，向 stderr 输出不包含 SQL、地址或驱动消息的稳定提示并返回退出码 1。`IntegrityError` 不属于这一转换范围，仍按上述约束识别规则处理；未知完整性错误和纯编程错误保留原始异常，避免被误报为已知业务冲突。
+
 增加或重命名约束时，必须同时检查：
 
 1. SQLAlchemy naming convention 和生成后的物理约束名；

@@ -163,16 +163,22 @@ class MilvusVectorClient:
 
         if await self.has_collection(spec.name):
             raise VectorCollectionConflictError(f"Milvus Collection {spec.name!r} 已存在")
-        await self._backend.call(
-            "create_collection",
-            collection_name=spec.name,
-            dimension=spec.dimension,
-            id_type="string",
-            metric_type=_METRICS[spec.metric],
-            auto_id=False,
-            enable_dynamic_field=True,
-            timeout=self._timeout,
-        )
+        try:
+            await self._backend.call(
+                "create_collection",
+                collection_name=spec.name,
+                dimension=spec.dimension,
+                id_type="string",
+                metric_type=_METRICS[spec.metric],
+                auto_id=False,
+                enable_dynamic_field=True,
+                timeout=self._timeout,
+            )
+        except VectorOperationError as error:
+            # 创建前检查不能消除并发竞态；失败后的真实状态决定稳定冲突语义。
+            if await self.has_collection(spec.name):
+                raise VectorCollectionConflictError(f"Milvus Collection {spec.name!r} 已存在") from error
+            raise
         self._metrics[spec.name] = spec.metric
 
     async def has_collection(self, name: str) -> bool:
@@ -205,7 +211,14 @@ class MilvusVectorClient:
         """删除 Milvus Collection，并清理本地结构缓存。"""
 
         await self._require_collection(name)
-        await self._backend.call("drop_collection", collection_name=name, timeout=self._timeout)
+        try:
+            await self._backend.call("drop_collection", collection_name=name, timeout=self._timeout)
+        except VectorOperationError as error:
+            # 以失败后的状态识别检查与删除之间发生的并发删除。
+            if not await self.has_collection(name):
+                self._metrics.pop(name, None)
+                raise VectorCollectionNotFoundError(f"Milvus Collection {name!r} 不存在") from error
+            raise
         self._metrics.pop(name, None)
 
     async def upsert(self, collection: str, points: tuple[VectorPoint, ...]) -> None:
@@ -308,7 +321,10 @@ class MilvusVectorProvider:
 
 async def _create_local_resource(settings: MilvusLocalVectorSettings) -> VectorResource:
     path = settings.resolved_path
-    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as error:
+        raise VectorConnectionError("无法创建 Milvus Lite 数据目录") from error
     limiter = CapacityLimiter(1)
     sdk = await to_thread.run_sync(_load_milvus_sdk, abandon_on_cancel=False, limiter=limiter)
     try:

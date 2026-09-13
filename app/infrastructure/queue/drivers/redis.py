@@ -21,11 +21,16 @@ local acknowledged = redis.call('XACK', KEYS[1], ARGV[1], ARGV[3])
 if acknowledged == 1 then redis.call('XDEL', KEYS[1], ARGV[3]) end
 return acknowledged
 """
-_OWNED_RENEW = """
-local p = redis.call('XPENDING', KEYS[1], ARGV[1], ARGV[3], ARGV[3], 1)
-if #p == 0 or p[1][2] ~= ARGV[2] then return 0 end
-redis.call('XCLAIM', KEYS[1], ARGV[1], ARGV[2], 0, ARGV[3], 'JUSTID')
-return 1
+_OWNED_RENEW_BATCH = """
+for index = 3, #ARGV do
+    local identity = ARGV[index]
+    local pending = redis.call('XPENDING', KEYS[1], ARGV[1], identity, identity, 1)
+    if #pending == 0 or pending[1][2] ~= ARGV[2] then return {0, identity} end
+end
+for index = 3, #ARGV do
+    redis.call('XCLAIM', KEYS[1], ARGV[1], ARGV[2], 0, ARGV[index], 'JUSTID')
+end
+return {1}
 """
 
 
@@ -134,17 +139,31 @@ class RedisConsumer:
         try:
             while True:
                 await asyncio.sleep(self.lease / 3)
-                async with asyncio.timeout(self.lease / 3), self.lock:
-                    for delivery in tuple(self.pending.values()):
-                        result = await self.client.eval(_OWNED_RENEW, 1, self.stream, self.group, self.name, delivery.identity)
-                        if result != 1:
-                            raise DeliveryLostError("Redis 续租失败或所有权丢失")
+                await self._renew_pending()
         except Exception:
             # 所有权不再可信时取消对应执行任务，让 Worker 按故障路径退出。
             for delivery in self.pending.values():
                 if delivery.owner is not None:
                     delivery.owner.cancel()
             raise
+
+    async def _renew_pending(self) -> None:
+        """在单次 Lua 调用中检查所有权并批量续租当前在途消息。"""
+
+        async with asyncio.timeout(self.lease / 3), self.lock:
+            identities = tuple(self.pending)
+            if not identities:
+                return
+            result = await self.client.eval(
+                _OWNED_RENEW_BATCH,
+                1,
+                self.stream,
+                self.group,
+                self.name,
+                *identities,
+            )
+            if not isinstance(result, (list, tuple)) or not result or result[0] != 1:
+                raise DeliveryLostError("Redis 续租失败或所有权丢失")
 
     async def aclose(self) -> None:
         """停止接收和续租，让未确认消息在租约过期后可被接管。"""

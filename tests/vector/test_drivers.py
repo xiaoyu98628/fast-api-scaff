@@ -5,7 +5,9 @@ import os
 import subprocess
 import sys
 from collections.abc import Mapping
+from pathlib import Path
 from typing import cast
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -13,7 +15,13 @@ import app.infrastructure.vector.drivers.chroma as chroma_driver
 import app.infrastructure.vector.drivers.elasticsearch as elasticsearch_driver
 import app.infrastructure.vector.drivers.milvus as milvus_driver
 from app.config.vector import VectorSettings
-from app.infrastructure.vector.errors import VectorConfigurationError, VectorConnectionError
+from app.infrastructure.vector.errors import (
+    VectorCollectionConflictError,
+    VectorCollectionNotFoundError,
+    VectorConfigurationError,
+    VectorConnectionError,
+    VectorOperationError,
+)
 from app.infrastructure.vector.manager import VectorStoreManager
 from app.infrastructure.vector.models import VectorCollectionInfo, VectorCollectionSpec, VectorMetric, VectorPoint
 from app.runtime.paths import PROJECT_ROOT
@@ -260,6 +268,58 @@ async def test_milvus_remote_maps_invalid_address_to_configuration_error() -> No
         await manager.get()
 
     await manager.aclose()
+
+
+@pytest.mark.asyncio
+async def test_milvus_local_maps_directory_creation_failure(tmp_path: Path) -> None:
+    blocking_file = tmp_path / "not-a-directory"
+    blocking_file.write_text("occupied")
+    manager = VectorStoreManager(
+        VectorSettings(
+            default="local",
+            connections={"local": {"driver": "milvus", "mode": "local", "path": str(blocking_file / "milvus.db")}},
+            _env_file=None,
+        )
+    )
+
+    with pytest.raises(VectorConnectionError, match="无法创建 Milvus Lite 数据目录"):
+        await manager.get()
+
+    await manager.aclose()
+
+
+@pytest.mark.asyncio
+async def test_milvus_maps_collection_creation_race_to_conflict() -> None:
+    backend = Mock()
+    backend.call = AsyncMock(side_effect=[False, VectorOperationError("create failed"), True])
+    client = milvus_driver.MilvusVectorClient(cast(milvus_driver._MilvusBackend, backend), timeout=1)
+
+    with pytest.raises(VectorCollectionConflictError, match="已存在"):
+        await client.create_collection(VectorCollectionSpec(name="knowledge", dimension=2))
+
+    assert [call.args[0] for call in backend.call.await_args_list] == [
+        "has_collection",
+        "create_collection",
+        "has_collection",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_milvus_maps_collection_deletion_race_to_not_found() -> None:
+    backend = Mock()
+    backend.call = AsyncMock(side_effect=[True, VectorOperationError("drop failed"), False])
+    client = milvus_driver.MilvusVectorClient(cast(milvus_driver._MilvusBackend, backend), timeout=1)
+    client._metrics["knowledge"] = VectorMetric.COSINE
+
+    with pytest.raises(VectorCollectionNotFoundError, match="不存在"):
+        await client.delete_collection("knowledge")
+
+    assert "knowledge" not in client._metrics
+    assert [call.args[0] for call in backend.call.await_args_list] == [
+        "has_collection",
+        "drop_collection",
+        "has_collection",
+    ]
 
 
 @pytest.mark.asyncio

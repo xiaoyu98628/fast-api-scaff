@@ -6,7 +6,7 @@ import typer
 from pydantic import ValidationError
 
 from app.infrastructure.cache.errors import CacheError
-from app.infrastructure.database.errors import DatabaseError
+from app.infrastructure.database.errors import DatabaseError, translate_database_error
 from app.infrastructure.http.errors import HttpError
 from app.infrastructure.logging.errors import LoggingConfigurationError
 from app.infrastructure.queue.errors import QueueError
@@ -77,4 +77,10 @@ def run_console(
         except (ValidationError, LoggingConfigurationError, DatabaseError, CacheError, HttpError, QueueError, VectorError) as error:
             # 仅转换配置和基础设施边界错误，未知编程错误保留原始堆栈。
             presenter.error(error)
+            raise SystemExit(ConsoleExitCode.FAILURE) from None
+        except Exception as error:
+            database_error = translate_database_error(error)
+            if database_error is None:
+                raise
+            presenter.error(database_error)
             raise SystemExit(ConsoleExitCode.FAILURE) from None

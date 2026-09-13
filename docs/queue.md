@@ -113,11 +113,11 @@ class LoadUserJob(QueueJob[JobExecutionContext]):
 
 | 后端 | 行为与边界 |
 | --- | --- |
-| Redis | Streams + Consumer Group，消费时创建组并从 0-0 起读；XAUTOCLAIM 恢复超时 pending；后台续租；Lua 检查所有者后原子 XACK + XDEL；command_timeout 独立于发布超时；失败退出后等待租约过期恢复 |
+| Redis | Streams + Consumer Group，消费时创建组并从 0-0 起读；XAUTOCLAIM 恢复超时 pending；单次 Lua 调用检查并批量续租全部在途消息；Lua 检查所有者后原子 XACK + XDEL；command_timeout 独立于发布超时；失败退出后等待租约过期恢复 |
 | Kafka | 禁止自动 offset 提交；每个分区最多一条在途，成功提交 offset+1 后恢复该分区；跨分区并发；新分配分区的首条消息保守标记为可能重投；再均衡取消当前执行并使旧 delivery 失效，Worker 退出报告故障 |
 | RabbitMQ | 默认 exchange、同名 durable 队列、persistent 消息、发布确认和 mandatory；手动 ACK，prefetch 等于并发数；关闭消费 channel 后未确认消息由服务端恢复 |
 
-Redis 使用 XAUTOCLAIM，需 Redis 6.2+。执行成功，或失败记录已可靠保存后，所有者检查、XACK 和 XDEL 在同一 Lua 脚本中完成，已处理条目不继续占用 Stream。因此 Redis 适配器是竞争消费的工作队列，不支持在同一 Stream 上用多个消费组做广播；广播需使用独立队列或后端原生事件模型。Kafka Topic 及其保留策略由使用者管理，框架不调用管理 API 创建 Topic；保留时间必须覆盖处理与恢复窗口。
+Redis 使用 XAUTOCLAIM，需 Redis 6.2+。续租脚本先确认全部在途消息仍属于当前消费者，再在一次 Redis 调用中刷新租约；任何消息缺失或已经换主都会使本轮失败并取消对应执行任务。执行成功，或失败记录已可靠保存后，所有者检查、XACK 和 XDEL 在同一 Lua 脚本中完成，已处理条目不继续占用 Stream。因此 Redis 适配器是竞争消费的工作队列，不支持在同一 Stream 上用多个消费组做广播；广播需使用独立队列或后端原生事件模型。Kafka Topic 及其保留策略由使用者管理，框架不调用管理 API 创建 Topic；保留时间必须覆盖处理与恢复窗口。
 
 ## 4. 失败存储与重放
 
