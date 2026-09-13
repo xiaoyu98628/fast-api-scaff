@@ -14,6 +14,7 @@ import pytest
 import typer
 from click import unstyle
 from pydantic import ValidationError
+from sqlalchemy.exc import IntegrityError, OperationalError
 from typer.testing import CliRunner
 
 from app.bootstrap.console.application import ConsoleHost
@@ -280,6 +281,33 @@ def test_run_console_renders_outbound_http_error(capsys: pytest.CaptureFixture[s
     assert exit_error.value.code == ConsoleExitCode.FAILURE
     assert output.out == ""
     assert output.err.strip() == "Error: 上游服务不可用"
+
+
+def test_run_console_renders_database_operation_error_without_driver_details(capsys: pytest.CaptureFixture[str]) -> None:
+    def fail() -> None:
+        raise OperationalError("SELECT secret", {}, ConnectionError("database.internal"))
+
+    with pytest.raises(SystemExit) as exit_error:
+        run_console(fail, ConsolePresenter())
+
+    output = capsys.readouterr()
+    assert exit_error.value.code == ConsoleExitCode.FAILURE
+    assert output.out == ""
+    assert output.err.strip() == "Error: 数据库操作失败"
+    assert "secret" not in output.err
+    assert "database.internal" not in output.err
+
+
+def test_run_console_preserves_unknown_integrity_error() -> None:
+    error = IntegrityError("INSERT", {}, RuntimeError("unknown constraint"))
+
+    def fail() -> None:
+        raise error
+
+    with pytest.raises(IntegrityError) as captured_error:
+        run_console(fail, ConsolePresenter())
+
+    assert captured_error.value is error
 
 
 def test_run_console_preserves_unexpected_programming_error() -> None:

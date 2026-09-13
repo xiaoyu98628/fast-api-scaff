@@ -174,6 +174,34 @@ async def test_redis_owner_loss_does_not_ack() -> None:
 
 
 @pytest.mark.asyncio
+async def test_redis_renews_all_pending_deliveries_in_one_lua_call() -> None:
+    client = Mock(eval=AsyncMock(return_value=[1]))
+    consumer = RedisConsumer(cast(Redis, client), "jobs", RedisQueueSettings(driver="redis", host="localhost"))
+    first = RedisDelivery(consumer, "1-0", b"one", possibly_redelivered=False)
+    second = RedisDelivery(consumer, "2-0", b"two", possibly_redelivered=False)
+    consumer.pending = {first.identity: first, second.identity: second}
+
+    await consumer._renew_pending()
+
+    client.eval.assert_awaited_once()
+    assert "XPENDING" in client.eval.call_args.args[0]
+    assert "XCLAIM" in client.eval.call_args.args[0]
+    assert client.eval.call_args.args[2:] == ("jobs", "workers", consumer.name, "1-0", "2-0")
+
+
+@pytest.mark.asyncio
+async def test_redis_batch_renewal_rejects_any_lost_delivery() -> None:
+    client = Mock(eval=AsyncMock(return_value=[0, b"2-0"]))
+    consumer = RedisConsumer(cast(Redis, client), "jobs", RedisQueueSettings(driver="redis", host="localhost"))
+    first = RedisDelivery(consumer, "1-0", b"one", possibly_redelivered=False)
+    second = RedisDelivery(consumer, "2-0", b"two", possibly_redelivered=False)
+    consumer.pending = {first.identity: first, second.identity: second}
+
+    with pytest.raises(DeliveryLostError, match="所有权丢失"):
+        await consumer._renew_pending()
+
+
+@pytest.mark.asyncio
 async def test_redis_new_message_uses_manual_group_read() -> None:
     client = Mock()
     client.xautoclaim = AsyncMock(return_value=[b"0-0", [], []])
