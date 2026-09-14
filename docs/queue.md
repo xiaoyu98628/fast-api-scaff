@@ -103,7 +103,7 @@ class LoadUserJob(QueueJob[JobExecutionContext]):
 
 类路径属于队列消息契约。移动或重命名 Job 时，尚未消费的消息仍引用旧路径；应在旧模块暂时保留一个指向新类的显式导入，待旧队列排空后再删除。动态导入以队列服务是内部可信资源为前提，默认拒绝应用根包之外的类路径。`app.main`、`app.console`、`app.worker`、`app.bootstrap` 及其子模块始终在导入前拒绝，归类为 `unknown_job`，不能通过扩展白名单放开。Job 应放在无宿主初始化副作用的业务模块中；该检查不会隔离合法业务模块自身的导入副作用。
 
-当前内置 `LoginSucceededJob` 作为最小业务示例：登录 HTTP 适配器在会话提交后向默认队列尽力投递 `user_id` 参数和固定文案，Dispatcher 自动把当前 request ID 写入消息的 `correlation_id`；Worker 调用其 `handle(context)` 记录该文案和结构化用户 ID。任务不携带用户名、密码或 Token；发布失败不改变登录响应。`user_id` 暂时可空，以兼容队列中已经存在的旧消息。该通知不具备 Outbox 或 exactly-once 保证，不应用于审计或安全决策。
+当前内置 `LoginSucceededJob` 作为最小业务示例：登录 HTTP 适配器在会话提交后向默认队列尽力投递 `user_id` 参数和固定文案，Dispatcher 自动把当前 request ID 写入消息的 `correlation_id`；Worker 调用其 `handle(context)`，再通过 `context.container.users.service.get(user_id)` 使用数据库读取当前用户，最后记录文案、结构化用户 ID 和公开用户快照。消息本身不携带用户名、密码或 Token；日志包含执行时的用户名、邮箱、状态和创建/更新时间，不包含认证秘密。用户已删除属于永久业务状态，任务记录 `user.login_succeeded.user_missing` 后结束；数据库运行故障继续由投递内重试和失败存储处理。`user_id` 暂时可空，以兼容队列中已经存在的旧消息，旧消息会跳过数据库查询。发布失败不改变登录响应。该通知不具备 Outbox 或 exactly-once 保证，不应用于审计或安全决策。
 
 ## 3. 信封与交付保证
 

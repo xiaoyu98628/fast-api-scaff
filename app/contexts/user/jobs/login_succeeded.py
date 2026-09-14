@@ -1,9 +1,11 @@
-"""提供登录成功后的最小异步任务示例。"""
+"""提供登录成功后通过应用服务读取用户数据的异步任务示例。"""
 
 import logging
 from dataclasses import dataclass
 from uuid import UUID
 
+from app.contexts.user.application.dto import UserDTO
+from app.contexts.user.application.errors import UserNotFoundError
 from app.infrastructure.logging.record import log_extra
 from app.infrastructure.queue.job import QueueJob
 from app.interfaces.worker.context import JobExecutionContext
@@ -14,7 +16,7 @@ _logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True, slots=True)
 class LoginSucceededJob(QueueJob[JobExecutionContext]):
-    """记录固定登录成功事件，不携带用户名、密码或 Token。"""
+    """携带用户 ID，并在 Worker 执行时读取当前用户快照。"""
 
     # 可空用于兼容增加 user_id 字段前已经进入队列的消息。
     user_id: UUID | None = None
@@ -29,12 +31,44 @@ class LoginSucceededJob(QueueJob[JobExecutionContext]):
             raise ValueError("登录成功任务消息不合法")
 
     async def handle(self, context: JobExecutionContext) -> None:
-        """输出固定文案，并把用户 ID 放入结构化日志详情。"""
+        """通过用户应用服务查询数据库，并记录不含认证秘密的用户快照。"""
+
+        if self.user_id is None:
+            # 旧消息没有用户 ID，无法查询数据库；保留原有可消费行为。
+            _logger.info(
+                self.message,
+                extra=log_extra("user.login_succeeded", user_id=None, user=None),
+            )
+            return
+
+        try:
+            user = await context.container.users.service.get(self.user_id)
+        except UserNotFoundError:
+            # 登录和异步消费之间允许用户被删除；重试不会改变这一永久状态。
+            _logger.warning(
+                "登录成功任务执行时用户已不存在。",
+                extra=log_extra("user.login_succeeded.user_missing", user_id=str(self.user_id)),
+            )
+            return
 
         _logger.info(
             self.message,
             extra=log_extra(
                 "user.login_succeeded",
-                user_id=str(self.user_id) if self.user_id is not None else None,
+                user_id=str(self.user_id),
+                user=_user_log_data(user),
             ),
         )
+
+
+def _user_log_data(user: UserDTO) -> dict[str, str]:
+    """把公开用户 DTO 转成稳定的结构化日志字段。"""
+
+    return {
+        "id": str(user.id),
+        "username": user.username,
+        "email": user.email,
+        "status": user.status.value,
+        "created_at": user.created_at.isoformat(),
+        "updated_at": user.updated_at.isoformat(),
+    }

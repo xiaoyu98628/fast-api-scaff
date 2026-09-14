@@ -21,7 +21,7 @@ docker compose up --build worker
 
 `docker compose up --build` 默认同时启动 `service` 和 `worker`；只需要 HTTP 时使用 `docker compose up --build service`。Compose 中的 `worker` 服务复用应用镜像、`.env` 和网络，不暴露端口，也不配置只适用于 HTTP 的健康检查。镜像本身不声明健康检查，Compose 只为 HTTP 服务检测 `/health`。Worker 不会自动创建队列服务；`.env` 必须配置容器可访问的 Redis、Kafka 或 RabbitMQ 地址。容器内的 `127.0.0.1` 是 Worker 容器自身。
 
-脚手架内置 `LoginSucceededJob` 最小任务。登录接口向默认连接配置的默认队列（`sample.env` 为 `default`）尽力投递 `user_id` 参数和固定文案，Dispatcher 自动把当前 HTTP request ID 作为 correlation ID；Worker 调用它的 `handle(context)` 输出“用户登录成功，队列任务已执行。”并记录结构化用户 ID。任务不含用户名、密码或 Token。`user_id` 暂时可空，以兼容队列中已经存在的旧消息。`sample.env` 以 Redis 为默认连接，因此 Worker 可以不带参数启动。
+脚手架内置 `LoginSucceededJob` 最小任务。登录接口向默认连接配置的默认队列（`sample.env` 为 `default`）尽力投递 `user_id` 参数和固定文案，Dispatcher 自动把当前 HTTP request ID 作为 correlation ID；Worker 调用它的 `handle(context)`，通过用户应用服务查询数据库，再输出“用户登录成功，队列任务已执行。”并记录结构化用户 ID、用户名、邮箱、状态和创建/更新时间。消息不含用户名、密码或 Token，日志不含密码、密码哈希或 Token；读取的是消费时的当前数据。用户已删除时记录警告并结束，数据库故障按现有策略重试。`user_id` 暂时可空，以兼容队列中已经存在的旧消息；旧消息不执行数据库查询。`sample.env` 以 Redis 为默认连接，因此 Worker 可以不带参数启动。
 
 新增任务时，继承 `QueueJob[JobExecutionContext]`、声明可序列化字段并实现异步 `handle(context)`。投递端自动把实际类路径写入消息；Worker 收到后动态导入、验证、解码并执行，不扫描业务目录，也不需要修改上下文 composition 或应用组合根。payload 契约升级时递增 `version`，并按需要在 `legacy_decoders` 中把历史 payload 转换成当前 Job 类型。完整示例见[队列](queue.md#job-版本兼容)。
 
