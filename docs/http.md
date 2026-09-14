@@ -241,3 +241,79 @@ Controller 应只负责：
 - `f` 是编码而非加密。
 
 数据库相关错误见[数据库](database.md)，请求日志见[日志](logging.md)，综合症状见[故障排查](troubleshooting.md)。
+
+
+## 12. 统一 SSE 响应
+
+SSE 通过 Controller 异步生成器逐条发送事件。`SseResponse` 继承 FastAPI 的 `ServerSentEvent`，表示单条事件；整个 HTTP 流使用路由装饰器中的 `response_class=EventSourceResponse`。项目提供统一工厂与依赖注入，未注册额外的 SSE 示例端点。
+
+响应目录按类型与构造职责组织，所有 `__init__.py` 保持空文件：
+
+```text
+shared/response/
+├── json.py              # JsonResponse
+├── sse.py               # SseResponse
+├── factories/
+│   ├── json.py          # JsonResponseFactory
+│   └── sse.py           # SseResponseFactory
+└── codes/               # 共用响应码契约与构造器
+```
+
+JSON 工厂的导入路径由 `app.interfaces.http.shared.response.factory` 调整为 `app.interfaces.http.shared.response.factories.json`；JSON 载荷与 `JsonResponseFactoryDependency` 调用不变。SSE 工厂定义于 `app.interfaces.http.shared.response.factories.sse`。两个工厂均由 HTTP 宿主装配，共享当前应用的 `ResponseCodeBuilder`，不进入 Application 层。
+
+在自己的 Controller 中声明并注册路由，例如：
+
+```python
+from collections.abc import AsyncIterator
+
+from fastapi import APIRouter
+from fastapi.sse import EventSourceResponse
+
+from app.interfaces.http.dependencies.response import SseResponseFactoryDependency
+from app.interfaces.http.shared.response.sse import SseResponse
+
+router = APIRouter()
+
+
+@router.get("/stream", response_class=EventSourceResponse)
+async def stream(responses: SseResponseFactoryDependency) -> AsyncIterator[SseResponse]:
+    """演示发送两条数据并通知客户端完成。"""
+
+    yield responses.success({"content": "第一段"}, id="1")
+    yield responses.success({"content": "第二段"}, id="2")
+    yield responses.done()
+```
+
+统一调用规则：
+
+| 调用 | 事件与载荷 |
+| --- | --- |
+| `success(data, *, event="message", id=None, retry=None)` | 直接把业务数据写入 SSE `data`，不附加成功码、文案或统一 JSON 外壳；`None` 编码为 JSON `null` |
+| `error(code=ErrorCode.INTERNAL_ERROR, *, message=None, data=None)` | 固定 `business_error` 事件；包含完整 `code` 和 `message`，可选 `data` 为 `None` 时省略 |
+| `done()` | 固定 `done` 事件，载荷为 `{}` |
+
+`success` 的 `event` 不能为空或使用保留名称 `business_error`、`done`；事件名、ID 和 retry 同时遵守原生 SSE 字段校验。业务数据必须可以序列化为 JSON；`retry` 单位为毫秒。ID 只是事件标识，不自动提供断点续传。
+
+已知业务失败使用共用或上下文错误码，例如在生成器的已知错误分支中：
+
+```python
+from app.interfaces.http.shared.response.codes.error_code import ErrorCode
+
+# 放在异步生成器的已知失败分支中。
+yield responses.error(ErrorCode.RESOURCE_NOT_FOUND, message="任务不存在")
+return
+```
+
+服务编码为 `001` 时，上述错误的实际事件格式为：
+
+```text
+event: business_error
+data: {"code":"4040010102","message":"任务不存在"}
+
+```
+
+`message` 未显式提供时使用错误码默认文案；显式空字符串会保留。只接受 4xx/5xx 错误码。流内错误码表示该事件的失败结果，不改变已经发送的 HTTP 状态；不要把它解释为连接返回了 HTTP 404。
+
+正常完成时发送 `done` 并结束生成器；已知失败时发送 `business_error` 并结束生成器，不再发送 `done`。工厂只构造事件，不自动终止流或捕获异常。客户端收到任一终止事件后应关闭连接，避免自动重连。鉴权和可提前执行的检查应放在依赖中，在发送响应头前走现有 JSON 错误映射；流开始后的未知异常仍交给现有异常日志与连接终止机制。
+
+Request ID 通过现有 `X-Request-ID` 响应头关联，不自动注入事件载荷。实际业务流应通过 `try/finally` 或异步上下文管理器释放订阅和上游资源，取消异常应继续传播；不要让数据库事务占用整个长连接。Application 层提供业务数据，HTTP Controller 负责转换为 SSE 事件。

@@ -1,0 +1,147 @@
+"""验证 SSE 工厂协议、HTTP 装配、错误边界与断开清理。"""
+
+import asyncio
+import json
+from collections.abc import AsyncIterator
+
+import pytest
+from fastapi import Depends, HTTPException
+from fastapi.sse import EventSourceResponse
+from httpx2 import ASGITransport, AsyncClient
+from starlette.types import Message
+
+from app.bootstrap.http.application import create_app
+from app.interfaces.http.dependencies.response import SseResponseFactoryDependency
+from app.interfaces.http.shared.response.codes.builder import ResponseCodeBuilder
+from app.interfaces.http.shared.response.codes.contract import CodeDefinition
+from app.interfaces.http.shared.response.codes.error_code import ErrorCode
+from app.interfaces.http.shared.response.codes.success_code import SuccessCode
+from app.interfaces.http.shared.response.factories.sse import SseResponseFactory
+from app.interfaces.http.shared.response.sse import SseResponse
+from tests.http.test_response import build_settings
+
+
+def test_error_payload_reuses_codes_and_omits_optional_data() -> None:
+    factory = SseResponseFactory(ResponseCodeBuilder("321"))
+    assert factory.error().data == {"code": "5003210101", "message": ErrorCode.INTERNAL_ERROR.message}
+    error = factory.error(ErrorCode.RESOURCE_NOT_FOUND, message="", data={"task": 1})
+    assert error.event == "business_error"
+    assert error.data == {"code": "4043210102", "message": "", "data": {"task": 1}}
+    custom = CodeDefinition(code="1234", message="任务失败", status_code=409)
+    assert factory.error(custom).data == {"code": "4093211234", "message": "任务失败"}
+    with pytest.raises(ValueError, match="4xx 或 5xx"):
+        factory.error(SuccessCode.OK)
+
+
+@pytest.mark.parametrize("event", ["", "done", "business_error", "delta\ninjected", "delta\rinjected"])
+def test_success_rejects_invalid_event_names(event: str) -> None:
+    with pytest.raises(ValueError):
+        SseResponseFactory(ResponseCodeBuilder("001")).success({}, event=event)
+
+
+@pytest.mark.parametrize("event_id", ["1\n2", "1\r2", "1\x002"])
+def test_success_rejects_invalid_ids(event_id: str) -> None:
+    with pytest.raises(ValueError):
+        SseResponseFactory(ResponseCodeBuilder("001")).success({}, id=event_id)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("service_code", ["001", "321"])
+async def test_http_sse_payloads_headers_and_openapi(service_code: str) -> None:
+    app = create_app(build_settings(service_code))
+
+    @app.get("/stream", response_class=EventSourceResponse)
+    async def stream(responses: SseResponseFactoryDependency) -> AsyncIterator[SseResponse]:
+        yield responses.success({"content": "你好\n世界"}, event="delta", id="1", retry=1000)
+        yield responses.success(None)
+        yield responses.done()
+
+    @app.get("/failure", response_class=EventSourceResponse)
+    async def failure(responses: SseResponseFactoryDependency) -> AsyncIterator[SseResponse]:
+        yield responses.error(ErrorCode.RESOURCE_NOT_FOUND)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/stream")
+        failure_response = await client.get("/failure")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert response.headers["x-request-id"]
+    assert response.headers["x-accel-buffering"] == "no"
+    blocks = response.text.strip().split("\n\n")
+    first = dict(line.split(": ", 1) for line in blocks[0].splitlines())
+    assert first == {"event": "delta", "data": first["data"], "id": "1", "retry": "1000"}
+    assert json.loads(first["data"]) == {"content": "你好\n世界"}
+    assert blocks[1] == "event: message\ndata: null"
+    assert blocks[2] == "event: done\ndata: {}"
+    assert failure_response.status_code == 200
+    error_lines = failure_response.text.strip().splitlines()
+    assert error_lines[0] == "event: business_error"
+    assert json.loads(error_lines[1].removeprefix("data: ")) == {
+        "code": f"404{service_code}0102",
+        "message": ErrorCode.RESOURCE_NOT_FOUND.message,
+    }
+    content = app.openapi()["paths"]["/stream"]["get"]["responses"]["200"]["content"]
+    assert "text/event-stream" in content
+    assert "application/json" not in content
+    assert app.state.json_response_factory.code_builder is app.state.sse_response_factory.code_builder
+
+
+@pytest.mark.asyncio
+async def test_dependency_failure_remains_json_before_stream() -> None:
+    app = create_app(build_settings())
+
+    async def reject() -> None:
+        raise HTTPException(status_code=401, detail="需要登录")
+
+    @app.get("/stream", response_class=EventSourceResponse, dependencies=[Depends(reject)])
+    async def stream(responses: SseResponseFactoryDependency) -> AsyncIterator[SseResponse]:
+        yield responses.done()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/stream")
+    assert response.status_code == 401
+    assert response.headers["content-type"].startswith("application/json")
+    assert response.json()["success"] is False
+
+
+@pytest.mark.asyncio
+async def test_disconnect_finalizes_generator() -> None:
+    app = create_app(build_settings())
+    sent = asyncio.Event()
+    closed = asyncio.Event()
+
+    @app.get("/stream", response_class=EventSourceResponse)
+    async def stream(responses: SseResponseFactoryDependency) -> AsyncIterator[SseResponse]:
+        try:
+            yield responses.success({"value": 1})
+            await asyncio.Event().wait()
+        finally:
+            closed.set()
+
+    async def receive() -> Message:
+        # 首条数据实际发出后才断开，验证正在运行的生成器能被清理。
+        await sent.wait()
+        return {"type": "http.disconnect"}
+
+    async def send(message: Message) -> None:
+        if message["type"] == "http.response.body" and message.get("body"):
+            sent.set()
+
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0", "spec_version": "2.0"},
+        "http_version": "1.1",
+        "method": "GET",
+        "scheme": "http",
+        "path": "/stream",
+        "raw_path": b"/stream",
+        "query_string": b"",
+        "root_path": "",
+        "headers": [],
+        "server": ("test", 80),
+        "client": ("test", 123),
+    }
+    await asyncio.wait_for(app(scope, receive, send), timeout=3)
+    assert sent.is_set()
+    assert closed.is_set()

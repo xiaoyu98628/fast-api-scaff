@@ -1,10 +1,11 @@
-"""提供统一 JSON 响应工厂的 FastAPI 依赖声明。"""
+"""提供统一 JSON 和 SSE 响应工厂的 FastAPI 依赖声明。"""
 
 from typing import Annotated
 
 from fastapi import Depends, Request
 
-from app.interfaces.http.shared.response.factory import JsonResponseFactory
+from app.interfaces.http.shared.response.factories.json import JsonResponseFactory
+from app.interfaces.http.shared.response.factories.sse import SseResponseFactory
 
 
 def provide_json_response_factory(request: Request) -> JsonResponseFactory:
@@ -16,3 +17,13 @@ def provide_json_response_factory(request: Request) -> JsonResponseFactory:
 
 # 控制器使用该类型即可完成注入，无需直接依赖 Request 或 app.state。
 type JsonResponseFactoryDependency = Annotated[JsonResponseFactory, Depends(provide_json_response_factory)]
+
+
+def provide_sse_response_factory(request: Request) -> SseResponseFactory:
+    """提供当前 FastAPI 应用持有的统一 SSE 响应工厂。"""
+
+    factory: SseResponseFactory = request.app.state.sse_response_factory
+    return factory
+
+
+type SseResponseFactoryDependency = Annotated[SseResponseFactory, Depends(provide_sse_response_factory)]
