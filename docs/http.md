@@ -22,6 +22,7 @@ uv run uvicorn app.main:app --reload
 | 方法 | 路径 | 成功状态 | 说明 |
 | --- | --- | --- | --- |
 | `GET` | `/health` | 200 | 基础应用健康检查 |
+| `GET` | `/api/v1/streams/events` | 200 | 有限 SSE 事件流，可模拟指定消息位置的处理失败 |
 | `POST` | `/api/v1/auth/login` | 200 | 用户名密码登录，返回随机会话 Token；连续失败可返回 429 |
 | `GET` | `/api/v1/auth/me` | 200 | 校验 Bearer 会话并返回当前用户 |
 | `POST` | `/api/v1/auth/logout` | 204 | 幂等删除当前会话 |
@@ -245,7 +246,9 @@ Controller 应只负责：
 
 ## 12. 统一 SSE 响应
 
-SSE 通过 Controller 异步生成器逐条发送事件。`SseResponse` 继承 FastAPI 的 `ServerSentEvent`，表示单条事件；整个 HTTP 流使用路由装饰器中的 `response_class=EventSourceResponse`。项目提供统一工厂与依赖注入，未注册额外的 SSE 示例端点。
+SSE 通过 Controller 异步生成器逐条发送事件。`SseResponse` 继承 FastAPI 的 `ServerSentEvent`，表示单条事件；整个 HTTP 流使用路由装饰器中的 `response_class=EventSourceResponse`。项目提供统一工厂与依赖注入，并注册 `GET /api/v1/streams/events` 演示有限事件流和可控处理失败。
+
+SSE 的错误响应在 `streams/openapi.py` 中通过 `content.application/json` 声明内联 Schema，路由直接引用该声明。这样保留 JSON 422 的文档类型，无需修改 FastAPI 的 OpenAPI 生成入口；测试校验内联错误结构与统一 JSON 模型一致。
 
 响应目录按类型与构造职责组织，所有 `__init__.py` 保持空文件：
 
@@ -317,3 +320,39 @@ data: {"code":"4040010102","message":"任务不存在"}
 正常完成时发送 `done` 并结束生成器；已知失败时发送 `business_error` 并结束生成器，不再发送 `done`。工厂只构造事件，不自动终止流或捕获异常。客户端收到任一终止事件后应关闭连接，避免自动重连。鉴权和可提前执行的检查应放在依赖中，在发送响应头前走现有 JSON 错误映射；流开始后的未知异常仍交给现有异常日志与连接终止机制。
 
 Request ID 通过现有 `X-Request-ID` 响应头关联，不自动注入事件载荷。实际业务流应通过 `try/finally` 或异步上下文管理器释放订阅和上游资源，取消异常应继续传播；不要让数据库事务占用整个长连接。Application 层提供业务数据，HTTP Controller 负责转换为 SSE 事件。
+
+
+### 12.1 事件流接口
+
+`GET /api/v1/streams/events` 为公开的有限事件流接口，不访问数据库、缓存或其他外部服务。Controller 位于 `app/interfaces/http/controllers/v1/streams/router.py`，查询参数模型 `EventStreamParams` 位于同目录的 `schemas.py`。
+
+| 查询参数 | 默认值 | 约束与用途 |
+| --- | --- | --- |
+| `count` | `5` | 整数，范围 1–20，计划发送的消息数 |
+| `fail_at` | 不设置 | 可选整数，范围 1–count，在该序号模拟处理失败；这是演示参数，不是真实业务错误条件 |
+
+首条消息立即发送，后续每秒一条，20 条正常消息约需 19 秒，实际耗时受调度和客户端接收速度影响。每条 `message` 的 `data` 包含 `sequence` 和 `content`，SSE `id` 等于序号字符串。正常完成发送 `done`；指定 `fail_at` 时，该位置只发送 `business_error` 并结束，不发送该条消息或 `done`。例如 `count=5&fail_at=3` 会先发送两条消息，再发送错误。
+
+```bash
+# 正常发送 3 条消息后完成
+curl -N 'http://127.0.0.1:8000/api/v1/streams/events?count=3'
+
+# 发送两条消息后模拟失败
+curl -N 'http://127.0.0.1:8000/api/v1/streams/events?count=5&fail_at=3'
+
+# 首条即模拟失败，连接仍为 HTTP 200
+curl -i -N 'http://127.0.0.1:8000/api/v1/streams/events?fail_at=1'
+
+# 参数越界，在流开始前返回统一 JSON 422
+curl -i 'http://127.0.0.1:8000/api/v1/streams/events?count=2&fail_at=3'
+```
+
+模拟失败复用 `ErrorCode.INTERNAL_ERROR`；服务编码为 `001`、`fail_at=3` 时事件为：
+
+```text
+event: business_error
+data: {"code":"5000010101","message":"SSE 事件流：模拟处理失败","data":{"sequence":3}}
+
+```
+
+非法整数、超出范围、`fail_at > count` 或未知查询参数均返回 HTTP 422 的统一 JSON 载荷；模拟失败则属于已开始的 SSE 流，HTTP 状态仍为 200。OpenAPI 分别声明这两种媒体类型。该接口不支持断点续传，重新请求从序号 1 开始；客户端应在收到 `done` 或 `business_error` 时关闭连接。客户端断开时取消继续传播，路由不会继续等待并生成后续消息。

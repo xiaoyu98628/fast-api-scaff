@@ -4,7 +4,7 @@
 
 ## 已实现能力
 
-- FastAPI HTTP API、OpenAPI、统一 JSON 响应与 SSE 事件工厂（[调用规则](docs/http.md#12-统一-sse-响应)）；
+- FastAPI HTTP API、OpenAPI、统一 JSON 响应与 SSE 事件工厂；提供 `GET /api/v1/streams/events` 有限事件流及模拟失败（[调用规则](docs/http.md#12-统一-sse-响应)）；
 - Typer Console，一次性命令共享应用容器；
 - 用户限界上下文 CRUD、状态修改与密码重置示例，密码哈希和验证在线程中执行并共享并发限制；
 - 数据库会话认证：登录、当前用户、退出，随机 Bearer Token 只保存摘要，并用 Redis 限制连续登录失败；
