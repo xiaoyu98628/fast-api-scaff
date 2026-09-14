@@ -35,7 +35,7 @@ uv run uvicorn app.main:app --reload
 
 创建用户和重置密码时必须提供密码，应用只持久化密码哈希，任何响应都不返回密码或哈希。用户示例包含简单会话登录，但不包含用户自行修改密码、角色、权限、软删除或审计历史。`PUT /users/{user_id}` 是可编辑用户基本信息的完整更新，必须提供 `username` 和 `email`，不是部分更新，也不接受密码或状态。状态修改与密码重置是独立用例；所有聚合更新都使用内部版本执行乐观并发控制，陈旧写入返回 409，版本不出现在公开 DTO 中。所有用户 CRUD 仍为公开示例，只有 `/auth/me` 演示登录校验；不能将密码重置示例视为受保护的管理员入口。
 
-登录请求使用 JSON `username/password`，成功返回统一响应中的 `data.access_token`、`data.token_type` 和 `data.expires_in`。用户名不存在、格式无效、密码错误或账户禁用在未锁定时都返回 401 和“用户名或密码错误”，并带 `WWW-Authenticate: Bearer`；无法取得用户哈希时仍执行固定占位校验。同一规范化用户名达到 Redis 失败阈值后返回 429，附带 `Retry-After`，锁定期内不访问数据库或执行密码哈希。`/auth/me` 与 `/auth/logout` 从 `Authorization: Bearer <token>` 提取凭据，不读取 Cookie 或查询参数中的 Token。登录、当前用户成功响应、认证 401 和登录 429 都带 `Cache-Control: no-store`。退出成功返回空的 204；格式合法但不存在或已过期的 Token 也可幂等退出。详见[认证](authentication.md)。
+登录请求使用 JSON `username/password`，成功返回统一响应中的 `data.access_token`、`data.token_type` 和 `data.expires_in`。用户名不存在、格式无效、密码错误或账户禁用在未锁定时都返回 401 和认证局部码 `1101`；启用限制时，文案说明还可尝试的次数，`data.remaining_attempts` 提供相同的机器可读整数。响应带 `WWW-Authenticate: Bearer`；无法取得用户哈希时仍执行固定占位校验。同一规范化用户名达到 Redis 失败阈值后返回 429 和认证局部码 `1102`，动态文案、`data.retry_after_seconds` 与 `Retry-After` 给出剩余锁定秒数，锁定期内不访问数据库或执行密码哈希。`/auth/me` 与 `/auth/logout` 从 `Authorization: Bearer <token>` 提取凭据，不读取 Cookie 或查询参数中的 Token。登录、当前用户成功响应、认证 401 和登录 429 都带 `Cache-Control: no-store`。退出成功返回空的 204；格式合法但不存在或已过期的 Token 也可幂等退出。详见[认证](authentication.md)。
 
 ## 3. 完整调用示例
 

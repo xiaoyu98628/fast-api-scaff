@@ -28,3 +28,15 @@ class TokenResponse(BaseModel):
         """从应用层 DTO 提取公开认证字段。"""
 
         return cls(access_token=token.access_token, expires_in=token.expires_in)
+
+
+class LoginFailureDetail(BaseModel):
+    """返回触发锁定前还可尝试的次数。"""
+
+    remaining_attempts: int = Field(ge=1)
+
+
+class LoginLockDetail(BaseModel):
+    """返回当前登录标识距离解除锁定的秒数。"""
+
+    retry_after_seconds: int = Field(gt=0)

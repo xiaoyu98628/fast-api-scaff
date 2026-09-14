@@ -108,9 +108,10 @@ class AuthApplicationService:
         """统一记录凭据失败，并在达到阈值时转换为临时锁定。"""
 
         if self.login_attempts is not None:
-            retry_after = await self.login_attempts.record_failure(identity)
-            if retry_after is not None:
-                raise LoginTemporarilyLockedError(retry_after)
+            status = await self.login_attempts.record_failure(identity)
+            if status.retry_after_seconds is not None:
+                raise LoginTemporarilyLockedError(status.retry_after_seconds)
+            raise InvalidCredentialsError(status.remaining_attempts)
 
         raise InvalidCredentialsError()
 

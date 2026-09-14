@@ -21,6 +21,7 @@ from app.contexts.user.application.auth_errors import (
     LoginTemporarilyLockedError,
 )
 from app.contexts.user.application.dto import ChangeUserStatusCommand, CreateUserCommand, ResetUserPasswordCommand
+from app.contexts.user.application.login_attempts import LoginFailureStatus
 from app.contexts.user.application.session_token import SessionCredential
 from app.contexts.user.composition import UserContext, build_user_context
 from app.contexts.user.domain.values import Password, PasswordHash, UserStatus
@@ -47,8 +48,15 @@ class TrackingPasswordHasher:
 
 
 class TrackingLoginAttemptLimiter:
-    def __init__(self, *, retry_after: int | None = None, failure_retry_after: int | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        retry_after: int | None = None,
+        remaining_attempts: int = 4,
+        failure_retry_after: int | None = None,
+    ) -> None:
         self.retry_after_seconds = retry_after
+        self.remaining_attempts = remaining_attempts
         self.failure_retry_after = failure_retry_after
         self.checked: list[str] = []
         self.failures: list[str] = []
@@ -58,9 +66,11 @@ class TrackingLoginAttemptLimiter:
         self.checked.append(identity)
         return self.retry_after_seconds
 
-    async def record_failure(self, identity: str) -> int | None:
+    async def record_failure(self, identity: str) -> LoginFailureStatus:
         self.failures.append(identity)
-        return self.failure_retry_after
+        if self.failure_retry_after is not None:
+            return LoginFailureStatus(remaining_attempts=0, retry_after_seconds=self.failure_retry_after)
+        return LoginFailureStatus(remaining_attempts=self.remaining_attempts)
 
     async def clear(self, identity: str) -> None:
         self.cleared.append(identity)
@@ -167,9 +177,10 @@ async def test_login_failure_verifies_a_hash_and_creates_no_session(harness: Aut
         await harness.users.service.change_status(ChangeUserStatusCommand(user_id=user.id, status=UserStatus.DISABLED))
     limiter = TrackingLoginAttemptLimiter()
     harness.users = replace(harness.users, auth=replace(harness.users.auth, login_attempts=limiter))
-    with pytest.raises(InvalidCredentialsError):
+    with pytest.raises(InvalidCredentialsError) as captured:
         await harness.users.auth.login(LoginCommand(username=username, password=password))
     assert len(harness.hasher.checked) == 1
+    assert captured.value.remaining_attempts == 4
     assert limiter.failures == [username.strip().lower()]
     assert await harness.session_count() == 0
 
@@ -179,9 +190,10 @@ async def test_login_failure_verifies_a_hash_and_creates_no_session(harness: Aut
 async def test_login_rejects_missing_or_invalid_username_with_dummy_verification(harness: AuthHarness, username: str) -> None:
     limiter = TrackingLoginAttemptLimiter()
     harness.users = replace(harness.users, auth=replace(harness.users.auth, login_attempts=limiter))
-    with pytest.raises(InvalidCredentialsError):
+    with pytest.raises(InvalidCredentialsError) as captured:
         await harness.users.auth.login(LoginCommand(username=username, password="password123"))
     assert harness.hasher.checked == [None]
+    assert captured.value.remaining_attempts == 4
     assert limiter.failures == [username.strip().lower()]
     assert await harness.session_count() == 0
 

@@ -57,15 +57,19 @@ async def test_fifth_failure_locks_normalized_hashed_identity_and_success_clears
     client = FakeRedisCacheClient()
     limiter = build_limiter(client)
 
-    assert await limiter.record_failure(" Alice ") is None
+    first = await limiter.record_failure(" Alice ")
+    assert first.remaining_attempts == 4
+    assert first.retry_after_seconds is None
     key = next(iter(client.counts))
     assert "alice" not in key
     assert len(key.split(":")) == 4
     assert client.expirations[key] == 300
 
-    for _ in range(3):
-        assert await limiter.record_failure("alice") is None
-    assert await limiter.record_failure("ALICE") == 900
+    remaining = [await limiter.record_failure("alice") for _ in range(3)]
+    assert [status.remaining_attempts for status in remaining] == [3, 2, 1]
+    locked = await limiter.record_failure("ALICE")
+    assert locked.remaining_attempts == 0
+    assert locked.retry_after_seconds == 900
     assert client.counts[key] == 5
     assert client.expirations[key] == 900
     assert await limiter.retry_after(" alice ") == 900

@@ -4,6 +4,7 @@ import hashlib
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
+from app.contexts.user.application.login_attempts import LoginFailureStatus
 from app.infrastructure.cache.clients.redis import ManagedRedisCacheClient
 from app.infrastructure.cache.errors import CacheOperationError
 
@@ -47,20 +48,20 @@ class RedisLoginAttemptLimiter:
         # Redis 可以在不足一秒时返回 0；HTTP Retry-After 仍需正整数。
         return max(1, ttl)
 
-    async def record_failure(self, identity: str) -> int | None:
-        """原子累计一次失败，并在阈值处切换为锁定有效期。"""
+    async def record_failure(self, identity: str) -> LoginFailureStatus:
+        """原子累计一次失败，并返回剩余次数或锁定有效期。"""
 
         client = await self.client_factory()
         key = self._key(identity)
         count = await client.increment(key, ttl=self.failure_window_seconds)
         if count < self.max_failures:
-            return None
+            return LoginFailureStatus(remaining_attempts=self.max_failures - count)
 
         # 达到阈值后延长同一个计数 key；锁定判断始终以计数和 TTL 为准。
         if not await client.expire(key, ttl=self.lock_seconds):
             raise CacheOperationError("登录失败计数过期时间更新未生效")
 
-        return self.lock_seconds
+        return LoginFailureStatus(remaining_attempts=0, retry_after_seconds=self.lock_seconds)
 
     async def clear(self, identity: str) -> None:
         """在登录成功后删除该标识的失败计数。"""
