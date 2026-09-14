@@ -123,3 +123,14 @@ def test_resolver_does_not_mask_job_module_dependency_failure(monkeypatch: pytes
 def test_resolver_rejects_invalid_allowed_packages(allowed_packages: tuple[str, ...]) -> None:
     with pytest.raises(QueueConfigurationError):
         JobResolver(allowed_packages)
+
+
+@pytest.mark.parametrize("module", ["app.main", "app.console", "app.worker", "app.bootstrap", "app.bootstrap.http.application", "app.main.child"])
+def test_resolver_rejects_host_modules_before_import(module: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    importer = Mock(side_effect=AssertionError("宿主模块不应被导入"))
+    monkeypatch.setattr(resolver_module, "import_module", importer)
+
+    with pytest.raises(UnknownJobError, match="进程入口或组合根"):
+        JobResolver(("app", module)).resolve(f"{module}:Job", 1)
+
+    importer.assert_not_called()

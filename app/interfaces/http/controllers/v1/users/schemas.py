@@ -1,12 +1,23 @@
 """定义用户端点的 HTTP 请求与响应模型。"""
 
 from datetime import datetime
+from typing import Annotated
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
 
 from app.contexts.user.application.dto import UserDTO
 from app.contexts.user.domain.values import UserStatus
+
+
+def _normalize_user_text(value: object) -> object:
+    """在 HTTP 长度校验前规范化资料文本，非字符串仍交给模型拒绝。"""
+
+    return value.strip().lower() if isinstance(value, str) else value
+
+
+# 只用于用户名和邮箱；密码必须保留调用方提交的原始字符。
+type NormalizedUserText = Annotated[str, BeforeValidator(_normalize_user_text)]
 
 
 class CreateUserRequest(BaseModel):
@@ -14,8 +25,8 @@ class CreateUserRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    username: str = Field(min_length=3, max_length=32)
-    email: str = Field(max_length=254)
+    username: NormalizedUserText = Field(min_length=3, max_length=32)
+    email: NormalizedUserText = Field(max_length=254)
     password: str = Field(min_length=8, max_length=128, repr=False)
 
 
@@ -24,8 +35,8 @@ class UpdateUserRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    username: str = Field(min_length=3, max_length=32)
-    email: str = Field(max_length=254)
+    username: NormalizedUserText = Field(min_length=3, max_length=32)
+    email: NormalizedUserText = Field(max_length=254)
 
 
 class ChangeUserStatusRequest(BaseModel):

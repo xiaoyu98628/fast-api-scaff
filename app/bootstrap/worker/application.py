@@ -10,7 +10,7 @@ from functools import partial
 from app.bootstrap.build import build_application_container
 from app.bootstrap.worker.logging import WorkerLogEvent
 from app.config.settings import Settings
-from app.infrastructure.logging.record import log_extra
+from app.infrastructure.logging.record import log_extra, safe_exception_details
 from app.interfaces.worker.context import WorkerContext
 from app.interfaces.worker.executor import JobExecutor
 from app.interfaces.worker.resolver import JobResolver, JobTypeResolver
@@ -54,10 +54,11 @@ class WorkerHost:
             try:
                 try:
                     container = await runtime.start()
-                except BaseException:
-                    _logger.exception(
+                except BaseException as error:
+                    error_type, stacktrace = safe_exception_details(error)
+                    _logger.error(
                         "Worker startup failed",
-                        extra=log_extra(WorkerLogEvent.START_FAILED),
+                        extra=log_extra(WorkerLogEvent.START_FAILED, error_type=error_type, stacktrace=stacktrace),
                     )
                     raise
 
@@ -74,10 +75,11 @@ class WorkerHost:
                 _logger.info("Worker stopping", extra=log_extra(WorkerLogEvent.STOPPING))
                 try:
                     await runtime.aclose()
-                except BaseException:
-                    _logger.exception(
+                except BaseException as error:
+                    error_type, stacktrace = safe_exception_details(error)
+                    _logger.error(
                         "Worker shutdown failed",
-                        extra=log_extra(WorkerLogEvent.STOP_FAILED),
+                        extra=log_extra(WorkerLogEvent.STOP_FAILED, error_type=error_type, stacktrace=stacktrace),
                     )
                     raise
                 _logger.info("Worker stopped", extra=log_extra(WorkerLogEvent.STOPPED))

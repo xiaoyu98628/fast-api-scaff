@@ -16,6 +16,7 @@ from app.bootstrap.build import build_application_container
 from app.bootstrap.worker.application import WorkerHost
 from app.config.database import DatabaseSettings
 from app.config.queue import QueueSettings
+from app.infrastructure.logging.formatter import JsonLogFormatter, TextLogFormatter
 from app.infrastructure.queue.errors import QueueError
 from app.infrastructure.queue.failed.sql.model import FailedJobModel
 from app.infrastructure.queue.manager import QueueManager
@@ -251,3 +252,45 @@ def test_worker_configuration_failure_is_sanitized() -> None:
     assert result.stdout == ""
     assert "Worker 运行失败：ValidationError" in result.stderr
     assert "Traceback" not in result.stderr
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("phase", ["startup", "shutdown"])
+async def test_worker_lifecycle_logs_exclude_chained_and_grouped_secrets(
+    phase: str,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    async def fail() -> None:
+        try:
+            raise ValueError("PRIVATE_CAUSE")
+        except ValueError as error:
+            raise ExceptionGroup("PRIVATE_GROUP", [RuntimeError("PRIVATE_CHILD")]) from error
+
+    async def consume_nothing(*_args, **_kwargs) -> None:
+        pass
+
+    container = build_application_container(build_settings())
+    container = replace(
+        container,
+        startup_callbacks=(fail,) if phase == "startup" else (),
+        async_shutdown_callbacks=(*container.async_shutdown_callbacks, fail) if phase == "shutdown" else container.async_shutdown_callbacks,
+    )
+    monkeypatch.setattr(WorkerHost, "_consume", consume_nothing)
+    caplog.set_level(logging.INFO, logger="app.bootstrap.worker.lifecycle")
+    with pytest.raises(ExceptionGroup):
+        await WorkerHost(build_settings(), container_builder=lambda _: container).serve(
+            connection=None,
+            queue=None,
+            concurrency=None,
+            stop=asyncio.Event(),
+        )
+
+    event = "worker.start_failed" if phase == "startup" else "worker.stop_failed"
+    record = next(record for record in caplog.records if getattr(record, "event", None) == event)
+    assert record.exc_info is None
+    assert getattr(record, "details")["error_type"] == "builtins.ExceptionGroup"
+    assert getattr(record, "details")["stacktrace"]
+    for formatter_type in (JsonLogFormatter, TextLogFormatter):
+        formatter = formatter_type(service="test", environment="test", service_version="1")
+        assert "PRIVATE_" not in formatter.format(record)
