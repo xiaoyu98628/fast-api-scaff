@@ -93,7 +93,7 @@ def build_settings() -> Settings:
 def build_console(service: FakeUserService) -> tuple[CliRunner, typer.Typer]:
     settings = build_settings()
 
-    def build_container(_settings: Settings) -> ApplicationContainer:
+    def build_container(active_settings: Settings) -> ApplicationContainer:
         databases = DatabaseManager(settings.database)
         caches = CacheManager(settings.cache)
         http = HttpClientManager(HttpSettings(_env_file=None))
@@ -104,7 +104,10 @@ def build_console(service: FakeUserService) -> tuple[CliRunner, typer.Typer]:
             caches=caches,
             http=http,
             vectors=vectors,
-            users=replace(build_user_context(databases), service=cast(UserApplicationService, service)),
+            users=replace(
+                build_user_context(active_settings, databases, caches),
+                service=cast(UserApplicationService, service),
+            ),
             async_shutdown_callbacks=(databases.aclose, caches.aclose, http.aclose, vectors.aclose),
         )
 

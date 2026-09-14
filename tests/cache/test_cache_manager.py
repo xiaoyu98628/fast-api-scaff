@@ -6,6 +6,7 @@ import pytest
 
 from app.config.cache import CacheSettings
 from app.infrastructure.cache.clients.managed import ManagedCacheClient
+from app.infrastructure.cache.clients.redis import ManagedRedisCacheClient
 from app.infrastructure.cache.errors import CacheConfigurationError
 from app.infrastructure.cache.manager import CacheManager
 from app.infrastructure.cache.providers.registry import DEFAULT_CACHE_PROVIDERS
@@ -57,7 +58,26 @@ async def test_network_client_is_created_without_connecting() -> None:
     client = await manager.get()
 
     assert isinstance(client, ManagedCacheClient)
+    assert isinstance(client, ManagedRedisCacheClient)
     assert manager.is_initialized() is True
+    await manager.aclose()
+
+
+@pytest.mark.asyncio
+async def test_redis_capability_rejects_memcached_before_resource_creation() -> None:
+    settings = CacheSettings(
+        namespace="test",
+        connections={"security": {"driver": "memcached"}},
+        _env_file=None,
+    )
+    manager = CacheManager(settings)
+
+    with pytest.raises(CacheConfigurationError, match="不支持所需的 Redis 功能"):
+        manager.require_redis("security")
+    with pytest.raises(CacheConfigurationError, match="不支持所需的 Redis 功能"):
+        await manager.get_redis("security")
+
+    assert manager.is_initialized("security") is False
     await manager.aclose()
 
 

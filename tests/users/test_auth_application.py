@@ -8,15 +8,26 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import func, select
 
+from app.config.app import AppSettings
+from app.config.auth import AuthSettings
+from app.config.cache import CacheSettings
+from app.config.cors import CorsSettings
 from app.config.database import DatabaseSettings
+from app.config.settings import Settings
 from app.contexts.user.application.auth_dto import LoginCommand
-from app.contexts.user.application.auth_errors import AuthenticationRequiredError, InvalidCredentialsError
+from app.contexts.user.application.auth_errors import (
+    AuthenticationRequiredError,
+    InvalidCredentialsError,
+    LoginTemporarilyLockedError,
+)
 from app.contexts.user.application.dto import ChangeUserStatusCommand, CreateUserCommand, ResetUserPasswordCommand
+from app.contexts.user.application.login_attempts import LoginFailureStatus
 from app.contexts.user.application.session_token import SessionCredential
 from app.contexts.user.composition import UserContext, build_user_context
 from app.contexts.user.domain.values import Password, PasswordHash, UserStatus
 from app.contexts.user.infrastructure.persistence.models.session import UserSessionModel
 from app.contexts.user.infrastructure.persistence.unit_of_work import SqlAlchemyUserUnitOfWork
+from app.infrastructure.cache.manager import CacheManager
 from app.infrastructure.database.manager import DatabaseManager
 from database.main.model_registry import load_main_database_metadata
 
@@ -36,6 +47,35 @@ class TrackingPasswordHasher:
         return password_hash is not None and password_hash.value == f"hash::{password}"
 
 
+class TrackingLoginAttemptLimiter:
+    def __init__(
+        self,
+        *,
+        retry_after: int | None = None,
+        remaining_attempts: int = 4,
+        failure_retry_after: int | None = None,
+    ) -> None:
+        self.retry_after_seconds = retry_after
+        self.remaining_attempts = remaining_attempts
+        self.failure_retry_after = failure_retry_after
+        self.checked: list[str] = []
+        self.failures: list[str] = []
+        self.cleared: list[str] = []
+
+    async def retry_after(self, identity: str) -> int | None:
+        self.checked.append(identity)
+        return self.retry_after_seconds
+
+    async def record_failure(self, identity: str) -> LoginFailureStatus:
+        self.failures.append(identity)
+        if self.failure_retry_after is not None:
+            return LoginFailureStatus(remaining_attempts=0, retry_after_seconds=self.failure_retry_after)
+        return LoginFailureStatus(remaining_attempts=self.remaining_attempts)
+
+    async def clear(self, identity: str) -> None:
+        self.cleared.append(identity)
+
+
 @dataclass
 class AuthHarness:
     users: UserContext
@@ -50,13 +90,21 @@ class AuthHarness:
 
 @pytest_asyncio.fixture
 async def harness() -> AsyncIterator[AuthHarness]:
-    databases = DatabaseManager(DatabaseSettings(_env_file=None, connections={"main": {"driver": "sqlite", "database": ":memory:"}}))
+    settings = Settings(
+        app=AppSettings(_env_file=None),
+        auth=AuthSettings(session_ttl_seconds=60, login_limit_cache=None, _env_file=None),
+        database=DatabaseSettings(_env_file=None, connections={"main": {"driver": "sqlite", "database": ":memory:"}}),
+        cache=CacheSettings(_env_file=None),
+        cors=CorsSettings(_env_file=None),
+    )
+    databases = DatabaseManager(settings.database)
+    caches = CacheManager(settings.cache)
     try:
         engine = await databases.get_engine("main")
         async with engine.begin() as connection:
             await connection.run_sync(load_main_database_metadata().create_all)
         hasher = TrackingPasswordHasher()
-        users = build_user_context(databases, session_ttl_seconds=60)
+        users = build_user_context(settings, databases, caches)
         result = AuthHarness(users=users, databases=databases, hasher=hasher)
         result.users = replace(
             users,
@@ -65,6 +113,7 @@ async def harness() -> AsyncIterator[AuthHarness]:
         )
         yield result
     finally:
+        await caches.aclose()
         await databases.aclose()
 
 
@@ -126,19 +175,69 @@ async def test_login_failure_verifies_a_hash_and_creates_no_session(harness: Aut
     user = await harness.users.service.create(CreateUserCommand(username="alice", email="alice@example.com", password="password123"))
     if disabled:
         await harness.users.service.change_status(ChangeUserStatusCommand(user_id=user.id, status=UserStatus.DISABLED))
-    with pytest.raises(InvalidCredentialsError):
+    limiter = TrackingLoginAttemptLimiter()
+    harness.users = replace(harness.users, auth=replace(harness.users.auth, login_attempts=limiter))
+    with pytest.raises(InvalidCredentialsError) as captured:
         await harness.users.auth.login(LoginCommand(username=username, password=password))
     assert len(harness.hasher.checked) == 1
+    assert captured.value.remaining_attempts == 4
+    assert limiter.failures == [username.strip().lower()]
     assert await harness.session_count() == 0
 
 
 @pytest.mark.parametrize("username", ["missing", "!"])
 @pytest.mark.asyncio
 async def test_login_rejects_missing_or_invalid_username_with_dummy_verification(harness: AuthHarness, username: str) -> None:
-    with pytest.raises(InvalidCredentialsError):
+    limiter = TrackingLoginAttemptLimiter()
+    harness.users = replace(harness.users, auth=replace(harness.users.auth, login_attempts=limiter))
+    with pytest.raises(InvalidCredentialsError) as captured:
         await harness.users.auth.login(LoginCommand(username=username, password="password123"))
     assert harness.hasher.checked == [None]
+    assert captured.value.remaining_attempts == 4
+    assert limiter.failures == [username.strip().lower()]
     assert await harness.session_count() == 0
+
+
+@pytest.mark.asyncio
+async def test_locked_login_skips_password_hash_and_reports_retry_after(harness: AuthHarness) -> None:
+    limiter = TrackingLoginAttemptLimiter(retry_after=120)
+    harness.users = replace(harness.users, auth=replace(harness.users.auth, login_attempts=limiter))
+
+    with pytest.raises(LoginTemporarilyLockedError) as captured:
+        await harness.users.auth.login(LoginCommand(username=" ALICE ", password="password123"))
+
+    assert captured.value.retry_after_seconds == 120
+    assert limiter.checked == ["alice"]
+    assert limiter.failures == []
+    assert harness.hasher.checked == []
+    assert await harness.session_count() == 0
+
+
+@pytest.mark.asyncio
+async def test_failure_that_reaches_threshold_returns_lock_error(harness: AuthHarness) -> None:
+    await harness.users.service.create(CreateUserCommand(username="alice", email="alice@example.com", password="password123"))
+    limiter = TrackingLoginAttemptLimiter(failure_retry_after=900)
+    harness.users = replace(harness.users, auth=replace(harness.users.auth, login_attempts=limiter))
+
+    with pytest.raises(LoginTemporarilyLockedError) as captured:
+        await harness.users.auth.login(LoginCommand(username="alice", password="wrong"))
+
+    assert captured.value.retry_after_seconds == 900
+    assert limiter.failures == ["alice"]
+    assert await harness.session_count() == 0
+
+
+@pytest.mark.asyncio
+async def test_successful_login_clears_previous_failures(harness: AuthHarness) -> None:
+    await harness.users.service.create(CreateUserCommand(username="alice", email="alice@example.com", password="password123"))
+    limiter = TrackingLoginAttemptLimiter()
+    harness.users = replace(harness.users, auth=replace(harness.users.auth, login_attempts=limiter))
+
+    await harness.users.auth.login(LoginCommand(username=" ALICE ", password="password123"))
+
+    assert limiter.checked == ["alice"]
+    assert limiter.failures == []
+    assert limiter.cleared == ["alice"]
 
 
 @pytest.mark.asyncio

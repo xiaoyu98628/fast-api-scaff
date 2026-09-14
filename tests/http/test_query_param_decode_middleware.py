@@ -1,5 +1,7 @@
 """验证复合查询参数的编解码和 ASGI 展开。"""
 
+import base64
+import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -93,6 +95,9 @@ async def test_nested_payload_is_preserved_in_request_state() -> None:
     "encoded",
     [
         "not-base64!",
+        "中文",
+        "é",
+        base64.b64encode(b"[" * (sys.getrecursionlimit() + 100) + b"0" + b"]" * (sys.getrecursionlimit() + 100)).decode(),
         "JTVCJTIybm90JTIyJTJDJTIyYW4lMjIlMkMlMjJvYmplY3QlMjIlNUQ",
     ],
 )
@@ -106,6 +111,14 @@ async def test_invalid_or_non_object_payload_is_ignored(encoded: str) -> None:
         "query": [["f", encoded], ["kept", "value"]],
         "decoded": None,
     }
+
+
+@pytest.mark.asyncio
+async def test_non_ascii_encoded_param_does_not_fail_application_request() -> None:
+    async with create_test_client(create_app(build_settings())) as client:
+        response = await client.get("/health", params={"f": "中文"})
+
+    assert response.status_code == 200
 
 
 @pytest.mark.asyncio

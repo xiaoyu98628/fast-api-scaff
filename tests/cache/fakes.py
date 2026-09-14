@@ -63,7 +63,7 @@ class FakeCacheProvider:
         key_prefix = raw_config.get("key_prefix", "")
         if unexpected or not isinstance(key_prefix, str):
             raise CacheConfigurationError("Fake 缓存配置不合法")
-        return CacheResourceDefinition(key_prefix=key_prefix, factory=self._create)
+        return CacheResourceDefinition(driver=self.driver, key_prefix=key_prefix, factory=self._create)
 
     async def _create(self) -> CacheResource:
         """为单个命名连接创建隔离的测试资源。"""

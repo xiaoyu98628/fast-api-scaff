@@ -296,3 +296,32 @@ async def test_concurrent_update_returns_dedicated_409(monkeypatch: pytest.Monke
 
             assert response.status_code == 409
             assert response.json()["code"] == "4093211004"
+
+
+@pytest.mark.asyncio
+async def test_http_normalizes_profile_before_length_checks_and_preserves_password() -> None:
+    app = create_app(build_settings())
+    username = "A" * 32
+    email = "A" * 242 + "@EXAMPLE.COM"
+    password = "  Password123  "
+    async with app.router.lifespan_context(app):
+        engine = await app.state.container.databases.get_engine()
+        async with engine.begin() as connection:
+            await connection.run_sync(UserModel.metadata.create_all)
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+            response = await client.post("/api/v1/users", json={"username": f" {username} ", "email": f" {email} ", "password": password})
+            assert response.status_code == 201
+            user = response.json()["data"]
+            assert user["username"] == username.lower()
+            assert user["email"] == email.lower()
+            async with app.state.container.databases.session() as session:
+                stored = await session.scalar(select(UserModel.password).where(UserModel.id == user["id"]))
+            assert stored is not None
+            assert PwdlibPasswordHash.recommended().verify(password, stored)
+            response = await client.put(f"/api/v1/users/{user['id']}", json={"username": f" {username} ", "email": f" {email} "})
+            assert response.status_code == 200
+            assert response.json()["data"]["username"] == username.lower()
+            assert response.json()["data"]["email"] == email.lower()
+            for invalid in ({"username": "B" * 33, "email": email}, {"username": username, "email": "B" + email}):
+                response = await client.put(f"/api/v1/users/{user['id']}", json=invalid)
+                assert response.status_code == 422

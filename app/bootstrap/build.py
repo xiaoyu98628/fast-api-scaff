@@ -29,7 +29,7 @@ def build_application_container(
     vectors = VectorStoreManager(settings.vector, providers=vector_providers)
     queues = QueueManager(settings.queue, databases)
     # 组合根可以知道具体上下文；用户业务的内部装配仍封装在 composition 模块中。
-    users = build_user_context(databases, session_ttl_seconds=settings.auth.session_ttl_seconds)
+    users = build_user_context(settings, databases, caches)
 
     # 宿主只依赖统一容器，资源关闭顺序由 ApplicationContainer 集中管理。
     return ApplicationContainer(

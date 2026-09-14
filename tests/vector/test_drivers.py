@@ -361,6 +361,101 @@ async def test_chroma_local_persists_and_searches_without_an_embedding_function(
 
 
 @pytest.mark.asyncio
+async def test_chroma_upsert_replaces_metadata_and_removes_stale_filter_matches(tmp_path) -> None:
+    manager = VectorStoreManager(
+        VectorSettings(
+            default="local",
+            connections={"local": {"driver": "chroma", "mode": "local", "path": str(tmp_path / "chroma")}},
+            _env_file=None,
+        )
+    )
+    try:
+        client = await manager.get()
+        await client.create_collection(VectorCollectionSpec(name="knowledge", dimension=2))
+        await client.upsert(
+            "knowledge",
+            (
+                VectorPoint(id="first", vector=(1.0, 0.0), metadata={"old": "secret", "kind": "guide"}),
+                VectorPoint(id="second", vector=(0.0, 1.0), metadata={"old": "secret"}),
+            ),
+        )
+        # 混合新建、更新和清空，并改变 ID 顺序，验证按 ID 而非返回位置匹配旧字段。
+        replacements = (
+            VectorPoint(id="second", vector=(1.0, 0.0)),
+            VectorPoint(id="new", vector=(0.0, 1.0), metadata={"new": True}),
+            VectorPoint(id="first", vector=(0.0, 1.0), metadata={"kind": "updated"}),
+        )
+        await client.upsert("knowledge", replacements)
+
+        assert await client.get("knowledge", tuple(point.id for point in replacements)) == replacements
+        assert await client.search("knowledge", (1.0, 0.0), limit=3, filters={"old": "secret"}) == ()
+        matches = await client.search("knowledge", (0.0, 1.0), limit=3, filters={"kind": "updated"})
+        assert tuple(match.id for match in matches) == ("first",)
+        assert matches[0].metadata == {"kind": "updated"}
+    finally:
+        await manager.aclose()
+
+
+@pytest.mark.parametrize("cancel_first", [False, True])
+@pytest.mark.asyncio
+async def test_chroma_concurrent_upserts_serialize_read_and_write(tmp_path, monkeypatch: pytest.MonkeyPatch, cancel_first: bool) -> None:
+    manager = VectorStoreManager(
+        VectorSettings(
+            default="local",
+            connections={"local": {"driver": "chroma", "mode": "local", "path": str(tmp_path / "chroma")}},
+            _env_file=None,
+        )
+    )
+    read_finished, release_read, second_started = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    tasks: list[asyncio.Task[None]] = []
+    try:
+        client = cast(chroma_driver.ChromaVectorClient, await manager.get())
+        await client.create_collection(VectorCollectionSpec(name="knowledge", dimension=2))
+        call = client._backend.collection_call
+        reads = 0
+
+        async def pause_first_read(collection: object, method: str, /, **kwargs: object) -> object:
+            nonlocal reads
+            result = await call(collection, method, **kwargs)
+            if method == "get":
+                reads += 1
+                if reads == 1:
+                    # 固定第一个写入的读后写窗口，第二个写入不能在窗口内读取旧快照。
+                    read_finished.set()
+                    await release_read.wait()
+            return result
+
+        monkeypatch.setattr(client._backend, "collection_call", pause_first_read)
+        first = VectorPoint(id="same", vector=(1.0, 0.0), metadata={"first": True})
+        second = VectorPoint(id="same", vector=(0.0, 1.0), metadata={"second": True})
+
+        async def write_second() -> None:
+            second_started.set()
+            await client.upsert("knowledge", (second,))
+
+        async with asyncio.timeout(5):
+            tasks.append(asyncio.create_task(client.upsert("knowledge", (first,))))
+            await read_finished.wait()
+            tasks.append(asyncio.create_task(write_second()))
+            await second_started.wait()
+            assert reads == 1
+            if cancel_first:
+                tasks[0].cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await tasks[0]
+            release_read.set()
+            await asyncio.gather(*(tasks[1:] if cancel_first else tasks))
+
+        assert await client.get("knowledge", ("same",)) == (second,)
+    finally:
+        release_read.set()
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        await manager.aclose()
+
+
+@pytest.mark.asyncio
 async def test_chroma_remote_maps_basic_auth_to_proxy_header(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, object] = {}
 

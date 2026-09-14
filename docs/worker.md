@@ -27,7 +27,7 @@ docker compose up --build worker
 
 一个默认 Worker 可以执行默认队列中的所有合法 QueueJob，但不会动态扫描 Redis Stream、Kafka Topic 或 RabbitMQ Queue。命名队列是用于优先级、并发和扩缩容隔离的可选高级能力，需要时为它单独启动 Worker。
 
-`jobs/` 是当前示例的组织习惯，不是 Worker 约定。Job 可放在应用根包的任意业务模块，Worker 只依据消息携带的类路径解析。类移动后应暂时保留旧模块兼容入口，以便处理已经入队的消息。Application/Domain 不导入 Worker、队列驱动或全局容器。
+`jobs/` 是当前示例的组织习惯，不是 Worker 约定。Job 可放在应用根包的业务模块，Worker 只依据消息携带的类路径解析。导入前会拒绝 `app.main`、`app.console`、`app.worker`、`app.bootstrap` 及其子模块，避免消息触发其他宿主或组合根的初始化；即使显式扩展导入白名单，也不能放开这些模块。类移动后应暂时保留旧模块兼容入口，以便处理已经入队的消息。Application/Domain 不导入 Worker、队列驱动或全局容器。
 
 Worker 在容器启动成功后创建不可变 `WorkerContext`，其中保存当前 `Settings` 和同一个 `ApplicationContainer`。执行器从它为每条消息创建独立的 `JobExecutionContext`：常用的 `settings` 和 `container` 保持直接访问，任务 ID、类型和版本、入队时间、连接、队列、correlation ID 与重放来源集中在 `context.job`，再把整个执行上下文传给 `handle(context)`；同一投递内重试复用同一个对象。因此 Job 可以选择 `container.users` 等上下文公开服务，也可以在宿主级维护场景中使用 `container.databases`、`caches`、`http`、`queues` 和 `vectors`。多个并发槽共享 Manager 和底层连接池，但不得共享任务级 `AsyncSession`、事务或其他可变状态。
 
@@ -55,7 +55,7 @@ SIGINT/SIGTERM 设置停止信号：停止安排新任务，取消等待消息�
 
 队列连接最后装配，先于数据库/缓存/HTTP 出站资源关闭。关闭失败仍尝试剩余资源并聚合异常。
 
-Worker 生命周期使用 `worker.starting`、`worker.started`、`worker.start_failed`、`worker.stopping`、`worker.stopped` 和 `worker.stop_failed`。执行器的完成日志使用事件 `queue.job.finished`，details 中包含 job_id、queue_name、queue_connection、attempts、failure_reason、correlation_id 和 duration_ms；捕获到异常的失败任务使用 ERROR 级别，并额外记录异常类型及仅含模块、函数和行号的调用栈位置。Worker 进程级故障使用 `worker.failed` 事件记录相同的安全诊断。
+Worker 生命周期使用 `worker.starting`、`worker.started`、`worker.start_failed`、`worker.stopping`、`worker.stopped` 和 `worker.stop_failed`。执行器的完成日志使用事件 `queue.job.finished`，details 中包含 job_id、queue_name、queue_connection、attempts、failure_reason、correlation_id 和 duration_ms；捕获到异常的失败任务使用 ERROR 级别，并额外记录异常类型及仅含模块、函数和行号的调用栈位置。Worker 进程级故障使用 `worker.failed` 事件记录相同的安全诊断。生命周期中的 `worker.start_failed` 和 `worker.stop_failed` 同样只记录异常类型和栈位置，不输出异常正文、异常链或异常组中的敏感文本；原始异常仍向调用方传播，退出行为不变。
 
 任务执行期间，Worker 把消息 correlation ID 绑定到追踪上下文。日志过滤器会给 Job、Application 和 Infrastructure 产生的日志自动附加 `job_id`、`job_type`、`job_version`、`queue_connection`、`queue_name`，以及存在时的 `correlation_id` 和 `replay_of`；Job 发布后续任务时也自动继承 correlation ID。这些字段通过异步上下文绑定，任务结束后恢复，不会跨并发槽泄漏。任务日志和失败诊断都不记录异常消息、运行时局部变量或任务数据。
 

@@ -1,12 +1,12 @@
-"""保存所有 Redis 数据类型 Storage 共用的原生客户端。"""
+"""提供 Redis 数据类型 Storage 共用的客户端引用。"""
 
 from redis.asyncio import Redis
 
 
 class BaseRedisStorage:
-    """保存 Redis Storage 共用的原生客户端。"""
+    """保存由 Redis 连接资源拥有的异步客户端。"""
 
     def __init__(self, client: Redis) -> None:
-        """保存由连接资源拥有的 Redis 客户端引用。"""
+        """借用客户端；连接建立、健康检查和关闭仍由 Connection 负责。"""
 
         self._client = client

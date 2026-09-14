@@ -10,10 +10,13 @@ import typer
 
 from app.bootstrap.build import build_application_container
 from app.bootstrap.console.application import ConsoleHost
+from app.config.database import DatabaseSettings
+from app.contexts.user.infrastructure.persistence.models.user import UserModel
 from app.infrastructure.queue.contracts.failed_store import FailedJobRecord
 from app.infrastructure.queue.errors import QueueError
 from app.interfaces.console.command import ConsoleCommand
 from app.interfaces.console.commands.queue import list_failures
+from app.interfaces.console.commands.users import create_user
 from app.interfaces.console.context import ConsoleContext
 from app.interfaces.console.discovery import discover_console_commands
 from app.interfaces.console.registry import ConsoleCommandRegistry
@@ -131,3 +134,31 @@ def test_registry_rejects_conflicting_group_help() -> None:
         assert str(error) == "Console 命令组 'testing' 的帮助文本不一致"
     else:
         raise AssertionError("同一 Console 命令组的帮助文本不一致时应当注册失败")
+
+
+@pytest.mark.asyncio
+async def test_console_accepts_normalized_profile_at_length_limits() -> None:
+    settings = build_settings().model_copy(
+        update={
+            "database": DatabaseSettings(
+                _env_file=None,
+                default="main",
+                connections={"main": {"driver": "sqlite", "database": ":memory:"}},
+            )
+        }
+    )
+    container = build_application_container(settings)
+    try:
+        engine = await container.databases.get_engine()
+        async with engine.begin() as connection:
+            await connection.run_sync(UserModel.metadata.create_all)
+        user = await create_user(
+            ConsoleContext(settings, container, command_id="test"),
+            username=" " + "A" * 32 + " ",
+            email=" " + "A" * 242 + "@EXAMPLE.COM ",
+            password="  Password123  ",
+        )
+        assert user.username == "a" * 32
+        assert user.email == "a" * 242 + "@example.com"
+    finally:
+        await container.aclose()

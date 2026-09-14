@@ -7,10 +7,10 @@
 - FastAPI HTTP API、OpenAPI 与统一 JSON 响应；
 - Typer Console，一次性命令共享应用容器；
 - 用户限界上下文 CRUD、状态修改与密码重置示例，密码哈希和验证在线程中执行并共享并发限制；
-- 简单数据库会话认证：登录、当前用户、退出，随机 Bearer Token 只保存摘要；
+- 数据库会话认证：登录、当前用户、退出，随机 Bearer Token 只保存摘要，并用 Redis 限制连续登录失败；
 - MySQL、PostgreSQL、SQLite 异步 SQLAlchemy；
 - Repository、Mapper、Unit of Work 与 Alembic migration；
-- Redis、Memcached 字节级 KV 缓存；
+- Redis、Memcached 字节级 KV 缓存，Redis Storage 按数据类型组织适配器；
 - Milvus（本地 Lite/远程）、Chroma（本地持久化/远程）和 Elasticsearch 统一异步向量存储；
 - 普通与流式 HTTP 出站请求、独立连接池、阶段超时、池压力诊断和结构化日志；
 - Redis Streams、Kafka、RabbitMQ 队列适配器和独立 Worker；
@@ -20,6 +20,8 @@
 - CI 使用临时 MySQL/PostgreSQL 服务验证 Alembic upgrade、downgrade 和再次 upgrade。
 
 当前不包含角色/权限体系、刷新令牌、常驻 Scheduler、领域事件/Outbox/Saga、跨数据库原子事务、Redis 高级数据结构、缓存自动降级或通用 HTTP 自动重试。它们需要按实际业务边界设计，不能把规划项当作现有功能。用户 CRUD 仍是公开示例，`GET /api/v1/auth/me` 演示登录校验。
+
+向量 `upsert` 覆盖完整元数据，省略的旧字段会被删除。Chroma 每次写入额外读取一次旧元数据，并在同一客户端内串行执行读后写；多个独立客户端或进程覆盖同一 ID 时，调用方需协调写入顺序，不保证跨进程原子覆盖。详见[向量存储](docs/vector.md)。
 
 ## 五分钟启动
 
@@ -49,6 +51,11 @@ CACHE_CONNECTIONS__SESSION__HOST=127.0.0.1
 CACHE_CONNECTIONS__SESSION__PORT=6379
 CACHE_CONNECTIONS__SESSION__DATABASE=0
 CACHE_CONNECTIONS__SESSION__KEY_PREFIX=session
+
+AUTH_LOGIN_LIMIT_CACHE=session
+AUTH_LOGIN_MAX_FAILURES=5
+AUTH_LOGIN_FAILURE_WINDOW_SECONDS=300
+AUTH_LOGIN_LOCK_SECONDS=900
 ```
 
 执行迁移并启动：
@@ -97,7 +104,9 @@ curl -X POST http://127.0.0.1:8000/api/v1/auth/login \
 
 将响应 `data.access_token` 放入 `Authorization: Bearer <token>`，即可访问 `GET /api/v1/auth/me`；`POST /api/v1/auth/logout` 删除该会话并返回 204。会话默认有效期为 3600 秒，可通过 `AUTH_SESSION_TTL_SECONDS` 配置。
 
-用户名不存在、格式错误、密码错误或账户禁用时统一返回 401 和“用户名或密码错误”。对于无法取得用户哈希的请求，密码组件仍执行固定占位哈希校验，避免直接暴露账户是否存在。
+用户名不存在、格式错误、密码错误或账户禁用时统一计为失败。未锁定时返回认证错误码 `4010011101`，正文同时提供动态文案和 `data.remaining_attempts`。`sample.env` 使用 `session` Redis 连接：同一规范化用户名 5 分钟内第 5 次失败会触发 15 分钟临时锁定，返回认证错误码 `4290011102`，正文的 `data.retry_after_seconds` 与 `Retry-After` 响应头给出剩余秒数；锁定期间不再查询数据库或执行密码哈希。成功登录会清除未达到阈值的失败记录。缓存不可用时登录失败关闭并返回通用 500，不绕过限制。
+
+失败计数 key 只保存规范化用户名的 SHA-256 摘要。登录限制必须选择 Redis 连接；配置成 Memcached 或其他驱动时，容器组合阶段会明确报错，且不会为通用 `CacheClient` 增加伪原子接口。对于无法取得用户哈希的未锁定请求，密码组件仍执行固定占位哈希校验，避免直接暴露账户是否存在。
 
 认证使用独立的 `user_sessions` 表，签发时间和过期时间采用与用户资料一致的本地无时区 `datetime`，用户表不增加角色或认证版本字段。用户聚合使用从 1 开始递增的内部 `version` 执行乐观并发控制，陈旧写入返回 409，不把版本暴露到 HTTP DTO；数据库迁移将该字段定义为非空整数并默认初始化为 1。每次成功登录会清理已过期会话；密码重置保留已有会话，禁用期间会话不可用，再启用后未过期会话仍可使用。详细契约见[认证](docs/authentication.md)。
 
@@ -160,7 +169,7 @@ uv run python -m app.worker --connection redis --queue reports --concurrency 4
 docker compose up --build worker
 ```
 
-内置 `LoginSucceededJob` 由登录接口尽力投递到默认连接配置的默认队列（`sample.env` 为 `default`），消息以 `user_id` 参数标识登录用户，不包含用户名、密码或 Token；HTTP request ID 由运行时上下文自动作为 correlation ID 写入消息。Worker 收到后调用它的 `handle(context)` 记录固定文案和结构化用户 ID，并在发布后续任务时自动继承该 correlation ID。每条消息获得不可变 `JobExecutionContext`，其中既有当前配置和正在运行的 `ApplicationContainer`，也有任务、队列和关联元数据；Job 可以像 Console operation 一样选择已装配的应用服务以及数据库、缓存、HTTP、队列和向量能力。业务 Job 应优先调用应用服务，不把容器继续传入 Application/Domain。新增任务无需注册、扫描目录或修改组合根。HTTP 与 Console 负责发布，独立 Worker 通过 Redis、Kafka 或 RabbitMQ 消费。
+内置 `LoginSucceededJob` 由登录接口尽力投递到默认连接配置的默认队列（`sample.env` 为 `default`），消息以 `user_id` 参数标识登录用户，不包含用户名、密码或 Token；HTTP request ID 由运行时上下文自动作为 correlation ID 写入消息。Worker 收到后调用它的 `handle(context)` 记录固定文案和结构化用户 ID，并在发布后续任务时自动继承该 correlation ID。每条消息获得不可变 `JobExecutionContext`，其中既有当前配置和正在运行的 `ApplicationContainer`，也有任务、队列和关联元数据；Job 可以像 Console operation 一样选择已装配的应用服务以及数据库、缓存、HTTP、队列和向量能力。业务 Job 应优先调用应用服务，不把容器继续传入 Application/Domain。新增任务无需注册、扫描目录或修改组合根；Worker 在导入前拒绝进程入口和组合根模块，具体限制见[队列动态解析](docs/queue.md#2-queuejob-与动态解析)。HTTP 与 Console 负责发布，独立 Worker 通过 Redis、Kafka 或 RabbitMQ 消费。
 
 失败任务固定使用 SQL 存储，需配置 QUEUE_FAILED__DATABASE 并执行对应 Alembic migration。外部适配器目前由模拟客户端测试覆盖，未进行真实 Redis/Kafka/RabbitMQ 服务集成验证。重试是投递内重试，不包含持久延迟调度或 exactly-once 保证。
 

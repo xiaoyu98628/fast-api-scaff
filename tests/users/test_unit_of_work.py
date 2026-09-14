@@ -12,7 +12,12 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config.app import AppSettings
+from app.config.auth import AuthSettings
+from app.config.cache import CacheSettings
+from app.config.cors import CorsSettings
 from app.config.database import DatabaseSettings
+from app.config.settings import Settings
 from app.contexts.user.application.dto import CreateUserCommand
 from app.contexts.user.application.errors import UserConflictError
 from app.contexts.user.composition import build_user_context
@@ -25,21 +30,26 @@ from app.infrastructure.database.manager import DatabaseManager
 
 @pytest.mark.asyncio
 async def test_user_context_binds_unit_of_work_to_main_connection() -> None:
-    databases = DatabaseManager(
-        DatabaseSettings(
+    settings = Settings(
+        app=AppSettings(_env_file=None),
+        auth=AuthSettings(login_limit_cache=None, _env_file=None),
+        database=DatabaseSettings(
             default="fallback",
             connections={
                 "main": {"driver": "sqlite", "database": ":memory:"},
                 "fallback": {"driver": "sqlite", "database": ":memory:"},
             },
             _env_file=None,
-        )
+        ),
+        cache=CacheSettings(_env_file=None),
+        cors=CorsSettings(_env_file=None),
     )
+    databases = DatabaseManager(settings.database)
     engine = await databases.get_engine("main")
     async with engine.begin() as connection:
         await connection.run_sync(UserModel.metadata.create_all)
 
-    users = build_user_context(databases)
+    users = build_user_context(settings, databases)
     created = await users.service.create(
         CreateUserCommand(
             username="alice",

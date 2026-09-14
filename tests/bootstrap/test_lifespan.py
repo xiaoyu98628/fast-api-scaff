@@ -79,13 +79,14 @@ async def test_application_startup_failure_is_logged(caplog: pytest.LogCaptureFi
         raise RuntimeError("startup failed")
 
     databases = DatabaseManager(settings.database)
+    caches = CacheManager(settings.cache)
     container = ApplicationContainer(
         queues=QueueManager(QueueSettings(_env_file=None), databases),
         databases=databases,
-        caches=CacheManager(settings.cache),
+        caches=caches,
         http=HttpClientManager(HttpSettings(_env_file=None)),
         vectors=VectorStoreManager(VectorSettings(_env_file=None)),
-        users=build_user_context(databases),
+        users=build_user_context(settings, databases, caches),
         startup_callbacks=(fail_startup,),
     )
     app = create_app(settings, container_builder=lambda _settings: container)

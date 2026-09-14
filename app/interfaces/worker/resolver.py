@@ -102,12 +102,7 @@ class JobResolver:
     def _load(self, reference: str) -> type[QueueJob[JobExecutionContext]]:
         """从白名单模块加载模块级 QueueJob 子类。"""
 
-        # 类路径来自队列消息，因此导入前必须先限制在可信包前缀内。
-        module_name, separator, qualified_name = reference.partition(":")
-        if not separator or not module_name or not qualified_name or "<locals>" in qualified_name:
-            raise UnknownJobError("任务类路径不合法")
-        if not any(module_name == package or module_name.startswith(f"{package}.") for package in self.allowed_packages):
-            raise UnknownJobError("任务模块不在允许范围内")
+        module_name, qualified_name = self._validate_reference(reference)
         try:
             value: object = import_module(module_name)
         except ModuleNotFoundError as error:
@@ -126,3 +121,17 @@ class JobResolver:
         if not isinstance(value, type) or not issubclass(value, QueueJob):
             raise UnknownJobError("任务类型必须继承 QueueJob")
         return cast(type[QueueJob[JobExecutionContext]], value)
+
+    def _validate_reference(self, reference: str) -> tuple[str, str]:
+        """解析类路径并在任何模块导入前检查宿主隔离边界。"""
+
+        # 类路径来自队列消息，因此导入前必须先限制在可信包前缀内。
+        module_name, separator, qualified_name = reference.partition(":")
+        if not separator or not module_name or not qualified_name or "<locals>" in qualified_name:
+            raise UnknownJobError("任务类路径不合法")
+        if not any(module_name == package or module_name.startswith(f"{package}.") for package in self.allowed_packages):
+            raise UnknownJobError("任务模块不在允许范围内")
+        # 进程入口和组合根可能在导入时初始化宿主，不能等类型检查后再拒绝。
+        if any(module_name == root or module_name.startswith(f"{root}.") for root in ("app.main", "app.console", "app.worker", "app.bootstrap")):
+            raise UnknownJobError("任务模块不能是进程入口或组合根")
+        return module_name, qualified_name

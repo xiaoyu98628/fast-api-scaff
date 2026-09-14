@@ -19,6 +19,7 @@ class MemcachedCacheProvider:
 
         settings = MemcachedCacheSettings.model_validate(raw_config)
         return CacheResourceDefinition(
+            driver=self.driver,
             key_prefix=settings.key_prefix,
             factory=partial(self._create, settings),
         )

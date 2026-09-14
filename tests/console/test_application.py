@@ -48,7 +48,7 @@ def build_container(settings: Settings, events: list[str]) -> ApplicationContain
         caches=caches,
         http=http,
         vectors=vectors,
-        users=build_user_context(databases),
+        users=build_user_context(settings, databases, caches),
         startup_callbacks=(start,),
         async_shutdown_callbacks=(stop, databases.aclose, caches.aclose, http.aclose, vectors.aclose),
     )

@@ -1,6 +1,7 @@
 """验证认证 HTTP 接口、凭据处理和安全响应头。"""
 
 from collections.abc import AsyncIterator
+from dataclasses import replace
 from types import SimpleNamespace
 from typing import cast
 from unittest.mock import ANY, AsyncMock, Mock
@@ -10,6 +11,7 @@ import pytest
 import pytest_asyncio
 from httpx2 import ASGITransport, AsyncClient
 
+from app.bootstrap.build import build_application_container
 from app.bootstrap.http.application import create_app
 from app.config.app import AppSettings
 from app.config.auth import AuthSettings
@@ -17,7 +19,9 @@ from app.config.cache import CacheSettings
 from app.config.cors import CorsSettings
 from app.config.database import DatabaseSettings
 from app.config.settings import Settings
+from app.contexts.user.application.login_attempts import LoginFailureStatus
 from app.contexts.user.jobs.login_succeeded import LoginSucceededJob
+from app.interfaces.http.controllers.v1.auth.codes import AuthErrorCode
 from app.interfaces.http.controllers.v1.auth.router import _publish_login_succeeded
 from app.interfaces.http.shared.response.codes.error_code import ErrorCode
 from app.runtime.container import ApplicationContainer
@@ -174,12 +178,89 @@ async def test_invalid_login_payload_does_not_echo_password(client: AsyncClient)
     assert oversized.status_code == 422
 
 
+@pytest.mark.asyncio
+async def test_locked_login_returns_429_and_retry_after_without_hashing() -> None:
+    class LockedLoginAttempts:
+        async def retry_after(self, _identity: str) -> int | None:
+            return 42
+
+        async def record_failure(self, _identity: str) -> LoginFailureStatus:
+            raise AssertionError("锁定请求不应记录新的失败")
+
+        async def clear(self, _identity: str) -> None:
+            raise AssertionError("锁定请求不应清除失败记录")
+
+    def build_locked_container(active_settings: Settings) -> ApplicationContainer:
+        container = build_application_container(active_settings)
+        users = replace(
+            container.users,
+            auth=replace(container.users.auth, login_attempts=LockedLoginAttempts()),
+        )
+        return replace(container, users=users)
+
+    app = create_app(settings(), container_builder=build_locked_container)
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as http:
+            response = await http.post(
+                "/api/v1/auth/login",
+                json={"username": "alice", "password": "password123"},
+            )
+
+    assert response.status_code == 429
+    assert response.json()["code"] == "4290011102"
+    assert response.json()["message"] == "登录失败次数过多，已临时锁定，请在 42 秒后重试"
+    assert response.json()["data"] == {"retry_after_seconds": 42}
+    assert response.headers["Retry-After"] == "42"
+    assert response.headers["Cache-Control"] == "no-store"
+    assert "WWW-Authenticate" not in response.headers
+
+
+@pytest.mark.asyncio
+async def test_failed_login_returns_remaining_attempts() -> None:
+    class FailedLoginAttempts:
+        async def retry_after(self, _identity: str) -> int | None:
+            return None
+
+        async def record_failure(self, _identity: str) -> LoginFailureStatus:
+            return LoginFailureStatus(remaining_attempts=3)
+
+        async def clear(self, _identity: str) -> None:
+            raise AssertionError("失败登录不应清除失败记录")
+
+    def build_failed_container(active_settings: Settings) -> ApplicationContainer:
+        container = build_application_container(active_settings)
+        users = replace(
+            container.users,
+            auth=replace(container.users.auth, login_attempts=FailedLoginAttempts()),
+        )
+        return replace(container, users=users)
+
+    app = create_app(settings(), container_builder=build_failed_container)
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as http:
+            response = await http.post(
+                "/api/v1/auth/login",
+                json={"username": "!", "password": "password123"},
+            )
+
+    assert response.status_code == 401
+    assert response.json()["code"] == "4010011101"
+    assert response.json()["message"] == "用户名或密码错误，还可尝试 3 次"
+    assert response.json()["data"] == {"remaining_attempts": 3}
+    assert response.headers["WWW-Authenticate"] == "Bearer"
+    assert response.headers["Cache-Control"] == "no-store"
+
+
 def test_auth_openapi_documents_bearer_and_unified_responses() -> None:
     schema = create_app(settings()).openapi()
     paths = schema["paths"]
     assert schema["components"]["securitySchemes"]["SessionBearer"]["scheme"] == "bearer"
     assert "security" not in paths["/api/v1/auth/login"]["post"]
     assert "404" not in paths["/api/v1/auth/login"]["post"]["responses"]
+    assert "429" in paths["/api/v1/auth/login"]["post"]["responses"]
+    login_responses = paths["/api/v1/auth/login"]["post"]["responses"]
+    assert "LoginFailureDetail" in login_responses["401"]["content"]["application/json"]["schema"]["$ref"]
+    assert "LoginLockDetail" in login_responses["429"]["content"]["application/json"]["schema"]["$ref"]
     assert "security" not in paths["/api/v1/users"]["get"]
     for path, method in (("/api/v1/auth/me", "get"), ("/api/v1/auth/logout", "post")):
         operation = paths[path][method]
@@ -188,3 +269,4 @@ def test_auth_openapi_documents_bearer_and_unified_responses() -> None:
         assert "JsonResponse" in reference
     assert "content" not in paths["/api/v1/auth/logout"]["post"]["responses"]["204"]
     assert schema["components"]["schemas"]["LoginRequest"]["properties"]["password"]["writeOnly"] is True
+    assert AuthErrorCode.INVALID_CREDENTIALS.message == "用户名或密码错误"

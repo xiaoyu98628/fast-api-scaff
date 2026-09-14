@@ -34,7 +34,7 @@
 
 - FastAPI HTTP 宿主与 Typer Console 宿主；
 - 用户限界上下文的增、查、改、删示例；
-- 简单会话认证，用户表不增加角色或认证版本字段，数据写入使用内部乐观锁版本；
+- 数据库会话认证与 Redis 登录失败限制，用户表不增加角色或认证版本字段，数据写入使用内部乐观锁版本；
 - MySQL、PostgreSQL、SQLite 异步数据库连接；
 - Redis、Memcached 字节级 KV 缓存；
 - Milvus、Chroma 与 Elasticsearch 统一向量 CRUD 和近邻检索；
@@ -46,7 +46,7 @@
 尚未实现：
 
 - 常驻 Scheduler 宿主；
-- 角色/权限体系、用户自行修改密码、刷新令牌和登录限流；
+- 角色/权限体系、用户自行修改密码、刷新令牌和 IP 登录限流；
 - 领域事件、Outbox、Saga 或跨数据库原子事务；
 - Redis Hash/List/Set/ZSet 等数据结构；
 - 缓存故障时的自动降级或透明回退；
