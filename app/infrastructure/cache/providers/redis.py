@@ -10,7 +10,7 @@ from app.infrastructure.cache.storages.redis.storage import RedisStorage
 
 
 class RedisCacheProvider:
-    """校验 Redis 配置并装配连接与聚合 Storage。"""
+    """校验 Redis 配置并装配连接与字节级 KV Storage。"""
 
     driver = "redis"
 

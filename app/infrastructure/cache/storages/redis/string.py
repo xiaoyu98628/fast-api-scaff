@@ -10,7 +10,7 @@ class RedisStringStorage(BaseRedisStorage):
     """实现 Redis String 对应的字节级 KV 操作。"""
 
     def __init__(self, client: Redis) -> None:
-        """绑定底层异步 Redis 客户端。"""
+        """借用连接资源拥有的 Redis 客户端，不接管其生命周期。"""
 
         super().__init__(client)
 

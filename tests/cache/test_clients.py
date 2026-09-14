@@ -13,6 +13,8 @@ from app.infrastructure.cache.contracts.client import NO_EXPIRATION, CacheTTL
 from app.infrastructure.cache.errors import CacheKeyError, CacheOperationError
 from app.infrastructure.cache.key import CacheKeyBuilder
 from app.infrastructure.cache.storages.memcached import MemcachedCacheStorage
+from app.infrastructure.cache.storages.redis.base import BaseRedisStorage
+from app.infrastructure.cache.storages.redis.storage import RedisStorage
 from app.infrastructure.cache.storages.redis.string import RedisStringStorage
 
 
@@ -56,8 +58,10 @@ async def test_redis_storage_uses_raw_key_and_translates_errors(monkeypatch: pyt
     monkeypatch.setattr(client, "set", set_value)
     monkeypatch.setattr(client, "get", get_value)
     connection = RedisCacheConnection(client)
-    storage = RedisStringStorage(client)
+    storage = RedisStorage(client)
 
+    assert isinstance(storage.strings, RedisStringStorage)
+    assert isinstance(storage.strings, BaseRedisStorage)
     assert await storage.set("app:key", b"value", 60) is True
     set_value.assert_awaited_once_with("app:key", b"value", ex=60)
 

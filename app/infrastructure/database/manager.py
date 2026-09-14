@@ -5,7 +5,6 @@ from contextlib import asynccontextmanager
 from copy import deepcopy
 from functools import partial
 
-from anyio import CancelScope
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from app.config.database import DatabaseSettings
@@ -14,6 +13,7 @@ from app.infrastructure.database.errors import DatabaseConfigurationError
 from app.infrastructure.database.factory import close_database_resource, create_database_resource
 from app.infrastructure.database.providers.registry import DEFAULT_DATABASE_PROVIDERS, DatabaseProviderRegistry
 from app.infrastructure.database.resource import DatabaseResource
+from app.infrastructure.resources.closing import close_lazy_resources
 from app.infrastructure.resources.lazy import AsyncLazy
 
 
@@ -90,22 +90,7 @@ class DatabaseManager:
         """封锁新获取并释放所有已初始化连接池。"""
 
         self._closed = True
-        # 在第一次 await 前同步封锁全部资源，避免关闭期间产生新借用。
-        for resource in self._resources.values():
-            resource.begin_close()
-
-        errors: list[BaseException] = []
-
-        # 外部取消不能打断释放序列，否则部分连接池可能永久遗留。
-        with CancelScope(shield=True):
-            for resource in reversed(tuple(self._resources.values())):
-                try:
-                    await resource.aclose()
-                except BaseException as error:
-                    errors.append(error)
-
-        if errors:
-            raise BaseExceptionGroup("数据库资源关闭失败", errors)
+        await close_lazy_resources(self._resources.values(), error_message="数据库资源关闭失败")
 
     async def _create(
         self,

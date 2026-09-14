@@ -47,6 +47,10 @@ ApplicationContainer
   → Codec（业务值 ↔ bytes）
 ```
 
+Redis 使用 `RedisStorage` 聚合数据类型适配器，当前 `strings` 实现通用 KV 契约。各数据类型 Storage 继承 `BaseRedisStorage`，统一保存从 Connection 借用的客户端引用；基类不拥有客户端，不负责连接建立、健康检查或关闭，这些生命周期职责仍由 Connection 承担。
+
+后续需要 ZSet 或 List 时，应分别增加继承同一基类的 `RedisSortedSetStorage`、`RedisListStorage`，由 `RedisStorage` 使用同一个客户端组合。Redis 专属能力不进入 Redis/Memcached 共用的 `CacheClient`；届时应提供显式的 Redis 能力入口，在选择到 Memcached 连接时立即返回清楚的“不支持 Redis 数据结构”配置错误，避免把不支持的方法伪装成通用缓存能力。
+
 职责隔离的价值：
 
 - Manager 不暴露 Redis/Memcached 具体客户端；

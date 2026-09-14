@@ -2,7 +2,6 @@
 
 from functools import partial
 
-from anyio import CancelScope
 from pydantic import ValidationError
 
 from app.config.cache import CacheSettings
@@ -13,6 +12,7 @@ from app.infrastructure.cache.errors import CacheConfigurationError
 from app.infrastructure.cache.key import CacheKeyBuilder
 from app.infrastructure.cache.providers.registry import DEFAULT_CACHE_PROVIDERS, CacheProviderRegistry
 from app.infrastructure.cache.resource import ManagedCacheResource
+from app.infrastructure.resources.closing import close_lazy_resources
 from app.infrastructure.resources.lazy import AsyncLazy
 
 
@@ -86,22 +86,7 @@ class CacheManager:
         """封锁新获取并释放全部已初始化缓存连接。"""
 
         self._closed = True
-        # 在第一次 await 前同步封锁全部资源，避免关闭期间产生新借用。
-        for resource in self._resources.values():
-            resource.begin_close()
-
-        errors: list[BaseException] = []
-
-        # 外部取消不能中断释放序列，否则部分连接池可能遗留。
-        with CancelScope(shield=True):
-            for resource in reversed(tuple(self._resources.values())):
-                try:
-                    await resource.aclose()
-                except BaseException as error:
-                    errors.append(error)
-
-        if errors:
-            raise BaseExceptionGroup("缓存客户端关闭失败", errors)
+        await close_lazy_resources(self._resources.values(), error_message="缓存客户端关闭失败")
 
     async def _create(self, definition: CacheResourceDefinition) -> ManagedCacheResource:
         """组合驱动资源与统一 key、TTL 规则的公共客户端。"""

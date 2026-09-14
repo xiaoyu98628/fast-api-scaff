@@ -5,10 +5,6 @@ class HttpError(RuntimeError):
     """HTTP 出站基础能力异常基类。"""
 
 
-class HttpConfigurationError(HttpError):
-    """HTTP 出站配置不合法。"""
-
-
 class HttpTransportError(HttpError):
     """HTTP 请求因网络或传输协议失败。"""
 

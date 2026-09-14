@@ -10,7 +10,7 @@
 - 简单数据库会话认证：登录、当前用户、退出，随机 Bearer Token 只保存摘要；
 - MySQL、PostgreSQL、SQLite 异步 SQLAlchemy；
 - Repository、Mapper、Unit of Work 与 Alembic migration；
-- Redis、Memcached 字节级 KV 缓存；
+- Redis、Memcached 字节级 KV 缓存，Redis Storage 按数据类型组织适配器；
 - Milvus（本地 Lite/远程）、Chroma（本地持久化/远程）和 Elasticsearch 统一异步向量存储；
 - 普通与流式 HTTP 出站请求、独立连接池、阶段超时、池压力诊断和结构化日志；
 - Redis Streams、Kafka、RabbitMQ 队列适配器和独立 Worker；

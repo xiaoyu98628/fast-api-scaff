@@ -1,9 +1,9 @@
 """管理向量存储配置、命名连接和延迟客户端生命周期。"""
 
-from anyio import CancelScope
 from pydantic import ValidationError
 
 from app.config.vector import VectorSettings
+from app.infrastructure.resources.closing import close_lazy_resources
 from app.infrastructure.resources.lazy import AsyncLazy
 from app.infrastructure.vector.contracts.client import VectorClient
 from app.infrastructure.vector.contracts.provider import VectorResourceDefinition
@@ -66,19 +66,7 @@ class VectorStoreManager:
         """封锁新获取并释放全部已初始化向量资源。"""
 
         self._closed = True
-        for resource in self._resources.values():
-            resource.begin_close()
-
-        errors: list[BaseException] = []
-        with CancelScope(shield=True):
-            for resource in reversed(tuple(self._resources.values())):
-                try:
-                    await resource.aclose()
-                except BaseException as error:
-                    errors.append(error)
-
-        if errors:
-            raise BaseExceptionGroup("向量存储资源关闭失败", errors)
+        await close_lazy_resources(self._resources.values(), error_message="向量存储资源关闭失败")
 
     @staticmethod
     def _prepare_connections(
