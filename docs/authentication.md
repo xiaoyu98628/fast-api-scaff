@@ -59,8 +59,26 @@ uv run python -m app.worker
 - `/auth/logout` 要求格式正确的 Bearer Token；不存在、已退出或已过期的会话也返回 204。
 - 认证 401 附带 `WWW-Authenticate: Bearer` 和 `Cache-Control: no-store`；登录、当前用户和退出的成功响应也禁止缓存。
 - 所有登录凭据失败都附带 `WWW-Authenticate: Bearer` 和 `Cache-Control: no-store`，不通过状态码或公开文案区分账户是否存在。
+- 同一规范化用户名达到失败阈值时，当次及锁定期内的登录返回 429、`Retry-After` 和 `Cache-Control: no-store`；429 不附带 `WWW-Authenticate`。
 
 只接受 Authorization 请求头，不从 URL、查询参数或 Cookie 读取 Token。示例 curl 使用本地 HTTP；实际网络传输应使用 HTTPS。应用访问日志不记录密码、请求凭据或响应 Token。
+
+## 登录失败限制
+
+`AUTH_LOGIN_LIMIT_CACHE` 指定保存登录安全状态的命名缓存连接。未配置时关闭限制；`sample.env` 将它设为 `session`。该连接必须使用 Redis，因为计数依赖原子 `INCR` 和 TTL。组合根在构建容器时检查驱动，选择 Memcached、其他驱动或不存在的连接会直接报告配置错误，检查过程不会建立网络连接。
+
+默认规则如下：
+
+- `AUTH_LOGIN_MAX_FAILURES=5`；
+- `AUTH_LOGIN_FAILURE_WINDOW_SECONDS=300`，从第一次失败开始计算固定窗口；
+- `AUTH_LOGIN_LOCK_SECONDS=900`，第 5 次失败把计数 key 延长为 15 分钟锁定并立即返回 429；
+- 用户名不存在、领域格式无效、密码错误、账户禁用，以及慢哈希后重新核对失败都会计数；
+- 锁定预检查先于数据库查询和密码哈希，锁定期内即使密码正确也直接返回 429；
+- 阈值前成功登录会在数据库会话提交后删除失败计数。
+
+Redis key 只包含 `username.strip().lower()` 的 SHA-256 摘要，不保存原始用户名、密码或 Token。首次递增与固定窗口 TTL 由 Redis Lua 脚本原子完成；达到阈值后更新同一 key 的 TTL。多个应用进程共享计数。Redis 读取、递增、TTL 更新或成功后的清理失败都按安全状态不可确认处理，登录返回通用 500，不把故障当作未命中，也不自动回退到进程内计数。若数据库会话已经提交而清理失败，该次请求仍返回 500，已创建但未返回的会话会按正常 TTL 过期。
+
+限流维度只有规范化用户名，因此攻击者可以针对已知用户名主动触发临时锁定。增加 IP 维度前必须先明确可信反向代理和客户端地址解析规则；当前实现不读取未经确认的转发头。
 
 ## 会话存储与生命周期
 
@@ -107,6 +125,6 @@ async def demonstrate_login(container: ApplicationContainer) -> UserDTO:
     return user
 ```
 
-Domain/Application 不持有容器或数据库 Manager。认证服务依赖 `UserUnitOfWorkFactory`、`PasswordHasher`、`SessionTokenCodec` 和可注入时钟。用户与会话 Repository 共享同一个 SQLAlchemy Session，由用例显式提交，退出时沿用现有 UoW 的回滚、取消与资源清理。
+Domain/Application 不持有容器、数据库 Manager 或缓存 Manager。认证服务依赖 `UserUnitOfWorkFactory`、`PasswordHasher`、`SessionTokenCodec`、`LoginAttemptLimiter` 窄协议和可注入时钟。Redis 适配器由用户上下文组合点注入。用户与会话 Repository 共享同一个 SQLAlchemy Session，由用例显式提交，退出时沿用现有 UoW 的回滚、取消与资源清理。
 
-本示例不提供角色权限、登录限流、客户端 Token 存储策略、自助改密、刷新令牌或会话后台清理。现有公开用户 CRUD 不能因为增加了登录示例就被视为受保护接口。
+本示例不提供角色权限、IP 登录限流、客户端 Token 存储策略、自助改密、刷新令牌或会话后台清理。现有公开用户 CRUD 不能因为增加了登录示例就被视为受保护接口。

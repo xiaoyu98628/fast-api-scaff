@@ -4,10 +4,13 @@ import asyncio
 
 import pytest
 
+from app.config.app import AppSettings
 from app.config.cache import CacheSettings
+from app.config.cors import CorsSettings
 from app.config.database import DatabaseSettings
 from app.config.http import HttpSettings
 from app.config.queue import QueueSettings
+from app.config.settings import Settings
 from app.config.vector import VectorSettings
 from app.contexts.user.composition import build_user_context
 from app.infrastructure.cache.manager import CacheManager
@@ -24,8 +27,14 @@ def build_container(
     startup_callbacks=(),
     async_shutdown_callbacks=(),
 ) -> ApplicationContainer:
-    databases = DatabaseManager(DatabaseSettings(_env_file=None))
-    caches = CacheManager(CacheSettings(_env_file=None))
+    settings = Settings(
+        app=AppSettings(_env_file=None),
+        database=DatabaseSettings(_env_file=None),
+        cache=CacheSettings(_env_file=None),
+        cors=CorsSettings(_env_file=None),
+    )
+    databases = DatabaseManager(settings.database)
+    caches = CacheManager(settings.cache)
     http = HttpClientManager(HttpSettings(_env_file=None))
     vectors = VectorStoreManager(VectorSettings(_env_file=None))
     return ApplicationContainer(
@@ -34,7 +43,7 @@ def build_container(
         caches=caches,
         http=http,
         vectors=vectors,
-        users=build_user_context(databases),
+        users=build_user_context(settings, databases, caches),
         startup_callbacks=startup_callbacks,
         async_shutdown_callbacks=(*async_shutdown_callbacks, databases.aclose, caches.aclose, http.aclose, vectors.aclose),
     )

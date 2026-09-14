@@ -1,6 +1,7 @@
 """验证认证 HTTP 接口、凭据处理和安全响应头。"""
 
 from collections.abc import AsyncIterator
+from dataclasses import replace
 from types import SimpleNamespace
 from typing import cast
 from unittest.mock import ANY, AsyncMock, Mock
@@ -10,6 +11,7 @@ import pytest
 import pytest_asyncio
 from httpx2 import ASGITransport, AsyncClient
 
+from app.bootstrap.build import build_application_container
 from app.bootstrap.http.application import create_app
 from app.config.app import AppSettings
 from app.config.auth import AuthSettings
@@ -174,12 +176,48 @@ async def test_invalid_login_payload_does_not_echo_password(client: AsyncClient)
     assert oversized.status_code == 422
 
 
+@pytest.mark.asyncio
+async def test_locked_login_returns_429_and_retry_after_without_hashing() -> None:
+    class LockedLoginAttempts:
+        async def retry_after(self, _identity: str) -> int | None:
+            return 42
+
+        async def record_failure(self, _identity: str) -> int | None:
+            raise AssertionError("锁定请求不应记录新的失败")
+
+        async def clear(self, _identity: str) -> None:
+            raise AssertionError("锁定请求不应清除失败记录")
+
+    def build_locked_container(active_settings: Settings) -> ApplicationContainer:
+        container = build_application_container(active_settings)
+        users = replace(
+            container.users,
+            auth=replace(container.users.auth, login_attempts=LockedLoginAttempts()),
+        )
+        return replace(container, users=users)
+
+    app = create_app(settings(), container_builder=build_locked_container)
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as http:
+            response = await http.post(
+                "/api/v1/auth/login",
+                json={"username": "alice", "password": "password123"},
+            )
+
+    assert response.status_code == 429
+    assert response.json()["message"] == ErrorCode.TOO_MANY_REQUESTS.message
+    assert response.headers["Retry-After"] == "42"
+    assert response.headers["Cache-Control"] == "no-store"
+    assert "WWW-Authenticate" not in response.headers
+
+
 def test_auth_openapi_documents_bearer_and_unified_responses() -> None:
     schema = create_app(settings()).openapi()
     paths = schema["paths"]
     assert schema["components"]["securitySchemes"]["SessionBearer"]["scheme"] == "bearer"
     assert "security" not in paths["/api/v1/auth/login"]["post"]
     assert "404" not in paths["/api/v1/auth/login"]["post"]["responses"]
+    assert "429" in paths["/api/v1/auth/login"]["post"]["responses"]
     assert "security" not in paths["/api/v1/users"]["get"]
     for path, method in (("/api/v1/auth/me", "get"), ("/api/v1/auth/logout", "post")):
         operation = paths[path][method]

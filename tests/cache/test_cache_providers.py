@@ -7,6 +7,7 @@ import pytest
 from app.bootstrap.build import build_application_container
 from app.bootstrap.http.application import create_app
 from app.config.app import AppSettings
+from app.config.auth import AuthSettings
 from app.config.cache import CacheSettings
 from app.config.cors import CorsSettings
 from app.config.database import DatabaseSettings
@@ -78,3 +79,20 @@ async def test_application_container_accepts_extended_provider_registry() -> Non
         await cache.set("key", b"value")
 
         assert await cache.get("key") == b"value"
+
+
+def test_login_limiter_rejects_memcached_during_container_composition() -> None:
+    settings = Settings(
+        app=AppSettings(_env_file=None),
+        auth=AuthSettings(login_limit_cache="security", _env_file=None),
+        database=DatabaseSettings(_env_file=None),
+        cache=CacheSettings(
+            namespace="test",
+            connections={"security": {"driver": "memcached"}},
+            _env_file=None,
+        ),
+        cors=CorsSettings(_env_file=None),
+    )
+
+    with pytest.raises(CacheConfigurationError, match="不支持所需的 Redis 功能"):
+        build_application_container(settings)

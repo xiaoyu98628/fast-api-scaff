@@ -11,7 +11,7 @@
 | 配置组 | 前缀 | 示例 |
 | --- | --- | --- |
 | 应用 | `APP_` | `APP_NAME` |
-| 认证 | `AUTH_` | `AUTH_SESSION_TTL_SECONDS` |
+| 认证 | `AUTH_` | `AUTH_SESSION_TTL_SECONDS`、`AUTH_LOGIN_LIMIT_CACHE` |
 | 日志 | `LOG_` | `LOG_LEVEL` |
 | CORS | `CORS_` | `CORS_ALLOW_ORIGINS` |
 | HTTP 出站 | `HTTP_` | `HTTP_TIMEOUT__CONNECT` |
@@ -43,8 +43,12 @@ LOG_HANDLERS={"stdout":{"driver":"stream","stream":"stdout"}}
 | 变量 | 类型 | 默认值 | 约束与说明 |
 | --- | --- | --- | --- |
 | `AUTH_SESSION_TTL_SECONDS` | `int` | `3600` | 1–2592000 秒；登录时按本地无时区 datetime 确定过期时间，修改配置只影响新会话 |
+| `AUTH_LOGIN_LIMIT_CACHE` | `str \| None` | 未配置 | 登录失败限制使用的命名缓存连接；必须是 Redis，省略时关闭限制 |
+| `AUTH_LOGIN_MAX_FAILURES` | `int` | `5` | 1–100；同一规范化用户名在窗口内达到该次数时锁定 |
+| `AUTH_LOGIN_FAILURE_WINDOW_SECONDS` | `int` | `300` | 1–86400 秒；从首次失败开始计算的固定窗口 |
+| `AUTH_LOGIN_LOCK_SECONDS` | `int` | `900` | 1–2592000 秒；达到阈值后覆盖计数 key 的剩余 TTL |
 
-会话固定存放在用户上下文的 `main` 数据库，且不使用 `CACHE_DEFAULT_TTL`。详见[认证](authentication.md)。
+会话固定存放在用户上下文的 `main` 数据库，且不使用 `CACHE_DEFAULT_TTL`。登录失败计数是独立的 Redis 安全状态，始终使用上表的窗口和锁定时间，不读取 `CACHE_DEFAULT_TTL`。配置了限制时，容器组合会校验连接名称和 Redis 驱动，但连接仍延迟到首次登录时创建；缓存不可用会使登录失败关闭。详见[认证](authentication.md)。
 
 | 变量 | 类型 | 默认值           | 约束与说明 |
 | --- | --- |------------------| --- |

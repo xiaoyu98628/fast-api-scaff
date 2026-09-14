@@ -72,7 +72,7 @@ bootstrap/composition 负责选择实现并完成装配
 - SQLAlchemy mapper/repository/UoW/model 与 pwdlib 密码哈希适配器；
 - HTTP 与 Console 入口。
 
-它覆盖用户 CRUD、密码重置和简单会话认证。`AuthApplicationService` 提供登录、当前用户和退出，独立的 `UserSession` 记录令牌摘要与有效期，并通过 `UserUnitOfWork.sessions` 与用户仓储共享事务。用户表没有角色或认证版本字段，但使用内部数据版本执行乐观并发控制；公开 CRUD 不受登录校验保护，也不包含用户自行修改密码和角色权限体系。它是示例上下文，并非完整 IAM。
+它覆盖用户 CRUD、密码重置、数据库会话认证和按用户名统计的登录失败限制。`AuthApplicationService` 提供登录、当前用户和退出，独立的 `UserSession` 记录令牌摘要与有效期，并通过 `UserUnitOfWork.sessions` 与用户仓储共享事务。Redis 适配器使用原子计数与 TTL 提供临时锁定。用户表没有角色或认证版本字段，但使用内部数据版本执行乐观并发控制；公开 CRUD 不受登录校验保护，也不包含用户自行修改密码和角色权限体系。它是示例上下文，并非完整 IAM。
 
 ## 4. 聚合与不变量
 
@@ -127,7 +127,7 @@ Python 无法提供绝对私有性；下划线是协作契约。真正的保证�
 
 Application 不知道 FastAPI、Typer、SQLAlchemy、pwdlib 或具体数据库。时钟和 `PasswordHasher` 窄端口由组合根注入，测试可提供固定时间和确定性的假哈希实现。端口提供 `async def hash(self, password: Password) -> PasswordHash` 和 `async def verify_or_dummy(self, password: str, password_hash: PasswordHash | None) -> bool`。基础设施适配器在线程中执行 Argon2 哈希和验证，两类操作共享同一个默认容量为 2 的限制器；用户服务和认证服务复用该实例。创建用户在哈希前做规范化与唯一性预检查，写入前再次检查；密码重置在确认目标存在后才哈希，并在写入事务中重新读取。这些预检查减少无效请求的计算占用，最终正确性仍由事务内检查和数据库约束保证。取消调用时会等待本次工作结束再传播取消，避免提前释放仍在计算的额度。聚合不会接触明文密码。
 
-会话令牌通过应用层 `SessionTokenCodec` 窄协议注入，基础设施使用 `secrets.token_urlsafe(32)` 和 SHA-256。登录凭据失败统一抛出 `InvalidCredentialsError`；用户不存在或用户名格式错误时，密码适配器使用固定占位哈希执行等成本校验。用户存在时，慢密码验证在数据库事务外执行，签发前重新读取密码哈希与账户状态。用户数据版本只保护聚合写入，不是认证版本，因此重新读取仍不构成并发改密撤销保证；已有会话也不会因密码重置失效。完整契约见[认证](authentication.md)。
+会话令牌通过应用层 `SessionTokenCodec` 窄协议注入，基础设施使用 `secrets.token_urlsafe(32)` 和 SHA-256。登录失败限制通过 `LoginAttemptLimiter` 窄协议注入，Redis 实现隐藏用户名摘要、原子计数和 TTL 细节；锁定预检查发生在数据库查询和密码慢哈希之前。未达到阈值的凭据失败统一抛出 `InvalidCredentialsError`；用户不存在或用户名格式错误时，密码适配器使用固定占位哈希执行等成本校验。用户存在时，慢密码验证在数据库事务外执行，签发前重新读取密码哈希与账户状态。用户数据版本只保护聚合写入，不是认证版本，因此重新读取仍不构成并发改密撤销保证；已有会话也不会因密码重置失效。完整契约见[认证](authentication.md)。
 
 Application Service 可以做跨聚合的流程编排和权限决策，但不应承载实体自身的核心规则。反过来，Domain 也不应执行数据库/缓存/网络 I/O。
 
@@ -158,7 +158,7 @@ Application Service 可以做跨聚合的流程编排和权限决策，但不应
 
 `app.bootstrap.build.build_application_container()` 是全局组合根，`build_user_context()` 是上下文组合点。它们可以依赖具体实现，因为“选择实现并接线”就是它们的职责。
 
-`UserContext.service` 保留用户 CRUD，`UserContext.auth` 提供认证用例。`build_user_context(databases, *, session_ttl_seconds=3600)` 由全局组合根传入认证配置；构建时不连接数据库、不计算密码哈希，也不新增需要关闭的资源。
+`UserContext.service` 保留用户 CRUD，`UserContext.auth` 提供认证用例。全局组合根调用 `build_user_context(settings, databases, caches)`；上下文组合点读取完整 `Settings`，以便后续增加用户上下文配置时无需展开组合根参数。全局配置只停留在 composition 模块，由这里把具体值和 `LoginAttemptLimiter` 等窄协议注入 Application Service，Domain/Application 不依赖配置模型。构建时会校验登录限制选择的缓存名称和 Redis 驱动，但不连接数据库或缓存，也不计算密码哈希。
 
 容器不是业务 Service Locator。若 application service 接收整个容器，它可以在任意地方获取任何数据库、缓存和上下文，真实依赖无法从构造签名看出。这就是“容器抽象诱导边界穿透”：工具本身合理，滥用方式会让边界失效。
 

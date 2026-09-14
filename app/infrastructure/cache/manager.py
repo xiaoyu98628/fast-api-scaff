@@ -6,12 +6,14 @@ from pydantic import ValidationError
 
 from app.config.cache import CacheSettings
 from app.infrastructure.cache.clients.managed import ManagedCacheClient
+from app.infrastructure.cache.clients.redis import ManagedRedisCacheClient
 from app.infrastructure.cache.contracts.client import CacheClient
 from app.infrastructure.cache.contracts.provider import CacheResourceDefinition
 from app.infrastructure.cache.errors import CacheConfigurationError
 from app.infrastructure.cache.key import CacheKeyBuilder
 from app.infrastructure.cache.providers.registry import DEFAULT_CACHE_PROVIDERS, CacheProviderRegistry
 from app.infrastructure.cache.resource import ManagedCacheResource
+from app.infrastructure.cache.storages.redis.storage import RedisStorage
 from app.infrastructure.resources.closing import close_lazy_resources
 from app.infrastructure.resources.lazy import AsyncLazy
 
@@ -31,13 +33,13 @@ class CacheManager:
         self._namespace = settings.namespace
         self._default_ttl = settings.default_ttl
         self._providers = providers
-        definitions = self._prepare_connections(settings)
+        self._definitions = self._prepare_connections(settings)
         self._resources = {
             name: AsyncLazy(
                 factory=partial(self._create, definition),
                 closer=ManagedCacheResource.aclose,
             )
-            for name, definition in definitions.items()
+            for name, definition in self._definitions.items()
         }
 
     @property
@@ -62,6 +64,28 @@ class CacheManager:
         """延迟创建并返回统一 bytes 缓存客户端。"""
 
         return (await self._get_resource(name)).client
+
+    def require_redis(self, name: str | None = None) -> str:
+        """校验命名连接提供 Redis 专属能力，并返回解析后的连接名。"""
+
+        resolved_name = self._resolve_name(name)
+        definition = self._definitions.get(resolved_name)
+        if definition is None:
+            raise CacheConfigurationError(f"缓存连接 {resolved_name!r} 未配置")
+        if definition.driver != "redis":
+            raise CacheConfigurationError(f"缓存连接 {resolved_name!r} 使用 {definition.driver!r} 驱动，不支持所需的 Redis 功能")
+
+        return resolved_name
+
+    async def get_redis(self, name: str | None = None) -> ManagedRedisCacheClient:
+        """延迟返回显式 Redis 客户端，其他驱动在创建资源前失败。"""
+
+        resolved_name = self.require_redis(name)
+        client = (await self._get_resource(resolved_name)).client
+        if not isinstance(client, ManagedRedisCacheClient):
+            raise CacheConfigurationError(f"缓存连接 {resolved_name!r} 没有提供 Redis 客户端")
+
+        return client
 
     async def ping(self, name: str | None = None) -> bool:
         """通过指定连接的原生健康检查验证可访问性。"""
@@ -92,11 +116,21 @@ class CacheManager:
         """组合驱动资源与统一 key、TTL 规则的公共客户端。"""
 
         resource = await definition.factory()
-        client = ManagedCacheClient(
-            storage=resource.storage,
-            key_builder=CacheKeyBuilder(self._namespace, definition.key_prefix),
-            default_ttl=self._default_ttl,
-        )
+        key_builder = CacheKeyBuilder(self._namespace, definition.key_prefix)
+        if definition.driver == "redis":
+            if not isinstance(resource.storage, RedisStorage):
+                raise CacheConfigurationError("Redis Provider 返回了不兼容的 Storage")
+            client: CacheClient = ManagedRedisCacheClient(
+                storage=resource.storage,
+                key_builder=key_builder,
+                default_ttl=self._default_ttl,
+            )
+        else:
+            client = ManagedCacheClient(
+                storage=resource.storage,
+                key_builder=key_builder,
+                default_ttl=self._default_ttl,
+            )
         return ManagedCacheResource(
             connection=resource.connection,
             storage=resource.storage,

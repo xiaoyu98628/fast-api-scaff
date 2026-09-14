@@ -9,5 +9,18 @@ class InvalidCredentialsError(AuthApplicationError):
     """用户名、密码或账户状态不允许登录。"""
 
 
+class LoginTemporarilyLockedError(AuthApplicationError):
+    """同一登录标识的连续失败已经触发临时锁定。"""
+
+    def __init__(self, retry_after_seconds: int) -> None:
+        """保存调用方重新尝试前需要等待的正整数秒数。"""
+
+        if not isinstance(retry_after_seconds, int) or isinstance(retry_after_seconds, bool) or retry_after_seconds <= 0:
+            raise ValueError("登录锁定等待时间必须为正整数秒")
+
+        self.retry_after_seconds = retry_after_seconds
+        super().__init__("登录尝试已被临时锁定")
+
+
 class AuthenticationRequiredError(AuthApplicationError):
     """凭据缺失或会话当前不可用。"""

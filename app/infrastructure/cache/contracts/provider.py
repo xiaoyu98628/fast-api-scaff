@@ -13,6 +13,7 @@ type CacheResourceFactory = Callable[[], Awaitable[CacheResource]]
 class CacheResourceDefinition:
     """已经完成配置校验、等待延迟创建的缓存资源定义。"""
 
+    driver: str
     key_prefix: str
     factory: CacheResourceFactory
 

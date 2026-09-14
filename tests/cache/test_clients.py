@@ -7,6 +7,7 @@ from memcachio import Client, MemcachedItem
 from redis.asyncio import Redis
 
 from app.infrastructure.cache.clients.managed import ManagedCacheClient
+from app.infrastructure.cache.clients.redis import ManagedRedisCacheClient
 from app.infrastructure.cache.connections.memcached import MemcachedCacheConnection
 from app.infrastructure.cache.connections.redis import RedisCacheConnection
 from app.infrastructure.cache.contracts.client import NO_EXPIRATION, CacheTTL
@@ -70,6 +71,52 @@ async def test_redis_storage_uses_raw_key_and_translates_errors(monkeypatch: pyt
 
     assert isinstance(captured.value.__cause__, OSError)
     await connection.aclose()
+
+
+@pytest.mark.asyncio
+async def test_redis_string_atomic_counter_and_ttl_operations(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = Redis(host="127.0.0.1", decode_responses=False)
+    evaluate = AsyncMock(return_value=3)
+    expire = AsyncMock(return_value=True)
+    ttl = AsyncMock(return_value=120)
+    monkeypatch.setattr(client, "eval", evaluate)
+    monkeypatch.setattr(client, "expire", expire)
+    monkeypatch.setattr(client, "ttl", ttl)
+    storage = RedisStringStorage(client)
+
+    assert await storage.increment("app:login:key", 300) == 3
+    assert await storage.expire("app:login:key", 900) is True
+    assert await storage.ttl("app:login:key") == 120
+
+    assert evaluate.await_args is not None
+    script, key_count, key, initial_ttl = evaluate.await_args.args
+    assert "INCR" in script
+    assert (key_count, key, initial_ttl) == (1, "app:login:key", 300)
+    expire.assert_awaited_once_with("app:login:key", 900)
+    ttl.assert_awaited_once_with("app:login:key")
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_managed_redis_client_applies_key_to_atomic_operations() -> None:
+    storage = Mock(spec=RedisStorage)
+    storage.strings = AsyncMock()
+    storage.strings.increment.return_value = 2
+    storage.strings.expire.return_value = True
+    storage.strings.ttl.return_value = 60
+    cache = ManagedRedisCacheClient(
+        storage=storage,
+        key_builder=CacheKeyBuilder("app", "security"),
+        default_ttl=300,
+    )
+
+    assert await cache.increment("login", ttl=120) == 2
+    assert await cache.expire("login", ttl=900) is True
+    assert await cache.ttl("login") == 60
+
+    storage.strings.increment.assert_awaited_once_with("app:security:login", 120)
+    storage.strings.expire.assert_awaited_once_with("app:security:login", 900)
+    storage.strings.ttl.assert_awaited_once_with("app:security:login")
 
 
 @pytest.mark.asyncio

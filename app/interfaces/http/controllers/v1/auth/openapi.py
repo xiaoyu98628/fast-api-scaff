@@ -11,6 +11,15 @@ AUTH_REQUIRED_RESPONSE: dict[str, Any] = {
     "headers": {"WWW-Authenticate": {"schema": {"type": "string"}, "description": "Bearer"}},
 }
 
+AUTH_RATE_LIMIT_RESPONSE: dict[str, Any] = {
+    "model": JsonResponse[None],
+    "description": "同一用户名失败次数达到阈值，登录暂时锁定",
+    "headers": {
+        "Retry-After": {"schema": {"type": "integer"}, "description": "再次尝试前等待的秒数"},
+        "Cache-Control": {"schema": {"type": "string"}, "description": "no-store"},
+    },
+}
+
 AUTH_VALIDATION_RESPONSE: dict[str, Any] = {
     "model": JsonResponse[list[ValidationErrorDetail]],
     "description": "登录请求字段不合法",

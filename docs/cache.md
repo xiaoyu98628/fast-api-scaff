@@ -44,12 +44,13 @@ ApplicationContainer
   → Connection（客户端/连接池与 ping/close）
   → Storage（后端字节级 KV 操作）
   → ManagedCacheClient（统一 key 与 TTL）
+      ↳ ManagedRedisCacheClient（显式 Redis String 原子能力）
   → Codec（业务值 ↔ bytes）
 ```
 
 Redis 使用 `RedisStorage` 聚合数据类型适配器，当前 `strings` 实现通用 KV 契约。各数据类型 Storage 继承 `BaseRedisStorage`，统一保存从 Connection 借用的客户端引用；基类不拥有客户端，不负责连接建立、健康检查或关闭，这些生命周期职责仍由 Connection 承担。
 
-后续需要 ZSet 或 List 时，应分别增加继承同一基类的 `RedisSortedSetStorage`、`RedisListStorage`，由 `RedisStorage` 使用同一个客户端组合。Redis 专属能力不进入 Redis/Memcached 共用的 `CacheClient`；届时应提供显式的 Redis 能力入口，在选择到 Memcached 连接时立即返回清楚的“不支持 Redis 数据结构”配置错误，避免把不支持的方法伪装成通用缓存能力。
+后续需要 ZSet 或 List 时，应分别增加继承同一基类的 `RedisSortedSetStorage`、`RedisListStorage`，由 `RedisStorage` 使用同一个客户端组合。Redis 专属能力不进入 Redis/Memcached 共用的 `CacheClient`。当前 `CacheManager.get_redis(name)` 是显式能力入口，返回 `ManagedRedisCacheClient`；选择 Memcached 或其他连接时会在创建资源前返回清楚的配置错误。后续类型应沿用这一入口和聚合方式增加专属客户端能力，不给 Memcached 增加伪实现。
 
 职责隔离的价值：
 
@@ -72,6 +73,8 @@ class CacheClient(Protocol):
 `set` 只接受 `bytes`，传字符串、dict 或 Pydantic model 会抛出 `TypeError`。这是刻意设计：隐式序列化容易产生不兼容数据，显式 codec 才能让 schema 演进可见。
 
 `delete/exists` 的布尔值表示目标 key 当时是否存在或删除是否生效，不应当作强一致业务事实。缓存随时可能过期或被其他进程修改。
+
+Redis 专属客户端在这些公共方法之外提供 `increment`、`expire` 和 `ttl`。`increment` 使用 Lua 把 `INCR` 与首次 `EXPIRE` 合为一次原子操作，供登录失败固定窗口计数使用；它不把通用 Lua 执行能力或原生 `redis.asyncio.Redis` 暴露给业务层。上下文仍应定义业务窄协议，由基础设施适配器调用该客户端。
 
 ## 4. Key 规则
 
@@ -156,7 +159,7 @@ greeting = None if raw is None else TextCacheCodec.decode(raw)
 
 ### Redis
 
-适合共享缓存、分布式部署和需要成熟运维能力的场景。当前公共接口只使用 Redis String，不提供 Hash/List/Set/ZSet、Lua、Pub/Sub 或分布式锁。
+适合共享缓存、分布式部署和需要成熟运维能力的场景。当前公共接口只使用 Redis String；Redis 专属客户端为登录失败限制提供受控的原子计数和 TTL，不提供通用 Lua、Hash/List/Set/ZSet、Pub/Sub 或分布式锁。
 
 不要从 `CacheManager` 向业务泄露 `redis.asyncio.Redis`。若业务确实需要集合或原子脚本，应为那项能力定义独立协议和专用 Redis 适配器；不要不断扩大通用 `CacheClient`，迫使 Memcached 提供虚假实现。
 
@@ -166,7 +169,7 @@ greeting = None if raw is None else TextCacheCodec.decode(raw)
 
 ## 8. 延迟连接与健康
 
-`CacheManager` 构造时会校验所有连接配置和 key 前缀，但不立刻连接远端。首次 `get(name)` 创建资源；真正网络错误通常在创建连接、`ping` 或读写时暴露。
+`CacheManager` 构造时会校验所有连接配置和 key 前缀，但不立刻连接远端。`require_redis(name)` 只校验连接是否存在且 driver 为 Redis；首次 `get(name)` 或 `get_redis(name)` 才创建资源。真正网络错误通常在 `ping` 或读写时暴露。
 
 检查指定连接：
 
@@ -188,7 +191,7 @@ async def check_cache(container: ApplicationContainer) -> bool:
 | --- | --- |
 | `CacheConfigurationError` | 名称、driver、字段、namespace/prefix 等配置错误 |
 | `CacheConnectionError` | 后端无法连接或 ping 失败 |
-| `CacheOperationError` | get/set/delete/exists 失败或返回不符合契约 |
+| `CacheOperationError` | get/set/delete/exists 或 Redis 原子计数/TTL 操作失败，或返回不符合契约 |
 | `CacheKeyError` | 业务 key 不符合跨驱动规则 |
 
 脚手架不会在一个缓存连接失败后自动切换到其他连接或进程内临时存储，也不会吞掉错误当作 cache miss。透明回退会造成危险歧义：调用方无法区分“数据不存在”和“缓存服务故障”，不同实例还可能访问不一致的数据。

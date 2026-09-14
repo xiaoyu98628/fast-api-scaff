@@ -7,7 +7,7 @@
 - FastAPI HTTP API、OpenAPI 与统一 JSON 响应；
 - Typer Console，一次性命令共享应用容器；
 - 用户限界上下文 CRUD、状态修改与密码重置示例，密码哈希和验证在线程中执行并共享并发限制；
-- 简单数据库会话认证：登录、当前用户、退出，随机 Bearer Token 只保存摘要；
+- 数据库会话认证：登录、当前用户、退出，随机 Bearer Token 只保存摘要，并用 Redis 限制连续登录失败；
 - MySQL、PostgreSQL、SQLite 异步 SQLAlchemy；
 - Repository、Mapper、Unit of Work 与 Alembic migration；
 - Redis、Memcached 字节级 KV 缓存，Redis Storage 按数据类型组织适配器；
@@ -51,6 +51,11 @@ CACHE_CONNECTIONS__SESSION__HOST=127.0.0.1
 CACHE_CONNECTIONS__SESSION__PORT=6379
 CACHE_CONNECTIONS__SESSION__DATABASE=0
 CACHE_CONNECTIONS__SESSION__KEY_PREFIX=session
+
+AUTH_LOGIN_LIMIT_CACHE=session
+AUTH_LOGIN_MAX_FAILURES=5
+AUTH_LOGIN_FAILURE_WINDOW_SECONDS=300
+AUTH_LOGIN_LOCK_SECONDS=900
 ```
 
 执行迁移并启动：
@@ -99,7 +104,9 @@ curl -X POST http://127.0.0.1:8000/api/v1/auth/login \
 
 将响应 `data.access_token` 放入 `Authorization: Bearer <token>`，即可访问 `GET /api/v1/auth/me`；`POST /api/v1/auth/logout` 删除该会话并返回 204。会话默认有效期为 3600 秒，可通过 `AUTH_SESSION_TTL_SECONDS` 配置。
 
-用户名不存在、格式错误、密码错误或账户禁用时统一返回 401 和“用户名或密码错误”。对于无法取得用户哈希的请求，密码组件仍执行固定占位哈希校验，避免直接暴露账户是否存在。
+用户名不存在、格式错误、密码错误或账户禁用时统一计为失败，并在未锁定时返回 401 和“用户名或密码错误”。`sample.env` 使用 `session` Redis 连接：同一规范化用户名 5 分钟内第 5 次失败会触发 15 分钟临时锁定，响应 429 和 `Retry-After`；锁定期间不再查询数据库或执行密码哈希。成功登录会清除未达到阈值的失败记录。缓存不可用时登录失败关闭并返回通用 500，不绕过限制。
+
+失败计数 key 只保存规范化用户名的 SHA-256 摘要。登录限制必须选择 Redis 连接；配置成 Memcached 或其他驱动时，容器组合阶段会明确报错，且不会为通用 `CacheClient` 增加伪原子接口。对于无法取得用户哈希的未锁定请求，密码组件仍执行固定占位哈希校验，避免直接暴露账户是否存在。
 
 认证使用独立的 `user_sessions` 表，签发时间和过期时间采用与用户资料一致的本地无时区 `datetime`，用户表不增加角色或认证版本字段。用户聚合使用从 1 开始递增的内部 `version` 执行乐观并发控制，陈旧写入返回 409，不把版本暴露到 HTTP DTO；数据库迁移将该字段定义为非空整数并默认初始化为 1。每次成功登录会清理已过期会话；密码重置保留已有会话，禁用期间会话不可用，再启用后未过期会话仍可使用。详细契约见[认证](docs/authentication.md)。
 

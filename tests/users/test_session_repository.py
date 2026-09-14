@@ -93,16 +93,34 @@ def test_session_rejects_invalid_comparison_clock(now: object) -> None:
 
 
 @pytest.mark.parametrize("value", [0, -1, 2_592_001])
-def test_auth_config_rejects_invalid_ttl(value: int) -> None:
+def test_auth_config_rejects_invalid_session_ttl(value: int) -> None:
     with pytest.raises(ValidationError):
         AuthSettings(session_ttl_seconds=value, _env_file=None)
 
 
 def test_auth_config_reads_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AUTH_SESSION_TTL_SECONDS", "90")
-    assert AuthSettings(_env_file=None).session_ttl_seconds == 90
+    monkeypatch.setenv("AUTH_LOGIN_LIMIT_CACHE", "security")
+    monkeypatch.setenv("AUTH_LOGIN_MAX_FAILURES", "7")
+    monkeypatch.setenv("AUTH_LOGIN_FAILURE_WINDOW_SECONDS", "120")
+    monkeypatch.setenv("AUTH_LOGIN_LOCK_SECONDS", "600")
+    settings = AuthSettings(_env_file=None)
+    assert settings.session_ttl_seconds == 90
+    assert settings.login_limit_cache == "security"
+    assert settings.login_max_failures == 7
+    assert settings.login_failure_window_seconds == 120
+    assert settings.login_lock_seconds == 600
     with pytest.raises(InvalidCredentialsError):
         LoginCommand(username="alice", password="x" * 1025)
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["login_max_failures", "login_failure_window_seconds", "login_lock_seconds"],
+)
+def test_auth_config_rejects_non_positive_login_limits(field: str) -> None:
+    with pytest.raises(ValidationError):
+        AuthSettings.model_validate({field: 0})
 
 
 @pytest.mark.asyncio

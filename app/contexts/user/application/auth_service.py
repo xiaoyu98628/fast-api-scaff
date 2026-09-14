@@ -3,10 +3,16 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from typing import Never
 
 from app.contexts.user.application.auth_dto import LoginCommand, TokenDTO
-from app.contexts.user.application.auth_errors import AuthenticationRequiredError, InvalidCredentialsError
+from app.contexts.user.application.auth_errors import (
+    AuthenticationRequiredError,
+    InvalidCredentialsError,
+    LoginTemporarilyLockedError,
+)
 from app.contexts.user.application.dto import UserDTO
+from app.contexts.user.application.login_attempts import LoginAttemptLimiter
 from app.contexts.user.application.password_hasher import PasswordHasher
 from app.contexts.user.application.session_token import SessionCredential, SessionTokenCodec
 from app.contexts.user.application.unit_of_work import UserUnitOfWorkFactory
@@ -23,6 +29,7 @@ class AuthApplicationService:
     password_hasher: PasswordHasher
     tokens: SessionTokenCodec
     session_ttl_seconds: int
+    login_attempts: LoginAttemptLimiter | None = None
     clock: Callable[[], datetime] = datetime.now
 
     def __post_init__(self) -> None:
@@ -34,11 +41,14 @@ class AuthApplicationService:
     async def login(self, command: LoginCommand) -> TokenDTO:
         """验证账户凭据，并在独立事务中创建服务器端会话。"""
 
+        identity = command.username.strip().lower()
+        await self._raise_if_locked(identity)
+
         try:
             username = Username(command.username)
         except InvalidUserDataError:
             await self.password_hasher.verify_or_dummy(command.password, None)
-            raise InvalidCredentialsError() from None
+            await self._reject_credentials(identity)
 
         # 首次事务只读取验证所需快照，不在密码慢哈希期间占用数据库事务。
         async with self.unit_of_work_factory() as uow:
@@ -49,15 +59,15 @@ class AuthApplicationService:
             None if snapshot is None else snapshot.password_hash,
         )
         if snapshot is None or not verified or snapshot.status is not UserStatus.ACTIVE:
-            raise InvalidCredentialsError()
+            await self._reject_credentials(identity)
 
         # 慢哈希完成后重新核对账户，避免期间发生的禁用、改名或密码更新被忽略。
         async with self.unit_of_work_factory() as uow:
             current = await uow.users.find(snapshot.id)
             if current is None:
-                raise InvalidCredentialsError()
+                await self._reject_credentials(identity)
             if current.status is not UserStatus.ACTIVE or current.password_hash != snapshot.password_hash or current.username != snapshot.username:
-                raise InvalidCredentialsError()
+                await self._reject_credentials(identity)
 
             # 原始 Token 只返回调用方，事务中持久化的是编解码器生成的摘要。
             credential = self.tokens.issue()
@@ -74,11 +84,35 @@ class AuthApplicationService:
             )
             await uow.commit()
 
+        if self.login_attempts is not None:
+            # 先提交数据库会话，再清除失败记录，避免提交失败时丢失安全计数。
+            await self.login_attempts.clear(identity)
+
         return TokenDTO(
             access_token=credential.token,
             expires_in=self.session_ttl_seconds,
             user_id=current.id.value,
         )
+
+    async def _raise_if_locked(self, identity: str) -> None:
+        """在数据库查询和密码慢哈希前拒绝仍处于锁定期的标识。"""
+
+        if self.login_attempts is None:
+            return
+
+        retry_after = await self.login_attempts.retry_after(identity)
+        if retry_after is not None:
+            raise LoginTemporarilyLockedError(retry_after)
+
+    async def _reject_credentials(self, identity: str) -> Never:
+        """统一记录凭据失败，并在达到阈值时转换为临时锁定。"""
+
+        if self.login_attempts is not None:
+            retry_after = await self.login_attempts.record_failure(identity)
+            if retry_after is not None:
+                raise LoginTemporarilyLockedError(retry_after)
+
+        raise InvalidCredentialsError()
 
     async def current_user(self, credential: SessionCredential) -> UserDTO:
         """解析有效会话，并返回仍处于启用状态的当前用户。"""

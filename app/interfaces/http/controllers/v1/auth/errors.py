@@ -4,6 +4,7 @@ from app.contexts.user.application.auth_errors import (
     AuthApplicationError,
     AuthenticationRequiredError,
     InvalidCredentialsError,
+    LoginTemporarilyLockedError,
 )
 from app.interfaces.http.exceptions.error import HttpError
 from app.interfaces.http.shared.response.codes.error_code import ErrorCode
@@ -11,6 +12,15 @@ from app.interfaces.http.shared.response.codes.error_code import ErrorCode
 
 def auth_error_to_http(error: AuthApplicationError) -> HttpError:
     """为已知认证错误选择状态码、公开文案和安全响应头。"""
+
+    if isinstance(error, LoginTemporarilyLockedError):
+        return HttpError(
+            ErrorCode.TOO_MANY_REQUESTS,
+            headers={
+                "Retry-After": str(error.retry_after_seconds),
+                "Cache-Control": "no-store",
+            },
+        )
 
     if isinstance(error, InvalidCredentialsError):
         message = "用户名或密码错误"
