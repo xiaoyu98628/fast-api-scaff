@@ -1,5 +1,6 @@
 """使用 Chroma PersistentClient 和 AsyncHttpClient 适配统一向量协议。"""
 
+import asyncio
 from base64 import b64encode
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from functools import partial
@@ -118,6 +119,7 @@ class ChromaVectorClient:
         """保存已经创建的本地或远程 Chroma 后端。"""
 
         self._backend = backend
+        self._upsert_lock = asyncio.Lock()
 
     async def ping(self) -> bool:
         """调用 Chroma heartbeat 验证资源可访问。"""
@@ -175,20 +177,29 @@ class ChromaVectorClient:
         await self._backend.client_call("delete_collection", name=name)
 
     async def upsert(self, collection: str, points: tuple[VectorPoint, ...]) -> None:
-        """写入调用方提供的向量和标量元数据。"""
+        """覆盖向量和完整元数据；同一客户端串行写入，跨客户端并发由调用方协调。"""
 
         validate_collection_name(collection)
         validate_points(points)
         if not points:
             return
-        target = await self._require_collection(collection)
-        await self._backend.collection_call(
-            target,
-            "upsert",
-            ids=[point.id for point in points],
-            embeddings=[list(point.vector) for point in points],
-            metadatas=[{_RECORD_METADATA: True, **dict(point.metadata)} for point in points],
-        )
+        # 在首次等待前复制可变元数据，避免等待锁或读取期间输入被修改。
+        points = tuple(VectorPoint(id=point.id, vector=point.vector, metadata=dict(point.metadata)) for point in points)
+        # SDK 按字段合并元数据，因此读取旧字段和提交删除标记必须共用一把锁。
+        # 此锁只保护当前客户端，无法协调其他进程或独立客户端的写入。
+        async with self._upsert_lock:
+            target = await self._require_collection(collection)
+            result = cast(
+                Mapping[str, object],
+                await self._backend.collection_call(target, "get", ids=[point.id for point in points], include=["metadatas"]),
+            )
+            await self._backend.collection_call(
+                target,
+                "upsert",
+                ids=[point.id for point in points],
+                embeddings=[list(point.vector) for point in points],
+                metadatas=_replacement_metadatas(result, points),
+            )
 
     async def get(self, collection: str, ids: tuple[str, ...]) -> tuple[VectorPoint, ...]:
         """读取 Chroma 向量，并按调用方 ID 顺序返回存在项。"""
@@ -320,6 +331,24 @@ def _chroma_filter(filters: VectorFilters | None) -> dict[str, object] | None:
         return None
     predicates: list[dict[str, object]] = [{key: {"$eq": value}} for key, value in filters.items()]
     return predicates[0] if len(predicates) == 1 else {"$and": predicates}
+
+
+def _replacement_metadatas(result: Mapping[str, object], points: tuple[VectorPoint, ...]) -> list[dict[str, MetadataScalar | None]]:
+    """按 ID 对齐旧元数据，并用 SDK 的 None 删除标记实现完整覆盖。"""
+
+    ids = _sequence(result.get("ids"))
+    metadatas = _sequence(result.get("metadatas"))
+    if len(ids) != len(metadatas) or any(not isinstance(point_id, str) for point_id in ids):
+        raise VectorOperationError("Chroma 返回的 ID 与元数据不符合公共结构")
+    existing = {point_id: _clean_chroma_metadata(metadata) for point_id, metadata in zip(ids, metadatas, strict=True)}
+    return [
+        {
+            **{key: None for key in existing.get(point.id, {}) if key not in point.metadata},
+            _RECORD_METADATA: True,
+            **dict(point.metadata),
+        }
+        for point in points
+    ]
 
 
 def _chroma_points(result: Mapping[str, object]) -> tuple[VectorPoint, ...]:

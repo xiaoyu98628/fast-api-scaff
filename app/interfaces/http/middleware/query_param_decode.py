@@ -1,7 +1,6 @@
 """实现约定的复合查询参数编解码及 ASGI 展开中间件。"""
 
 import base64
-import binascii
 import json
 from urllib.parse import quote, unquote, urlencode
 
@@ -40,7 +39,8 @@ def decode_query_param(value: str) -> dict[str, object] | None:
     try:
         decoded = base64.b64decode(encoded, validate=True).decode("utf-8")
         payload: object = json.loads(unquote(decoded))
-    except binascii.Error, UnicodeDecodeError, json.JSONDecodeError:
+    except ValueError, RecursionError:
+        # 非 ASCII Base64、非法 JSON 和过深嵌套都按解码失败处理，保留原查询。
         return None
 
     if not isinstance(payload, dict):
