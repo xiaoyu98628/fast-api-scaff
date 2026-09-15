@@ -32,11 +32,18 @@ async def handle_sse_exceptions(
         if error.code.status_code >= 500:
             _log_stream_failure(error)
 
-        yield responses.error(
-            error.code,
-            message=error.message,
-            data=error.data,
-        )
+        try:
+            event = responses.error(
+                error.code,
+                message=error.message,
+                data=error.data,
+            )
+        except Exception as serialization_error:
+            # 错误详情本身不可序列化时，降级为安全的通用终止事件。
+            _log_stream_failure(serialization_error)
+            event = responses.error()
+
+        yield event
     except Exception as error:
         _log_stream_failure(error)
         yield responses.error()

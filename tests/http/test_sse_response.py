@@ -13,6 +13,7 @@ from starlette.types import Message
 
 from app.bootstrap.http.application import create_app
 from app.interfaces.http.dependencies.response import SseResponseFactoryDependency
+from app.interfaces.http.exceptions.error import HttpError
 from app.interfaces.http.exceptions.sse import handle_sse_exceptions
 from app.interfaces.http.middleware.logging import HttpLogEvent
 from app.interfaces.http.shared.response.codes.builder import ResponseCodeBuilder
@@ -61,6 +62,47 @@ async def test_unknown_stream_error_becomes_sanitized_terminal_event(caplog: pyt
     assert getattr(records[0], "event", None) is HttpLogEvent.SSE_STREAM_FAILED
     assert getattr(records[0], "details")["error_type"] == "builtins.RuntimeError"
     assert "sensitive stream detail" not in repr(records[0].__dict__)
+
+
+@pytest.mark.asyncio
+async def test_non_serializable_success_becomes_stream_error(caplog: pytest.LogCaptureFixture) -> None:
+    factory = SseResponseFactory(ResponseCodeBuilder("321"))
+
+    async def events() -> AsyncGenerator[SseResponse]:
+        yield factory.success({"value": 1 + 2j})
+
+    caplog.set_level(logging.ERROR, logger="app.interfaces.http.sse")
+    rendered = [event async for event in handle_sse_exceptions(events(), factory)]
+
+    assert [event.event for event in rendered] == ["stream_error"]
+    assert rendered[0].data == {
+        "code": "5003210101",
+        "message": ErrorCode.INTERNAL_ERROR.message,
+    }
+    record = next(record for record in caplog.records if record.name == "app.interfaces.http.sse")
+    assert getattr(record, "details")["error_type"] == "builtins.ValueError"
+
+
+@pytest.mark.asyncio
+async def test_non_serializable_http_error_data_falls_back_to_safe_stream_error(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    factory = SseResponseFactory(ResponseCodeBuilder("321"))
+
+    async def events() -> AsyncGenerator[SseResponse]:
+        yield factory.success({"sequence": 1})
+        raise HttpError(ErrorCode.RESOURCE_NOT_FOUND, data={"value": 1 + 2j})
+
+    caplog.set_level(logging.ERROR, logger="app.interfaces.http.sse")
+    rendered = [event async for event in handle_sse_exceptions(events(), factory)]
+
+    assert [event.event for event in rendered] == ["message", "stream_error"]
+    assert rendered[-1].data == {
+        "code": "5003210101",
+        "message": ErrorCode.INTERNAL_ERROR.message,
+    }
+    record = next(record for record in caplog.records if record.name == "app.interfaces.http.sse")
+    assert getattr(record, "details")["error_type"] == "builtins.ValueError"
 
 
 @pytest.mark.parametrize("event", ["", "done", "stream_error", "delta\ninjected", "delta\rinjected"])

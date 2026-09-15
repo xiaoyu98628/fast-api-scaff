@@ -63,14 +63,7 @@ async def test_login_succeeded_job_logs_fixed_message(caplog: pytest.LogCaptureF
     assert [getattr(record, "details", None) for record in records] == [
         {
             "user_id": str(user_id),
-            "user": {
-                "id": str(user_id),
-                "username": "alice",
-                "email": "alice@example.com",
-                "status": "active",
-                "created_at": "2026-09-14T12:00:00",
-                "updated_at": "2026-09-14T12:30:00",
-            },
+            "user_status": "active",
         }
     ]
     service.get.assert_awaited_once_with(user_id)
@@ -83,7 +76,7 @@ async def test_legacy_login_succeeded_job_without_user_id_skips_database(caplog:
     await LoginSucceededJob().handle(_JOB_CONTEXT)
 
     record = next(record for record in caplog.records if getattr(record, "event", None) == "user.login_succeeded")
-    assert getattr(record, "details", None) == {"user_id": None, "user": None}
+    assert getattr(record, "details", None) == {"user_id": None, "user_status": None}
 
 
 @pytest.mark.asyncio

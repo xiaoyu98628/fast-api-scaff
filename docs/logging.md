@@ -76,7 +76,7 @@ logger.info(
 
 使用 `app.*` logger 才会继承项目为应用日志设置的级别与 handler。事件名建议采用稳定的点分层级，如 `context.action.outcome`；不要把 ID 或动态文本放进 event 名。
 
-异常应使用 `logger.exception()` 或显式 `exc_info=True`，以产生 `exception` 结构：
+仅当异常正文已经确认不含敏感信息时，才使用 `logger.exception()` 或显式 `exc_info=True` 产生 `exception` 结构：
 
 ```python
 try:
@@ -87,6 +87,8 @@ except Exception:
 ```
 
 记录之后继续抛出，除非当前边界明确负责恢复；不要用日志代替错误处理。
+
+HTTP 非调试异常边界、SSE 流边界和 Worker 等可能接收任意内部异常的位置使用 `safe_exception_details()`，只记录异常类型以及模块、函数和行号，不附加 `exc_info`。这样未知异常即使携带 Token、上游响应或驱动正文，也不会被结构化 Formatter 写入日志。
 
 ## 4. Logger 级别与 Uvicorn
 

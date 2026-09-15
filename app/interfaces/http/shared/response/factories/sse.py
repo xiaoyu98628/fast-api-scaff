@@ -1,6 +1,9 @@
 """构造统一 SSE 成功、业务错误和完成事件。"""
 
+import json
 from dataclasses import dataclass
+
+from fastapi.encoders import jsonable_encoder
 
 from app.interfaces.http.shared.response.codes.builder import ResponseCodeBuilder
 from app.interfaces.http.shared.response.codes.contract import CodeContract
@@ -36,6 +39,7 @@ class SseResponseFactory:
         if data is None:
             return SseResponse(event=event, raw_data="null", id=id, retry=retry)
 
+        _validate_json_data(data)
         return SseResponse(event=event, data=data, id=id, retry=retry)
 
     def error(
@@ -63,9 +67,25 @@ class SseResponseFactory:
         if data is not None:
             payload["data"] = data
 
+        _validate_json_data(payload)
         return SseResponse(event=_STREAM_ERROR_EVENT, data=payload)
 
     def done(self) -> SseResponse:
         """构造完成事件；调用方仍需结束生成器，客户端应关闭连接。"""
 
         return SseResponse(event=_DONE_EVENT, data={})
+
+
+def _validate_json_data(data: object) -> None:
+    """提前执行与 FastAPI SSE 相同的 JSON 可序列化检查。"""
+
+    try:
+        model_dump_json = getattr(data, "model_dump_json", None)
+        if model_dump_json is not None:
+            if not callable(model_dump_json):
+                raise TypeError("model_dump_json 必须可调用")
+            model_dump_json()
+        else:
+            json.dumps(jsonable_encoder(data))
+    except Exception as error:
+        raise ValueError("SSE 事件数据必须可以序列化为 JSON") from error

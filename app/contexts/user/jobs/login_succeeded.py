@@ -4,7 +4,6 @@ import logging
 from dataclasses import dataclass
 from uuid import UUID
 
-from app.contexts.user.application.dto import UserDTO
 from app.contexts.user.application.errors import UserNotFoundError
 from app.infrastructure.logging.record import log_extra
 from app.infrastructure.queue.job import QueueJob
@@ -37,7 +36,7 @@ class LoginSucceededJob(QueueJob[JobExecutionContext]):
             # 旧消息没有用户 ID，无法查询数据库；保留原有可消费行为。
             _logger.info(
                 self.message,
-                extra=log_extra("user.login_succeeded", user_id=None, user=None),
+                extra=log_extra("user.login_succeeded", user_id=None, user_status=None),
             )
             return
 
@@ -56,19 +55,6 @@ class LoginSucceededJob(QueueJob[JobExecutionContext]):
             extra=log_extra(
                 "user.login_succeeded",
                 user_id=str(self.user_id),
-                user=_user_log_data(user),
+                user_status=user.status.value,
             ),
         )
-
-
-def _user_log_data(user: UserDTO) -> dict[str, str]:
-    """把公开用户 DTO 转成稳定的结构化日志字段。"""
-
-    return {
-        "id": str(user.id),
-        "username": user.username,
-        "email": user.email,
-        "status": user.status.value,
-        "created_at": user.created_at.isoformat(),
-        "updated_at": user.updated_at.isoformat(),
-    }
