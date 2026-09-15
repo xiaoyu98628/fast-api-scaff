@@ -32,7 +32,7 @@ def test_error_payload_reuses_codes_and_omits_optional_data() -> None:
         "message": ErrorCode.INTERNAL_ERROR.message,
     }
     error = factory.error(ErrorCode.RESOURCE_NOT_FOUND, message="", data={"task": 1})
-    assert error.event == "business_error"
+    assert error.event == "stream_error"
     assert error.data == {"code": "4043210102", "message": "", "data": {"task": 1}}
     custom = CodeDefinition(code="1234", message="任务失败", status_code=409)
     assert factory.error(custom).data == {"code": "4093211234", "message": "任务失败"}
@@ -51,7 +51,7 @@ async def test_unknown_stream_error_becomes_sanitized_terminal_event(caplog: pyt
     caplog.set_level(logging.ERROR, logger="app.interfaces.http.sse")
     rendered = [event async for event in handle_sse_exceptions(events(), factory)]
 
-    assert [event.event for event in rendered] == ["message", "business_error"]
+    assert [event.event for event in rendered] == ["message", "stream_error"]
     assert rendered[-1].data == {
         "code": "5003210101",
         "message": ErrorCode.INTERNAL_ERROR.message,
@@ -63,7 +63,7 @@ async def test_unknown_stream_error_becomes_sanitized_terminal_event(caplog: pyt
     assert "sensitive stream detail" not in repr(records[0].__dict__)
 
 
-@pytest.mark.parametrize("event", ["", "done", "business_error", "delta\ninjected", "delta\rinjected"])
+@pytest.mark.parametrize("event", ["", "done", "stream_error", "delta\ninjected", "delta\rinjected"])
 def test_success_rejects_invalid_event_names(event: str) -> None:
     with pytest.raises(ValueError):
         SseResponseFactory(ResponseCodeBuilder("001")).success({}, event=event)
@@ -106,7 +106,7 @@ async def test_http_sse_payloads_headers_and_openapi(service_code: str) -> None:
     assert blocks[2] == "event: done\ndata: {}"
     assert failure_response.status_code == 200
     error_lines = failure_response.text.strip().splitlines()
-    assert error_lines[0] == "event: business_error"
+    assert error_lines[0] == "event: stream_error"
     assert json.loads(error_lines[1].removeprefix("data: ")) == {
         "code": f"404{service_code}0102",
         "message": ErrorCode.RESOURCE_NOT_FOUND.message,

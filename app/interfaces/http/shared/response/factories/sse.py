@@ -7,7 +7,9 @@ from app.interfaces.http.shared.response.codes.contract import CodeContract
 from app.interfaces.http.shared.response.codes.error_code import ErrorCode
 from app.interfaces.http.shared.response.sse import SseResponse
 
-_RESERVED_EVENTS = frozenset({"business_error", "done"})
+_STREAM_ERROR_EVENT = "stream_error"
+_DONE_EVENT = "done"
+_RESERVED_EVENTS = frozenset({_STREAM_ERROR_EVENT, _DONE_EVENT})
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,9 +63,9 @@ class SseResponseFactory:
         if data is not None:
             payload["data"] = data
 
-        return SseResponse(event="business_error", data=payload)
+        return SseResponse(event=_STREAM_ERROR_EVENT, data=payload)
 
     def done(self) -> SseResponse:
         """构造完成事件；调用方仍需结束生成器，客户端应关闭连接。"""
 
-        return SseResponse(event="done", data={})
+        return SseResponse(event=_DONE_EVENT, data={})

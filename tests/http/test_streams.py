@@ -49,7 +49,7 @@ async def test_failure_terminates_without_done(fail_at: int, monkeypatch: pytest
         response = await client.get(f"/api/v1/streams/events?count=5&fail_at={fail_at}")
     assert response.status_code == 200
     events = [dict(line.split(": ", 1) for line in block.splitlines()) for block in response.text.strip().split("\n\n")]
-    assert [event["event"] for event in events] == ["message"] * (fail_at - 1) + ["business_error"]
+    assert [event["event"] for event in events] == ["message"] * (fail_at - 1) + ["stream_error"]
     assert [event["id"] for event in events[:-1]] == [str(i) for i in range(1, fail_at)]
     assert json.loads(events[-1]["data"]) == {
         "code": "5003210101",

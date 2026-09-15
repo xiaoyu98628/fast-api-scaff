@@ -303,10 +303,10 @@ async def _generate_events(responses: SseResponseFactory) -> AsyncGenerator[SseR
 | 调用 | 事件与载荷 |
 | --- | --- |
 | `success(data, *, event="message", id=None, retry=None)` | 直接把业务数据写入 SSE `data`，不附加成功码、文案或统一 JSON 外壳；`None` 编码为 JSON `null` |
-| `error(code=ErrorCode.INTERNAL_ERROR, *, message=None, data=None)` | 固定 `business_error` 事件；4xx 可携带公开文案和数据，5xx 强制使用通用错误码与默认文案并省略数据 |
+| `error(code=ErrorCode.INTERNAL_ERROR, *, message=None, data=None)` | 固定 `stream_error` 事件；4xx 可携带公开文案和数据，5xx 强制使用通用错误码与默认文案并省略数据 |
 | `done()` | 固定 `done` 事件，载荷为 `{}` |
 
-`success` 的 `event` 不能为空或使用保留名称 `business_error`、`done`；事件名、ID 和 retry 同时遵守原生 SSE 字段校验。业务数据必须可以序列化为 JSON；`retry` 单位为毫秒。ID 只是事件标识，不自动提供断点续传。
+`success` 的 `event` 不能为空或使用保留名称 `stream_error`、`done`；事件名、ID 和 retry 同时遵守原生 SSE 字段校验。业务数据必须可以序列化为 JSON；`retry` 单位为毫秒。ID 只是事件标识，不自动提供断点续传。
 
 已知业务失败使用共用或上下文错误码，例如在生成器的已知错误分支中：
 
@@ -321,14 +321,14 @@ return
 服务编码为 `001` 时，上述错误的实际事件格式为：
 
 ```text
-event: business_error
+event: stream_error
 data: {"code":"4040010102","message":"任务不存在"}
 
 ```
 
 4xx 的 `message` 未显式提供时使用错误码默认文案，显式空字符串会保留。5xx 始终转换为通用内部错误，不透传调用方文案和数据。只接受 4xx/5xx 错误码。十位码前三位表示错误对应的状态分类，不改变已经发送的 HTTP 状态；不要把它解释为连接返回了 HTTP 404。
 
-正常完成时发送 `done` 并结束生成器；失败时发送 `business_error` 并结束生成器，不再发送 `done`。工厂只构造事件，不自动终止流或捕获异常；Controller 通过 `app.interfaces.http.exceptions.sse.handle_sse_exceptions` 包装业务生成器，将其抛出的 `HttpError` 和未知异常转换为安全的终止事件。客户端收到任一终止事件后应关闭连接，避免自动重连。鉴权和可提前执行的检查应放在依赖中，在发送响应头前走现有 JSON 错误映射；客户端断开产生的取消继续传播。
+正常完成时发送 `done` 并结束生成器；失败时发送 `stream_error` 并结束生成器，不再发送 `done`。工厂只构造事件，不自动终止流或捕获异常；Controller 通过 `app.interfaces.http.exceptions.sse.handle_sse_exceptions` 包装业务生成器，将其抛出的 `HttpError` 和未知异常转换为安全的终止事件。客户端收到任一终止事件后应关闭连接，避免自动重连。鉴权和可提前执行的检查应放在依赖中，在发送响应头前走现有 JSON 错误映射；客户端断开产生的取消继续传播。
 
 Request ID 通过现有 `X-Request-ID` 响应头关联，不自动注入事件载荷。实际业务流应通过 `try/finally` 或异步上下文管理器释放订阅和上游资源，取消异常应继续传播；不要让数据库事务占用整个长连接。Application 层提供业务数据，HTTP Controller 负责转换为 SSE 事件。
 
@@ -342,7 +342,7 @@ Request ID 通过现有 `X-Request-ID` 响应头关联，不自动注入事件�
 | `count` | `5` | 整数，范围 1–20，计划发送的消息数 |
 | `fail_at` | 不设置 | 可选整数，范围 1–count，在该序号模拟处理失败；这是演示参数，不是真实业务错误条件 |
 
-首条消息立即发送，后续每秒一条，20 条正常消息约需 19 秒，实际耗时受调度和客户端接收速度影响。每条 `message` 的 `data` 包含 `sequence` 和 `content`，SSE `id` 等于序号字符串。正常完成发送 `done`；指定 `fail_at` 时，该位置模拟服务端处理失败，由 SSE 异常边界发送脱敏的 `business_error` 并结束，不发送该条消息或 `done`。例如 `count=5&fail_at=3` 会先发送两条消息，再发送通用错误。
+首条消息立即发送，后续每秒一条，20 条正常消息约需 19 秒，实际耗时受调度和客户端接收速度影响。每条 `message` 的 `data` 包含 `sequence` 和 `content`，SSE `id` 等于序号字符串。正常完成发送 `done`；指定 `fail_at` 时，该位置模拟服务端处理失败，由 SSE 异常边界发送脱敏的 `stream_error` 并结束，不发送该条消息或 `done`。例如 `count=5&fail_at=3` 会先发送两条消息，再发送通用错误。
 
 ```bash
 # 正常发送 3 条消息后完成
@@ -361,9 +361,9 @@ curl -i 'http://127.0.0.1:8000/api/v1/streams/events?count=2&fail_at=3'
 模拟失败复用 `ErrorCode.INTERNAL_ERROR`；服务编码为 `001`、`fail_at=3` 时事件为：
 
 ```text
-event: business_error
+event: stream_error
 data: {"code":"5000010101","message":"网络开小差了，请稍后重试"}
 
 ```
 
-非法整数、超出范围、`fail_at > count` 或未知查询参数均返回 HTTP 422 的统一 JSON 载荷；模拟失败则属于已开始的 SSE 流，HTTP 状态仍为 200。OpenAPI 分别声明这两种媒体类型。该接口不支持断点续传，重新请求从序号 1 开始；客户端应在收到 `done` 或 `business_error` 时关闭连接。客户端断开时取消继续传播，路由不会继续等待并生成后续消息。
+非法整数、超出范围、`fail_at > count` 或未知查询参数均返回 HTTP 422 的统一 JSON 载荷；模拟失败则属于已开始的 SSE 流，HTTP 状态仍为 200。OpenAPI 分别声明这两种媒体类型。该接口不支持断点续传，重新请求从序号 1 开始；客户端应在收到 `done` 或 `stream_error` 时关闭连接。客户端断开时取消继续传播，路由不会继续等待并生成后续消息。
