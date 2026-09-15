@@ -248,7 +248,7 @@ Controller 应只负责：
 
 SSE 通过 Controller 异步生成器逐条发送事件。`SseResponse` 继承 FastAPI 的 `ServerSentEvent`，表示单条事件；整个 HTTP 流使用路由装饰器中的 `response_class=EventSourceResponse`。项目提供统一工厂与依赖注入，并注册 `GET /api/v1/streams/events` 演示有限事件流和可控处理失败。
 
-SSE 的错误响应在 `streams/openapi.py` 中通过 `content.application/json` 声明内联 Schema，路由直接引用该声明。这样保留 JSON 422 的文档类型，无需修改 FastAPI 的 OpenAPI 生成入口；测试校验内联错误结构与统一 JSON 模型一致。
+SSE 流建立前的参数校验错误在 `streams/openapi.py` 中通过 `content.application/json` 声明内联 Schema，路由直接引用该声明。这样保留 JSON 422 的文档类型，无需修改 FastAPI 的 OpenAPI 生成入口；测试校验内联错误结构与统一 JSON 模型一致。
 
 响应目录按类型与构造职责组织，所有 `__init__.py` 保持空文件：
 
@@ -264,15 +264,19 @@ shared/response/
 
 JSON 工厂的导入路径由 `app.interfaces.http.shared.response.factory` 调整为 `app.interfaces.http.shared.response.factories.json`；JSON 载荷与 `JsonResponseFactoryDependency` 调用不变。SSE 工厂定义于 `app.interfaces.http.shared.response.factories.sse`。两个工厂均由 HTTP 宿主装配，共享当前应用的 `ResponseCodeBuilder`，不进入 Application 层。
 
+流内异常边界位于 `app.interfaces.http.exceptions.sse`，负责把业务生成器在响应开始后抛出的异常转换为终止事件；它不参与事件构造或 SSE 传输。
+
 在自己的 Controller 中声明并注册路由，例如：
 
 ```python
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 
 from fastapi import APIRouter
 from fastapi.sse import EventSourceResponse
 
 from app.interfaces.http.dependencies.response import SseResponseFactoryDependency
+from app.interfaces.http.exceptions.sse import handle_sse_exceptions
+from app.interfaces.http.shared.response.factories.sse import SseResponseFactory
 from app.interfaces.http.shared.response.sse import SseResponse
 
 router = APIRouter()
@@ -281,6 +285,13 @@ router = APIRouter()
 @router.get("/stream", response_class=EventSourceResponse)
 async def stream(responses: SseResponseFactoryDependency) -> AsyncIterator[SseResponse]:
     """演示发送两条数据并通知客户端完成。"""
+
+    async for event in handle_sse_exceptions(_generate_events(responses), responses):
+        yield event
+
+
+async def _generate_events(responses: SseResponseFactory) -> AsyncGenerator[SseResponse]:
+    """生成具体业务事件。"""
 
     yield responses.success({"content": "第一段"}, id="1")
     yield responses.success({"content": "第二段"}, id="2")
@@ -292,7 +303,7 @@ async def stream(responses: SseResponseFactoryDependency) -> AsyncIterator[SseRe
 | 调用 | 事件与载荷 |
 | --- | --- |
 | `success(data, *, event="message", id=None, retry=None)` | 直接把业务数据写入 SSE `data`，不附加成功码、文案或统一 JSON 外壳；`None` 编码为 JSON `null` |
-| `error(code=ErrorCode.INTERNAL_ERROR, *, message=None, data=None)` | 固定 `business_error` 事件；包含完整 `code` 和 `message`，可选 `data` 为 `None` 时省略 |
+| `error(code=ErrorCode.INTERNAL_ERROR, *, message=None, data=None)` | 固定 `business_error` 事件；4xx 可携带公开文案和数据，5xx 强制使用通用错误码与默认文案并省略数据 |
 | `done()` | 固定 `done` 事件，载荷为 `{}` |
 
 `success` 的 `event` 不能为空或使用保留名称 `business_error`、`done`；事件名、ID 和 retry 同时遵守原生 SSE 字段校验。业务数据必须可以序列化为 JSON；`retry` 单位为毫秒。ID 只是事件标识，不自动提供断点续传。
@@ -315,9 +326,9 @@ data: {"code":"4040010102","message":"任务不存在"}
 
 ```
 
-`message` 未显式提供时使用错误码默认文案；显式空字符串会保留。只接受 4xx/5xx 错误码。流内错误码表示该事件的失败结果，不改变已经发送的 HTTP 状态；不要把它解释为连接返回了 HTTP 404。
+4xx 的 `message` 未显式提供时使用错误码默认文案，显式空字符串会保留。5xx 始终转换为通用内部错误，不透传调用方文案和数据。只接受 4xx/5xx 错误码。十位码前三位表示错误对应的状态分类，不改变已经发送的 HTTP 状态；不要把它解释为连接返回了 HTTP 404。
 
-正常完成时发送 `done` 并结束生成器；已知失败时发送 `business_error` 并结束生成器，不再发送 `done`。工厂只构造事件，不自动终止流或捕获异常。客户端收到任一终止事件后应关闭连接，避免自动重连。鉴权和可提前执行的检查应放在依赖中，在发送响应头前走现有 JSON 错误映射；流开始后的未知异常仍交给现有异常日志与连接终止机制。
+正常完成时发送 `done` 并结束生成器；失败时发送 `business_error` 并结束生成器，不再发送 `done`。工厂只构造事件，不自动终止流或捕获异常；Controller 通过 `app.interfaces.http.exceptions.sse.handle_sse_exceptions` 包装业务生成器，将其抛出的 `HttpError` 和未知异常转换为安全的终止事件。客户端收到任一终止事件后应关闭连接，避免自动重连。鉴权和可提前执行的检查应放在依赖中，在发送响应头前走现有 JSON 错误映射；客户端断开产生的取消继续传播。
 
 Request ID 通过现有 `X-Request-ID` 响应头关联，不自动注入事件载荷。实际业务流应通过 `try/finally` 或异步上下文管理器释放订阅和上游资源，取消异常应继续传播；不要让数据库事务占用整个长连接。Application 层提供业务数据，HTTP Controller 负责转换为 SSE 事件。
 
@@ -331,7 +342,7 @@ Request ID 通过现有 `X-Request-ID` 响应头关联，不自动注入事件�
 | `count` | `5` | 整数，范围 1–20，计划发送的消息数 |
 | `fail_at` | 不设置 | 可选整数，范围 1–count，在该序号模拟处理失败；这是演示参数，不是真实业务错误条件 |
 
-首条消息立即发送，后续每秒一条，20 条正常消息约需 19 秒，实际耗时受调度和客户端接收速度影响。每条 `message` 的 `data` 包含 `sequence` 和 `content`，SSE `id` 等于序号字符串。正常完成发送 `done`；指定 `fail_at` 时，该位置只发送 `business_error` 并结束，不发送该条消息或 `done`。例如 `count=5&fail_at=3` 会先发送两条消息，再发送错误。
+首条消息立即发送，后续每秒一条，20 条正常消息约需 19 秒，实际耗时受调度和客户端接收速度影响。每条 `message` 的 `data` 包含 `sequence` 和 `content`，SSE `id` 等于序号字符串。正常完成发送 `done`；指定 `fail_at` 时，该位置模拟服务端处理失败，由 SSE 异常边界发送脱敏的 `business_error` 并结束，不发送该条消息或 `done`。例如 `count=5&fail_at=3` 会先发送两条消息，再发送通用错误。
 
 ```bash
 # 正常发送 3 条消息后完成
@@ -351,7 +362,7 @@ curl -i 'http://127.0.0.1:8000/api/v1/streams/events?count=2&fail_at=3'
 
 ```text
 event: business_error
-data: {"code":"5000010101","message":"SSE 事件流：模拟处理失败","data":{"sequence":3}}
+data: {"code":"5000010101","message":"网络开小差了，请稍后重试"}
 
 ```
 

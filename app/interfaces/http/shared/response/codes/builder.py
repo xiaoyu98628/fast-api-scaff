@@ -1,10 +1,14 @@
-"""把 HTTP 状态、服务编码和局部码组合为完整响应码。"""
+"""把状态分类、服务编码和局部码组合为完整响应码。"""
 
 from app.interfaces.http.shared.response.codes.contract import CodeContract
 
 
 class ResponseCodeBuilder:
-    """构造 ``HTTP(3) + 服务编码(3) + 局部码(4)``。"""
+    """构造 ``状态分类(3) + 服务编码(3) + 局部码(4)``。
+
+    普通响应以实际 HTTP 状态作为分类；SSE 流内错误以错误定义
+    对应的 HTTP 状态作为分类，因为连接状态已经无法修改。
+    """
 
     __slots__ = ("_service_code",)
 

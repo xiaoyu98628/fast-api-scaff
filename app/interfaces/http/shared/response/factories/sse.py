@@ -43,10 +43,16 @@ class SseResponseFactory:
         message: str | None = None,
         data: object | None = None,
     ) -> SseResponse:
-        """构造业务错误事件；要求 4xx/5xx 响应码，不改变已发送的 HTTP 状态。"""
+        """构造业务错误事件；5xx 统一隐藏调用方提供的文案和数据。"""
 
         if not 400 <= code.status_code < 600:
             raise ValueError("错误事件必须使用 4xx 或 5xx 响应码")
+
+        # 与普通 JSON 异常边界保持一致，防止内部异常、SQL 或上游详情进入响应。
+        if code.status_code >= 500:
+            code = ErrorCode.INTERNAL_ERROR
+            message = None
+            data = None
 
         payload: dict[str, object] = {
             "code": self.code_builder.build(code),

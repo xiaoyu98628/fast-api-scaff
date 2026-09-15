@@ -2,7 +2,8 @@
 
 import asyncio
 import json
-from collections.abc import AsyncIterator
+import logging
+from collections.abc import AsyncGenerator, AsyncIterator
 
 import pytest
 from fastapi import Depends, HTTPException
@@ -12,6 +13,8 @@ from starlette.types import Message
 
 from app.bootstrap.http.application import create_app
 from app.interfaces.http.dependencies.response import SseResponseFactoryDependency
+from app.interfaces.http.exceptions.sse import handle_sse_exceptions
+from app.interfaces.http.middleware.logging import HttpLogEvent
 from app.interfaces.http.shared.response.codes.builder import ResponseCodeBuilder
 from app.interfaces.http.shared.response.codes.contract import CodeDefinition
 from app.interfaces.http.shared.response.codes.error_code import ErrorCode
@@ -24,6 +27,10 @@ from tests.http.test_response import build_settings
 def test_error_payload_reuses_codes_and_omits_optional_data() -> None:
     factory = SseResponseFactory(ResponseCodeBuilder("321"))
     assert factory.error().data == {"code": "5003210101", "message": ErrorCode.INTERNAL_ERROR.message}
+    assert factory.error(ErrorCode.INTERNAL_ERROR, message="sensitive", data={"sql": "secret"}).data == {
+        "code": "5003210101",
+        "message": ErrorCode.INTERNAL_ERROR.message,
+    }
     error = factory.error(ErrorCode.RESOURCE_NOT_FOUND, message="", data={"task": 1})
     assert error.event == "business_error"
     assert error.data == {"code": "4043210102", "message": "", "data": {"task": 1}}
@@ -31,6 +38,29 @@ def test_error_payload_reuses_codes_and_omits_optional_data() -> None:
     assert factory.error(custom).data == {"code": "4093211234", "message": "任务失败"}
     with pytest.raises(ValueError, match="4xx 或 5xx"):
         factory.error(SuccessCode.OK)
+
+
+@pytest.mark.asyncio
+async def test_unknown_stream_error_becomes_sanitized_terminal_event(caplog: pytest.LogCaptureFixture) -> None:
+    factory = SseResponseFactory(ResponseCodeBuilder("321"))
+
+    async def events() -> AsyncGenerator[SseResponse]:
+        yield factory.success({"sequence": 1})
+        raise RuntimeError("sensitive stream detail")
+
+    caplog.set_level(logging.ERROR, logger="app.interfaces.http.sse")
+    rendered = [event async for event in handle_sse_exceptions(events(), factory)]
+
+    assert [event.event for event in rendered] == ["message", "business_error"]
+    assert rendered[-1].data == {
+        "code": "5003210101",
+        "message": ErrorCode.INTERNAL_ERROR.message,
+    }
+    records = [record for record in caplog.records if record.name == "app.interfaces.http.sse"]
+    assert len(records) == 1
+    assert getattr(records[0], "event", None) is HttpLogEvent.SSE_STREAM_FAILED
+    assert getattr(records[0], "details")["error_type"] == "builtins.RuntimeError"
+    assert "sensitive stream detail" not in repr(records[0].__dict__)
 
 
 @pytest.mark.parametrize("event", ["", "done", "business_error", "delta\ninjected", "delta\rinjected"])

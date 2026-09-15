@@ -53,8 +53,7 @@ async def test_failure_terminates_without_done(fail_at: int, monkeypatch: pytest
     assert [event["id"] for event in events[:-1]] == [str(i) for i in range(1, fail_at)]
     assert json.loads(events[-1]["data"]) == {
         "code": "5003210101",
-        "message": "SSE 事件流：模拟处理失败",
-        "data": {"sequence": fail_at},
+        "message": "网络开小差了，请稍后重试",
     }
 
 
