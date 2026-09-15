@@ -27,16 +27,19 @@ from tests.http.test_response import build_settings
 
 def test_error_payload_reuses_codes_and_omits_optional_data() -> None:
     factory = SseResponseFactory(ResponseCodeBuilder("321"))
-    assert factory.error().data == {"code": "5003210101", "message": ErrorCode.INTERNAL_ERROR.message}
-    assert factory.error(ErrorCode.INTERNAL_ERROR, message="sensitive", data={"sql": "secret"}).data == {
+    assert _event_json(factory.error()) == {
+        "code": "5003210101",
+        "message": ErrorCode.INTERNAL_ERROR.message,
+    }
+    assert _event_json(factory.error(ErrorCode.INTERNAL_ERROR, message="sensitive", data={"sql": "secret"})) == {
         "code": "5003210101",
         "message": ErrorCode.INTERNAL_ERROR.message,
     }
     error = factory.error(ErrorCode.RESOURCE_NOT_FOUND, message="", data={"task": 1})
     assert error.event == "stream_error"
-    assert error.data == {"code": "4043210102", "message": "", "data": {"task": 1}}
+    assert _event_json(error) == {"code": "4043210102", "message": "", "data": {"task": 1}}
     custom = CodeDefinition(code="1234", message="任务失败", status_code=409)
-    assert factory.error(custom).data == {"code": "4093211234", "message": "任务失败"}
+    assert _event_json(factory.error(custom)) == {"code": "4093211234", "message": "任务失败"}
     with pytest.raises(ValueError, match="4xx 或 5xx"):
         factory.error(SuccessCode.OK)
 
@@ -53,7 +56,7 @@ async def test_unknown_stream_error_becomes_sanitized_terminal_event(caplog: pyt
     rendered = [event async for event in handle_sse_exceptions(events(), factory)]
 
     assert [event.event for event in rendered] == ["message", "stream_error"]
-    assert rendered[-1].data == {
+    assert _event_json(rendered[-1]) == {
         "code": "5003210101",
         "message": ErrorCode.INTERNAL_ERROR.message,
     }
@@ -75,7 +78,7 @@ async def test_non_serializable_success_becomes_stream_error(caplog: pytest.LogC
     rendered = [event async for event in handle_sse_exceptions(events(), factory)]
 
     assert [event.event for event in rendered] == ["stream_error"]
-    assert rendered[0].data == {
+    assert _event_json(rendered[0]) == {
         "code": "5003210101",
         "message": ErrorCode.INTERNAL_ERROR.message,
     }
@@ -97,7 +100,7 @@ async def test_non_serializable_http_error_data_falls_back_to_safe_stream_error(
     rendered = [event async for event in handle_sse_exceptions(events(), factory)]
 
     assert [event.event for event in rendered] == ["message", "stream_error"]
-    assert rendered[-1].data == {
+    assert _event_json(rendered[-1]) == {
         "code": "5003210101",
         "message": ErrorCode.INTERNAL_ERROR.message,
     }
@@ -115,6 +118,50 @@ def test_success_rejects_invalid_event_names(event: str) -> None:
 def test_success_rejects_invalid_ids(event_id: str) -> None:
     with pytest.raises(ValueError):
         SseResponseFactory(ResponseCodeBuilder("001")).success({}, id=event_id)
+
+
+@pytest.mark.parametrize(
+    ("model_dump_json", "expected_cause"),
+    [
+        (None, "model_dump_json 必须可调用"),
+        (1, "model_dump_json 必须可调用"),
+        (staticmethod(lambda: {"value": 1}), "model_dump_json 必须返回字符串"),
+    ],
+)
+def test_success_rejects_invalid_model_dump_json(model_dump_json: object, expected_cause: str) -> None:
+    payload = type("Payload", (), {"model_dump_json": model_dump_json})()
+
+    with pytest.raises(ValueError, match="必须可以序列化") as exc_info:
+        SseResponseFactory(ResponseCodeBuilder("001")).success(payload)
+
+    assert str(exc_info.value.__cause__) == expected_cause
+
+
+@pytest.mark.asyncio
+async def test_http_sse_serializes_payload_only_once() -> None:
+    app = create_app(build_settings())
+
+    class SingleUsePayload:
+        calls = 0
+
+        def model_dump_json(self) -> str:
+            self.calls += 1
+            if self.calls > 1:
+                raise RuntimeError("payload was serialized twice")
+            return '{"value": 1}'
+
+    payload = SingleUsePayload()
+
+    @app.get("/stream-once", response_class=EventSourceResponse)
+    async def stream(responses: SseResponseFactoryDependency) -> AsyncIterator[SseResponse]:
+        yield responses.success(payload)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/stream-once")
+
+    assert response.status_code == 200
+    assert json.loads(response.text.split("data: ", 1)[1]) == {"value": 1}
+    assert payload.calls == 1
 
 
 @pytest.mark.asyncio
@@ -217,3 +264,11 @@ async def test_disconnect_finalizes_generator() -> None:
     await asyncio.wait_for(app(scope, receive, send), timeout=3)
     assert sent.is_set()
     assert closed.is_set()
+
+
+def _event_json(event: SseResponse) -> object:
+    """读取工厂已经序列化并交给 FastAPI 直接发送的 JSON 数据。"""
+
+    assert event.data is None
+    assert event.raw_data is not None
+    return json.loads(event.raw_data)
