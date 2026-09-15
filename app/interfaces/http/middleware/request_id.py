@@ -13,7 +13,7 @@ from app.infrastructure.logging.record import log_extra
 from app.interfaces.http.middleware.logging import HttpLogEvent
 from app.interfaces.http.shared.response.codes.builder import ResponseCodeBuilder
 from app.interfaces.http.shared.response.codes.error_code import ErrorCode
-from app.interfaces.http.shared.response.factory import JsonResponseFactory
+from app.interfaces.http.shared.response.factories.json import JsonResponseFactory
 from app.runtime.trace import TraceIdFactory, new_trace_id
 
 _REQUEST_ID_LOGGER = logging.getLogger("app.interfaces.http.request_id")

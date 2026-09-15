@@ -40,13 +40,13 @@ curl -X POST http://127.0.0.1:8000/api/v1/auth/logout \
 
 `/auth/me` 返回统一响应中的用户 DTO，不包含密码或哈希。退出返回 204，没有 JSON 响应体。OpenAPI 的 `SessionBearer` 安全方案可在 Swagger Authorize 中使用。
 
-登录成功并提交会话后，HTTP 适配器通过后台任务向默认连接配置的默认逻辑队列（`sample.env` 为 `default`）投递 `LoginSucceededJob`。Request ID 中间件建立请求 ID 后，追踪中间件在完整请求及后台任务期间把它绑定为当前 `correlation_id`；Dispatcher 自动写入消息，发布函数不需要接收或传递该 ID。消息以 `user_id` 参数标识登录用户，并包含固定文案“用户登录成功，队列任务已执行。”，不包含用户名、密码或 Token。独立 Worker 消费后使用当前 `JobExecutionContext` 调用任务的 `handle(context)`，记录该文案和结构化用户 ID，并使任务调用链日志能够与原请求关联：
+登录成功并提交会话后，HTTP 适配器通过后台任务向默认连接配置的默认逻辑队列（`sample.env` 为 `default`）投递 `LoginSucceededJob`。Request ID 中间件建立请求 ID 后，追踪中间件在完整请求及后台任务期间把它绑定为当前 `correlation_id`；Dispatcher 自动写入消息，发布函数不需要接收或传递该 ID。消息以 `user_id` 参数标识登录用户，并包含固定文案“用户登录成功，队列任务已执行。”，不包含用户名、密码或 Token。独立 Worker 消费后使用当前 `JobExecutionContext` 调用任务的 `handle(context)`，通过用户应用服务从数据库读取执行时的最新用户 DTO，并记录该文案、结构化用户 ID 和状态，使任务调用链日志能够与原请求关联：
 
 ```bash
 uv run python -m app.worker
 ```
 
-该通知是尽力而为的示例副作用：Redis 未配置、不可用或发布结果不确定时会记录 `user.login_succeeded.dispatch_failed`，但不改变已经成功的登录响应。数据库会话提交与消息发布不是原子事务，通知可能丢失或重复，不能据此实现审计、计费或安全控制。
+该通知是尽力而为的示例副作用：Redis 未配置、不可用或发布结果不确定时会记录 `user.login_succeeded.dispatch_failed`，但不改变已经成功的登录响应。数据库会话提交与消息发布不是原子事务，通知可能丢失或重复，不能据此实现审计、计费或安全控制。Job 查询的是消费时数据，可能与登录时不同；用户已经删除时记录 `user.login_succeeded.user_missing` 并正常结束，其他数据库故障继续进入队列重试和失败存储。日志只保留用户 ID 和状态，不包含用户名、邮箱、密码、密码哈希或 Token。
 
 ## 输入与错误
 

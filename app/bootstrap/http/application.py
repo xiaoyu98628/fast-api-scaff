@@ -12,7 +12,8 @@ from app.interfaces.http.exceptions.register import register_exception_handlers
 from app.interfaces.http.middleware.registry import build_http_middlewares
 from app.interfaces.http.routes.register import register_routes
 from app.interfaces.http.shared.response.codes.builder import ResponseCodeBuilder
-from app.interfaces.http.shared.response.factory import JsonResponseFactory
+from app.interfaces.http.shared.response.factories.json import JsonResponseFactory
+from app.interfaces.http.shared.response.factories.sse import SseResponseFactory
 from app.runtime.container import ApplicationContainer
 
 type ContainerBuilder = Callable[[Settings], ApplicationContainer]
@@ -42,9 +43,9 @@ def create_app(
     )
 
     # 响应工厂属于宿主状态，避免 Application 层依赖 HTTP 表现层实现。
-    app.state.json_response_factory = JsonResponseFactory(
-        code_builder=ResponseCodeBuilder(active_settings.app.service_code),
-    )
+    code_builder = ResponseCodeBuilder(active_settings.app.service_code)
+    app.state.json_response_factory = JsonResponseFactory(code_builder=code_builder)
+    app.state.sse_response_factory = SseResponseFactory(code_builder=code_builder)
     # 异常映射和路由都在应用边界集中注册，保持上下文内部与 FastAPI 解耦。
     register_exception_handlers(app)
     register_routes(app)

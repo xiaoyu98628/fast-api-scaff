@@ -15,7 +15,7 @@ from app.interfaces.http.shared.response.codes.builder import ResponseCodeBuilde
 from app.interfaces.http.shared.response.codes.contract import CodeDefinition
 from app.interfaces.http.shared.response.codes.error_code import ErrorCode
 from app.interfaces.http.shared.response.codes.success_code import SuccessCode
-from app.interfaces.http.shared.response.factory import JsonResponseFactory
+from app.interfaces.http.shared.response.factories.json import JsonResponseFactory
 from app.interfaces.http.shared.response.json import JsonResponse
 
 

@@ -204,8 +204,13 @@ async def test_unexpected_exception_uses_request_context_and_cors(caplog: pytest
     assert "sensitive internal detail" not in response.text
 
     exception_record = next(record for record in caplog.records if getattr(record, "event", None) is HttpLogEvent.UNHANDLED_EXCEPTION)
-    assert exception_record.exc_info is not None
+    details = getattr(exception_record, "details", None)
+    assert exception_record.exc_info is None
     assert getattr(exception_record, "request_id", None) == body["request_id"]
+    assert isinstance(details, dict)
+    assert details["error_type"] == "builtins.RuntimeError"
+    assert details["stacktrace"]
+    assert "sensitive internal detail" not in repr(exception_record.__dict__)
 
 
 @pytest.mark.asyncio
