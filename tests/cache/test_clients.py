@@ -120,6 +120,56 @@ async def test_managed_redis_client_applies_key_to_atomic_operations() -> None:
 
 
 @pytest.mark.asyncio
+async def test_managed_window_uses_namespaced_key_and_explicit_duration() -> None:
+    storage = Mock(spec=RedisStorage)
+    storage.strings = AsyncMock()
+    storage.strings.acquire_window.return_value = (False, 500)
+    cache = ManagedRedisCacheClient(storage, CacheKeyBuilder("app", "security"), default_ttl=300)
+    assert await cache.acquire_window("quota", limit=1000, window_ms=60_000) == (False, 500)
+    storage.strings.acquire_window.assert_awaited_once_with("app:security:quota", 1000, 60_000)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("limit,window", [(0, 1000), (True, 1000), (1_000_001, 1000), (1, 0), (1, 86_400_001)])
+async def test_managed_window_rejects_invalid_parameters(limit: int, window: int) -> None:
+    storage = Mock(spec=RedisStorage)
+    storage.strings = AsyncMock()
+    cache = ManagedRedisCacheClient(storage, CacheKeyBuilder("app"), default_ttl=None)
+    with pytest.raises(ValueError):
+        await cache.acquire_window("quota", limit=limit, window_ms=window)
+    storage.strings.acquire_window.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("result,expected", [([1, 0], (True, 0)), ([0, 0], (False, 0)), ([0, 60_000], (False, 60_000))])
+async def test_window_is_one_atomic_operation(result: list[int], expected: tuple[bool, int]) -> None:
+    client = Mock(spec=Redis)
+    client.eval = AsyncMock(return_value=result)
+    assert await RedisStringStorage(client).acquire_window("app:quota", 1000, 60_000) == expected
+    client.eval.assert_awaited_once()
+    assert client.eval.await_args is not None
+    assert client.eval.await_args.args[1:] == (1, "app:quota", 1000, 60_000)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("result", [None, [], [1], [1, 1], [0, -1], [0, 60_001], [True, 0], [0, False], [2, 0], ["1", 0]])
+async def test_window_rejects_invalid_script_results(result: object) -> None:
+    client = Mock(spec=Redis)
+    client.eval = AsyncMock(return_value=result)
+    with pytest.raises(CacheOperationError):
+        await RedisStringStorage(client).acquire_window("app:quota", 1000, 60_000)
+
+
+@pytest.mark.asyncio
+async def test_window_translates_driver_failure() -> None:
+    client = Mock(spec=Redis)
+    client.eval = AsyncMock(side_effect=OSError("unavailable"))
+    with pytest.raises(CacheOperationError) as captured:
+        await RedisStringStorage(client).acquire_window("app:quota", 1000, 60_000)
+    assert isinstance(captured.value.__cause__, OSError)
+
+
+@pytest.mark.asyncio
 async def test_memcached_storage_uses_encoded_raw_key(monkeypatch: pytest.MonkeyPatch) -> None:
     client: Client[bytes] = Client(("127.0.0.1", 11211), decode_responses=False)
     cache_key = b"app:page:home"

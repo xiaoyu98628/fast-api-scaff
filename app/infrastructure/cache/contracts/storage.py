@@ -30,6 +30,11 @@ class KeyValueStorage(Protocol):
 class RedisStringStorage(Protocol):
     """声明登录限制等适配器需要的 Redis String 原子操作。"""
 
+    async def acquire_window(self, key: str, limit: int, window_ms: int) -> tuple[bool, int]:
+        """原子消耗固定窗口配额；返回准入标识与拒绝时的剩余毫秒数。"""
+
+        ...
+
     async def increment(self, key: str, ttl: int) -> int:
         """原子递增，并在首次创建时设置 TTL。"""
 

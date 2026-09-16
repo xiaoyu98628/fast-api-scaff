@@ -2,7 +2,7 @@
 
 配置由 `pydantic-settings` 从项目根目录 `.env` 和进程环境变量读取。进程环境变量优先于 `.env`；未知字段会被忽略；配置对象创建后不可变，并由 `load_settings()` 在当前进程内缓存。
 
-导入配置模块不会读取或校验环境变量。HTTP 顶层入口在导入时通过 `load_settings()` 显式创建各组配置并初始化日志；Console 和 Worker 则在 `main()` 的进程错误边界内完成相同步骤，单纯导入入口模块没有配置副作用。Console 或 Worker 即使只请求 `--help`，仍会先校验完整配置，但配置错误会转换成稳定的 stderr 输出和退出码 1。手动构造 `Settings` 时，未提供的认证、HTTP、向量和日志配置由默认值工厂在实例化时创建。默认值工厂的 `_env_file=None` 只跳过 `.env`，仍读取进程环境变量；显式注入这些配置时不会调用对应工厂。
+导入配置模块不会读取或校验环境变量。HTTP 顶层入口在导入时通过 `load_settings()` 显式创建各组配置并初始化日志；Console 和 Worker 则在 `main()` 的进程错误边界内完成相同步骤，单纯导入入口模块没有配置副作用。Console 或 Worker 即使只请求 `--help`，仍会先校验完整配置，但配置错误会转换成稳定的 stderr 输出和退出码 1。手动构造 `Settings` 时，未提供的认证、HTTP、请求限流、向量和日志配置由默认值工厂在实例化时创建。默认值工厂的 `_env_file=None` 只跳过 `.env`，仍读取进程环境变量；显式注入这些配置时不会调用对应工厂。
 
 ## 1. 命名和嵌套规则
 
@@ -12,6 +12,7 @@
 | --- | --- | --- |
 | 应用 | `APP_` | `APP_NAME` |
 | 认证 | `AUTH_` | `AUTH_SESSION_TTL_SECONDS`、`AUTH_LOGIN_LIMIT_CACHE` |
+| HTTP 请求限流 | `RATE_LIMIT_` | `RATE_LIMIT_MAX_REQUESTS`、`RATE_LIMIT_WINDOW_SECONDS` |
 | 日志 | `LOG_` | `LOG_LEVEL` |
 | CORS | `CORS_` | `CORS_ALLOW_ORIGINS` |
 | HTTP 出站 | `HTTP_` | `HTTP_TIMEOUT__CONNECT` |
@@ -61,6 +62,20 @@ LOG_HANDLERS={"stdout":{"driver":"stream","stream":"stdout"}}
 `APP_PORT` 出现在 `sample.env` 和 Compose 端口映射中，但不是 `AppSettings` 字段。直接运行 Uvicorn 时仍由命令行 `--port` 决定监听端口；Compose 使用 `${APP_PORT:-8000}` 映射宿主端口。
 
 最终响应码由三位状态分类、三位服务码和四位局部业务码组成。普通 JSON 响应的状态分类就是实际 HTTP status，例如 HTTP 404、服务码 `001` 与用户不存在 `1001` 组合成 `4040011001`。SSE 流开始后的错误无法改变已经发送的 HTTP 200，此时前三位表示该错误对应的状态分类。不要通过更改服务码表达状态；三个分段承担不同语义。
+
+### HTTP 请求限流
+
+通过 `settings.rate_limit` 访问 `RateLimitSettings`，与认证失败计数独立：
+
+| 变量 | 类型 | 默认值 | 约束与说明 |
+| --- | --- | --- | --- |
+| `RATE_LIMIT_ENABLED` | `bool` | `false` | 启用 HTTP API 的 IP 共享配额 |
+| `RATE_LIMIT_CACHE` | `str \| None` | 未配置 | 选择已有 Redis 缓存连接；省略时使用 `CACHE_DEFAULT` |
+| `RATE_LIMIT_MAX_REQUESTS` | `int` | `1000` | 1–1000000；单 IP 每窗口最多准入次数 |
+| `RATE_LIMIT_WINDOW_SECONDS` | `int` | `60` | 1–86400 秒；从首次准入开始计时 |
+| `RATE_LIMIT_FAIL_OPEN` | `bool` | `false` | 存储故障默认返回 503；true 时记录故障后放行 |
+
+启用后，所有宿主构建公共容器时都会校验所选连接存在且为 Redis，但只在 HTTP 受限请求到来时才使用该组件。关闭时不要求限流连接有效，也不装配限流中间件。连接仍按需建立，无启动网络探测。窗口不使用 `CACHE_DEFAULT_TTL`；修改配额或窗口会生成新计数 key，旧窗口自然过期。滚动更新期间不同参数的实例分别计数，应保持共享配额的实例配置一致。具体请求范围和代理地址约束见 [HTTP 请求限流](http.md#13-http-请求限流)。
 
 ## 3. 时区配置
 

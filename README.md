@@ -11,6 +11,7 @@
 - MySQL、PostgreSQL、SQLite 异步 SQLAlchemy；
 - Repository、Mapper、Unit of Work 与 Alembic migration；
 - Redis、Memcached 字节级 KV 缓存，Redis Storage 按数据类型组织适配器；
+- 可选的 Redis HTTP IP 限流：默认关闭，同一 IP 的 API 请求共享 1000 次/60 秒配额，超限返回 429；
 - Milvus（本地 Lite/远程）、Chroma（本地持久化/远程）和 Elasticsearch 统一异步向量存储；
 - 普通与流式 HTTP 出站请求、独立连接池、阶段超时、池压力诊断和结构化日志；
 - Redis Streams、Kafka、RabbitMQ 队列适配器和独立 Worker；
@@ -20,6 +21,8 @@
 - CI 使用临时 MySQL/PostgreSQL 服务验证 Alembic upgrade、downgrade 和再次 upgrade。
 
 当前不包含角色/权限体系、刷新令牌、常驻 Scheduler、领域事件/Outbox/Saga、跨数据库原子事务、Redis 高级数据结构、缓存自动降级或通用 HTTP 自动重试。它们需要按实际业务边界设计，不能把规划项当作现有功能。用户 CRUD 仍是公开示例，`GET /api/v1/auth/me` 演示登录校验。
+
+HTTP 请求限流通过 `RATE_LIMIT_ENABLED=true` 启用；`RATE_LIMIT_CACHE` 选择已有 Redis 连接，省略时使用默认缓存连接。配额由 `RATE_LIMIT_MAX_REQUESTS=1000` 和 `RATE_LIMIT_WINDOW_SECONDS=60` 配置，独立于登录失败限制。Redis 操作失败默认返回 503，只有显式设置 `RATE_LIMIT_FAIL_OPEN=true` 才故障放行。代理部署必须保证 ASGI 客户端地址可信，应用不直接解析转发头。详见 [HTTP 限流规则](docs/http.md#13-http-请求限流)和[配置参考](docs/configuration.md#http-请求限流)。
 
 向量 `upsert` 覆盖完整元数据，省略的旧字段会被删除。Chroma 每次写入额外读取一次旧元数据，并在同一客户端内串行执行读后写；多个独立客户端或进程覆盖同一 ID 时，调用方需协调写入顺序，不保证跨进程原子覆盖。详见[向量存储](docs/vector.md)。
 

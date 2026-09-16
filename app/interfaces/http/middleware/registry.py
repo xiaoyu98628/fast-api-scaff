@@ -7,6 +7,7 @@ from app.interfaces.http.middleware.access_log import build_access_log_middlewar
 from app.interfaces.http.middleware.cors import build_cors_middleware
 from app.interfaces.http.middleware.exception_capture import ExceptionCaptureMiddleware
 from app.interfaces.http.middleware.query_param_decode import QueryParamDecodeMiddleware
+from app.interfaces.http.middleware.rate_limit import RateLimitMiddleware
 from app.interfaces.http.middleware.request_id import build_request_id_middleware
 from app.interfaces.http.middleware.trace_context import TraceContextMiddleware
 
@@ -28,12 +29,10 @@ def build_http_middlewares(settings: Settings) -> list[Middleware]:
             )
         )
 
-    # 异常捕获包裹查询参数解码，确保解码链路异常也使用统一错误响应。
-    middlewares.extend(
-        [
-            Middleware(ExceptionCaptureMiddleware, debug=settings.app.debug),
-            Middleware(QueryParamDecodeMiddleware),
-        ]
-    )
+    # 异常捕获包裹限流和参数解码，外层上下文及访问日志也覆盖提前拒绝响应。
+    middlewares.append(Middleware(ExceptionCaptureMiddleware, debug=settings.app.debug))
+    if settings.rate_limit.enabled:
+        middlewares.append(Middleware(RateLimitMiddleware, fail_open=settings.rate_limit.fail_open))
+    middlewares.append(Middleware(QueryParamDecodeMiddleware))
 
     return middlewares

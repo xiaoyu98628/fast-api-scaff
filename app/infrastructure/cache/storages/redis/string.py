@@ -13,6 +13,27 @@ end
 return value
 """
 
+# 判断、扣减与 TTL 读取必须处于同一次脚本执行，避免并发超额或跨窗口读取。
+_ACQUIRE_WINDOW_SCRIPT = """
+local limit = tonumber(ARGV[1])
+local window_ms = tonumber(ARGV[2])
+local raw = redis.call('GET', KEYS[1])
+if not raw then
+    redis.call('SET', KEYS[1], 1, 'PX', window_ms)
+    return {1, 0}
+end
+local count = tonumber(raw)
+local ttl = redis.call('PTTL', KEYS[1])
+if not count or count < 1 or count ~= math.floor(count) or ttl < 0 then
+    return redis.error_reply('invalid rate limit state')
+end
+if count >= limit then
+    return {0, ttl}
+end
+redis.call('INCR', KEYS[1])
+return {1, 0}
+"""
+
 
 class RedisStringStorage(BaseRedisStorage):
     """实现 Redis String 对应的字节级 KV 操作。"""
@@ -21,6 +42,21 @@ class RedisStringStorage(BaseRedisStorage):
         """借用连接资源拥有的 Redis 客户端，不接管其生命周期。"""
 
         super().__init__(client)
+
+    async def acquire_window(self, key: str, limit: int, window_ms: int) -> tuple[bool, int]:
+        """原子消耗配额；拒绝不续期，驱动错误与无效状态转换为缓存操作异常。"""
+
+        try:
+            result = await self._client.eval(_ACQUIRE_WINDOW_SCRIPT, 1, key, limit, window_ms)
+        except Exception as error:
+            raise CacheOperationError("Redis 固定窗口配额操作失败") from error
+
+        if not isinstance(result, (list, tuple)) or len(result) != 2:
+            raise CacheOperationError("Redis 返回了无效的配额结果")
+        allowed, ttl = result
+        if type(allowed) is not int or allowed not in (0, 1) or type(ttl) is not int or not 0 <= ttl <= window_ms or (allowed == 1 and ttl != 0):
+            raise CacheOperationError("Redis 返回了无效的配额状态")
+        return bool(allowed), ttl
 
     async def get(self, key: str) -> bytes | None:
         """读取 bytes；拒绝客户端配置错误导致的文本返回值。"""

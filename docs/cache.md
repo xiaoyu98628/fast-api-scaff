@@ -159,7 +159,11 @@ greeting = None if raw is None else TextCacheCodec.decode(raw)
 
 ### Redis
 
-适合共享缓存、分布式部署和需要成熟运维能力的场景。当前公共接口只使用 Redis String；Redis 专属客户端为登录失败限制提供受控的原子计数和 TTL，不提供通用 Lua、Hash/List/Set/ZSet、Pub/Sub 或分布式锁。
+适合共享缓存、分布式部署和需要成熟运维能力的场景。当前公共接口只使用 Redis String；Redis 专属客户端为登录失败限制提供受控的原子计数和 TTL，并为 HTTP 请求限流提供固定窗口原子配额，不提供通用 Lua、Hash/List/Set/ZSet、Pub/Sub 或分布式锁。
+
+`ManagedRedisCacheClient.acquire_window(key, *, limit: int, window_ms: int) -> tuple[bool, int]` 返回准入结果与拒绝时的剩余毫秒数，允许时第二项为 0。配额范围 1–1000000，时长范围 1–86400000 毫秒，均要求整数且不接受布尔值。key 仍通过统一 namespace/prefix 规则构造，窗口始终使用显式时长，与默认缓存 TTL 无关。首次准入创建计数并设置过期时间；后续准入仅增加计数；拒绝不增加计数也不延长窗口。脚本原子完成判断、计数和剩余时间读取，异常状态通过 `CacheOperationError` 暴露。该能力只属于 Redis 专属客户端，不扩展 Memcached 公共协议。
+
+HTTP 限流组件位于 `app.infrastructure.rate_limit`，通过组合根注入 `CacheManager.get_redis` 的延迟工厂，并借用同一资源池。缓存 key 包含配额、窗口和客户端标识的 SHA-256 摘要，使用独立的 `rate-limit:http:ip:` 前缀，不与登录失败计数混用。共享计数要求各实例使用相同 Redis 数据库、namespace、连接 key_prefix 和配额配置；Redis 状态被清空或驱逐后会重新开始窗口。
 
 不要从 `CacheManager` 向业务泄露 `redis.asyncio.Redis`。若业务确实需要集合或原子脚本，应为那项能力定义独立协议和专用 Redis 适配器；不要不断扩大通用 `CacheClient`，迫使 Memcached 提供虚假实现。
 

@@ -19,6 +19,14 @@ class ManagedRedisCacheClient(ManagedCacheClient):
         super().__init__(storage, key_builder, default_ttl)
         self._redis_storage = storage
 
+    async def acquire_window(self, key: str, *, limit: int, window_ms: int) -> tuple[bool, int]:
+        """规范化 key 后原子消耗配额；拒绝不续期，窗口不使用默认缓存 TTL。"""
+
+        for value, maximum in ((limit, 1_000_000), (window_ms, 86_400_000)):
+            if type(value) is not int or not 1 <= value <= maximum:
+                raise ValueError("窗口配额或毫秒时长超出允许范围")
+        return await self._redis_storage.strings.acquire_window(self._key_builder.build(key), limit, window_ms)
+
     async def increment(self, key: str, *, ttl: int) -> int:
         """递增规范化后的 key，并在首次创建时设置正整数 TTL。"""
 

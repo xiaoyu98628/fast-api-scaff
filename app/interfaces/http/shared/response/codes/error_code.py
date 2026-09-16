@@ -16,3 +16,4 @@ class ErrorCode(CodedEnum):
     VALIDATION_ERROR = CodeDefinition(code="0101", message="请求参数有误，请检查后重试", status_code=422)
     TOO_MANY_REQUESTS = CodeDefinition(code="0101", message="操作过于频繁，请稍后重试", status_code=429)
     INTERNAL_ERROR = CodeDefinition(code="0101", message="网络开小差了，请稍后重试", status_code=500)
+    SERVICE_UNAVAILABLE = CodeDefinition(code="0101", message="服务暂时不可用，请稍后重试", status_code=503)
