@@ -9,11 +9,11 @@ from app.infrastructure.cache.clients.managed import ManagedCacheClient
 from app.infrastructure.cache.clients.redis import ManagedRedisCacheClient
 from app.infrastructure.cache.contracts.client import CacheClient
 from app.infrastructure.cache.contracts.provider import CacheResourceDefinition
+from app.infrastructure.cache.contracts.storage import RedisAtomicStorage
 from app.infrastructure.cache.errors import CacheConfigurationError
 from app.infrastructure.cache.key import CacheKeyBuilder
 from app.infrastructure.cache.providers.registry import DEFAULT_CACHE_PROVIDERS, CacheProviderRegistry
 from app.infrastructure.cache.resource import ManagedCacheResource
-from app.infrastructure.cache.storages.redis.storage import RedisStorage
 from app.infrastructure.resources.closing import close_lazy_resources
 from app.infrastructure.resources.lazy import AsyncLazy
 
@@ -118,7 +118,7 @@ class CacheManager:
         resource = await definition.factory()
         key_builder = CacheKeyBuilder(self._namespace, definition.key_prefix)
         if definition.driver == "redis":
-            if not isinstance(resource.storage, RedisStorage):
+            if not isinstance(resource.storage, RedisAtomicStorage):
                 raise CacheConfigurationError("Redis Provider 返回了不兼容的 Storage")
             client: CacheClient = ManagedRedisCacheClient(
                 storage=resource.storage,

@@ -12,8 +12,7 @@ from anyio import CapacityLimiter, fail_after, to_thread
 from chromadb.api import AsyncClientAPI, ClientAPI
 from chromadb.errors import ChromaError, NotFoundError, UniqueConstraintError
 
-from app.config.vector import ChromaLocalVectorSettings, ChromaRemoteVectorSettings, parse_vector_connection
-from app.infrastructure.vector.contracts.provider import VectorResourceDefinition
+from app.config.vector import ChromaLocalVectorSettings, ChromaRemoteVectorSettings
 from app.infrastructure.vector.errors import (
     VectorCollectionConflictError,
     VectorCollectionNotFoundError,
@@ -270,20 +269,12 @@ class ChromaVectorClient:
             raise VectorCollectionNotFoundError(f"Chroma Collection {name!r} 不存在") from error
 
 
-class ChromaVectorProvider:
-    """根据 mode 创建 Chroma 本地持久化或远程异步客户端。"""
+async def create_chroma_resource(settings: ChromaLocalVectorSettings | ChromaRemoteVectorSettings) -> VectorResource:
+    """根据已校验配置创建本地或远程 Chroma 资源。"""
 
-    driver = "chroma"
-
-    def prepare(self, raw_config: dict[str, object]) -> VectorResourceDefinition:
-        """严格校验 Chroma 配置并返回延迟资源工厂。"""
-
-        settings = parse_vector_connection(raw_config)
-        if isinstance(settings, ChromaLocalVectorSettings):
-            return VectorResourceDefinition(factory=partial(_create_local_resource, settings))
-        if isinstance(settings, ChromaRemoteVectorSettings):
-            return VectorResourceDefinition(factory=partial(_create_remote_resource, settings))
-        raise ValueError("配置不是 Chroma 连接")
+    if isinstance(settings, ChromaLocalVectorSettings):
+        return await _create_local_resource(settings)
+    return await _create_remote_resource(settings)
 
 
 async def _create_local_resource(settings: ChromaLocalVectorSettings) -> VectorResource:

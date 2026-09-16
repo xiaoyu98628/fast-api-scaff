@@ -12,8 +12,7 @@ from typing import Protocol, cast
 import httpx
 from anyio import CapacityLimiter, to_thread
 
-from app.config.vector import MilvusLocalVectorSettings, MilvusRemoteVectorSettings, parse_vector_connection
-from app.infrastructure.vector.contracts.provider import VectorResourceDefinition
+from app.config.vector import MilvusLocalVectorSettings, MilvusRemoteVectorSettings
 from app.infrastructure.vector.errors import (
     VectorCollectionConflictError,
     VectorCollectionNotFoundError,
@@ -303,20 +302,12 @@ class MilvusVectorClient:
             raise VectorCollectionNotFoundError(f"Milvus Collection {name!r} 不存在")
 
 
-class MilvusVectorProvider:
-    """根据 mode 创建本地 Milvus Lite 或远程异步客户端。"""
+async def create_milvus_resource(settings: MilvusLocalVectorSettings | MilvusRemoteVectorSettings) -> VectorResource:
+    """根据已校验配置创建本地或远程 Milvus 资源。"""
 
-    driver = "milvus"
-
-    def prepare(self, raw_config: dict[str, object]) -> VectorResourceDefinition:
-        """严格校验 Milvus 配置并返回延迟工厂。"""
-
-        settings = parse_vector_connection(raw_config)
-        if isinstance(settings, MilvusLocalVectorSettings):
-            return VectorResourceDefinition(factory=partial(_create_local_resource, settings))
-        if isinstance(settings, MilvusRemoteVectorSettings):
-            return VectorResourceDefinition(factory=partial(_create_remote_resource, settings))
-        raise ValueError("配置不是 Milvus 连接")
+    if isinstance(settings, MilvusLocalVectorSettings):
+        return await _create_local_resource(settings)
+    return await _create_remote_resource(settings)
 
 
 async def _create_local_resource(settings: MilvusLocalVectorSettings) -> VectorResource:

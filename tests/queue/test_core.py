@@ -1,6 +1,8 @@
 """验证队列消息信封、任务策略和管理器核心契约。"""
 
 import asyncio
+import subprocess
+import sys
 from dataclasses import replace
 from datetime import UTC, datetime
 from typing import cast
@@ -18,6 +20,7 @@ from app.infrastructure.queue.errors import InvalidMessageError, QueueConfigurat
 from app.infrastructure.queue.job import QueueJob, describe_job, encode_job, job_reference
 from app.infrastructure.queue.manager import QueueManager
 from app.interfaces.worker.context import JobExecutionContext
+from app.runtime.paths import PROJECT_ROOT
 from app.runtime.trace import TraceContext, bind_trace_context
 from tests.queue.fakes import (
     FakeQueueBackend,
@@ -117,6 +120,92 @@ def test_job_descriptor_encodes_subclass_and_rejects_unknown_type() -> None:
         encode_job(object())
     with pytest.raises(TypeError):
         descriptor.encode(object())
+
+
+def test_queue_manager_imports_only_the_backend_selected_on_first_use() -> None:
+    script = """
+import asyncio
+import sys
+import app.bootstrap.build
+from app.config.database import DatabaseSettings
+from app.config.queue import QueueSettings
+from app.infrastructure.database.manager import DatabaseManager
+from app.infrastructure.queue.manager import QueueManager
+
+databases = DatabaseManager(DatabaseSettings(_env_file=None))
+manager = QueueManager(
+    QueueSettings(
+        default="main",
+        connections={"main": {"driver": "redis"}},
+        _env_file=None,
+    ),
+    databases,
+)
+for module in (
+    "app.infrastructure.cache.connections.redis",
+    "app.infrastructure.cache.connections.memcached",
+    "app.infrastructure.queue.drivers.redis",
+    "app.infrastructure.queue.drivers.kafka",
+    "app.infrastructure.queue.drivers.rabbitmq",
+    "app.infrastructure.vector.drivers.milvus",
+    "app.infrastructure.vector.drivers.chroma",
+    "app.infrastructure.vector.drivers.elasticsearch",
+    "redis",
+    "memcachio",
+    "aiokafka",
+    "aio_pika",
+    "pymilvus",
+    "chromadb",
+    "elasticsearch",
+):
+    assert module not in sys.modules, module
+asyncio.run(manager.get())
+assert "app.infrastructure.queue.drivers.redis" in sys.modules
+assert "redis" in sys.modules
+assert "app.infrastructure.queue.drivers.kafka" not in sys.modules
+assert "app.infrastructure.queue.drivers.rabbitmq" not in sys.modules
+assert "aiokafka" not in sys.modules
+assert "aio_pika" not in sys.modules
+asyncio.run(manager.aclose())
+asyncio.run(databases.aclose())
+"""
+
+    result = subprocess.run([sys.executable, "-c", script], cwd=PROJECT_ROOT, capture_output=True, text=True, timeout=10)
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_missing_queue_driver_dependency_has_stable_configuration_error() -> None:
+    script = """
+import asyncio
+import builtins
+from app.config.database import DatabaseSettings
+from app.config.queue import QueueSettings
+from app.infrastructure.database.manager import DatabaseManager
+from app.infrastructure.queue.errors import QueueConfigurationError
+from app.infrastructure.queue.manager import QueueManager
+
+manager = QueueManager(
+    QueueSettings(default="main", connections={"main": {"driver": "redis"}}, _env_file=None),
+    DatabaseManager(DatabaseSettings(_env_file=None)),
+)
+original_import = builtins.__import__
+def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
+    if name == "redis" or name.startswith("redis."):
+        raise ModuleNotFoundError("blocked redis dependency")
+    return original_import(name, globals, locals, fromlist, level)
+builtins.__import__ = guarded_import
+try:
+    asyncio.run(manager.get())
+except QueueConfigurationError as error:
+    assert "客户端依赖无法加载" in str(error)
+else:
+    raise AssertionError("missing Redis dependency was accepted")
+"""
+
+    result = subprocess.run([sys.executable, "-c", script], cwd=PROJECT_ROOT, capture_output=True, text=True, timeout=10)
+
+    assert result.returncode == 0, result.stderr
 
 
 def test_default_job_codec_rejects_unknown_fields_for_pydantic_model() -> None:

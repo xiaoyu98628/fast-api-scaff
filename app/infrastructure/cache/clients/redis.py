@@ -1,8 +1,8 @@
 """为需要 Redis 原子语义的适配器提供受控客户端。"""
 
 from app.infrastructure.cache.clients.managed import ManagedCacheClient
+from app.infrastructure.cache.contracts.storage import RedisAtomicStorage
 from app.infrastructure.cache.key import CacheKeyBuilder
-from app.infrastructure.cache.storages.redis.storage import RedisStorage
 
 
 class ManagedRedisCacheClient(ManagedCacheClient):
@@ -10,7 +10,7 @@ class ManagedRedisCacheClient(ManagedCacheClient):
 
     def __init__(
         self,
-        storage: RedisStorage,
+        storage: RedisAtomicStorage,
         key_builder: CacheKeyBuilder,
         default_ttl: int | None,
     ) -> None:
