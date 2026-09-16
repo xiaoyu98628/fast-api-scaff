@@ -51,6 +51,13 @@ class SqlAlchemySessionRepository:
 
         await self._session.execute(delete(UserSessionModel).where(UserSessionModel.token_digest == token_digest))
 
+    async def remove_for_user(self, user_id: UserId) -> int:
+        """按用户 ID 批量撤销会话。"""
+
+        statement = delete(UserSessionModel).where(UserSessionModel.user_id == str(user_id.value)).execution_options(synchronize_session=False)
+        result = cast(CursorResult[tuple[object, ...]], await self._session.execute(statement))
+        return result.rowcount
+
     async def remove_expired(self, *, now: datetime) -> int:
         """批量删除到指定本地时间已经过期的会话。"""
 

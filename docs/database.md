@@ -23,7 +23,7 @@ uv run uvicorn app.main:app --reload
 
 相对数据库路径解析到 `storage/`。`:memory:` 只适合受控测试：不同连接的内存数据库生命周期和可见性容易与预期不一致，不建议作为常规开发配置。
 
-认证模型定义独立的 `user_sessions` 表，保存 `token_digest/user_id/issued_at/expires_at`；后两个字段使用本地无时区 `DateTime()`，`users` 模型保持不变。会话表迁移已由维护者手动生成；检查迁移后执行 `upgrade head`，再使用认证接口。会话外键声明 `ON DELETE CASCADE`，SQLite Provider 会为连接池创建的每个连接启用 `PRAGMA foreign_keys=ON`，因此删除用户会级联删除其会话。每次成功登录会在写入新会话的同一事务中清理全局已过期会话；退出只删除指定会话。
+认证模型定义独立的 `user_sessions` 表，保存 `token_digest/user_id/issued_at/expires_at`；后两个字段使用本地无时区 `DateTime()`，`users` 模型保持不变。会话表迁移已由维护者手动生成；检查迁移后执行 `upgrade head`，再使用认证接口。会话外键声明 `ON DELETE CASCADE`，SQLite Provider 会为连接池创建的每个连接启用 `PRAGMA foreign_keys=ON`，因此删除用户会级联删除其会话。每次成功登录会在写入新会话的同一事务中清理全局已过期会话；退出只删除指定会话，密码重置和用户禁用则在对应用户写入的同一事务中按用户 ID 撤销全部会话。
 
 ## 2. 命名连接
 
