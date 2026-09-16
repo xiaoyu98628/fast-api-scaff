@@ -42,7 +42,7 @@ LOG_FORMAT=text
 | `replay_of` | 当前 Worker 任务是重放消息时附加 |
 | `event` | 稳定、可查询的事件名 |
 | `details` | 该事件的结构化细节 |
-| `exception` | `type`、`message`、`stacktrace`，仅异常日志出现 |
+| `exception` | 全限定 `type` 和仅含模块、函数、行号的 `stacktrace`，仅带 `exc_info` 的异常日志出现；不含异常正文 |
 
 JSON 示例：
 
@@ -52,7 +52,7 @@ JSON 示例：
 
 业务和基础设施日志应把稳定分类放在 `event`，把可检索维度放在 `details`，不要把所有信息拼进 message。
 
-Worker 的任务失败和进程级故障采用更严格的安全诊断：捕获到异常时只额外记录异常类型，以及由模块、函数和行号组成的栈位置，不记录异常消息、运行时局部变量或任务 payload。任务完成事件为 `queue.job.finished`，details 还包含本次处理的 `duration_ms`；进程级故障事件为 `worker.failed`。
+所有异常日志都采用安全诊断：捕获到异常时只额外记录全限定异常类型，以及由模块、函数和行号组成的栈位置，不记录异常消息、异常链/异常组正文、运行时局部变量或业务数据。Worker 任务完成事件为 `queue.job.finished`，details 还包含本次处理的 `duration_ms`；进程级故障事件为 `worker.failed`。
 
 ## 3. 记录结构化日志
 
@@ -76,7 +76,7 @@ logger.info(
 
 使用 `app.*` logger 才会继承项目为应用日志设置的级别与 handler。事件名建议采用稳定的点分层级，如 `context.action.outcome`；不要把 ID 或动态文本放进 event 名。
 
-仅当异常正文已经确认不含敏感信息时，才使用 `logger.exception()` 或显式 `exc_info=True` 产生 `exception` 结构：
+`logger.exception()` 或显式 `exc_info=True` 会产生安全的 `exception` 结构；Formatter 会丢弃异常正文和 Python 格式化 traceback，只保留异常类型与代码位置：
 
 ```python
 try:
@@ -88,7 +88,7 @@ except Exception:
 
 记录之后继续抛出，除非当前边界明确负责恢复；不要用日志代替错误处理。
 
-HTTP 非调试异常边界、SSE 流边界和 Worker 等可能接收任意内部异常的位置使用 `safe_exception_details()`，只记录异常类型以及模块、函数和行号，不附加 `exc_info`。这样未知异常即使携带 Token、上游响应或驱动正文，也不会被结构化 Formatter 写入日志。
+HTTP 生命周期、后台副作用、数据库资源、SSE 流边界和 Worker 等公共边界直接使用 `safe_exception_details()` 写入事件 `details`，不附加 `exc_info`。Formatter 对其他代码或第三方适配层遗留的 `exc_info` 再执行同样的脱敏，形成默认安全的兜底。未知异常即使携带 Token、连接信息、上游响应、异常 cause 或 `ExceptionGroup` 子异常正文，也不会被结构化日志保存。日志 message 本身仍必须使用固定文案，禁止把 `str(error)` 拼入 message 或 details。
 
 ## 4. Logger 级别与 Uvicorn
 

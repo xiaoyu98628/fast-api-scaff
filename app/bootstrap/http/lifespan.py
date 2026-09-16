@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.bootstrap.http.logging import ApplicationLogEvent
-from app.infrastructure.logging.record import log_extra
+from app.infrastructure.logging.record import log_extra, safe_exception_details
 from app.runtime.lifecycle import ApplicationRuntime, ContainerFactory
 
 _APPLICATION_LOGGER = logging.getLogger("app.bootstrap.lifecycle")
@@ -28,8 +28,12 @@ def create_lifespan(container_factory: ContainerFactory):
         try:
             try:
                 container = await runtime.start()
-            except BaseException:
-                _APPLICATION_LOGGER.exception("Application startup failed", extra=log_extra(ApplicationLogEvent.START_FAILED))
+            except BaseException as error:
+                error_type, stacktrace = safe_exception_details(error)
+                _APPLICATION_LOGGER.error(
+                    "Application startup failed",
+                    extra=log_extra(ApplicationLogEvent.START_FAILED, error_type=error_type, stacktrace=stacktrace),
+                )
                 raise
 
             # 仅在完整启动成功后暴露容器，防止请求读取半初始化依赖。
@@ -43,8 +47,12 @@ def create_lifespan(container_factory: ContainerFactory):
 
             try:
                 await runtime.aclose()
-            except BaseException:
-                _APPLICATION_LOGGER.exception("Application shutdown failed", extra=log_extra(ApplicationLogEvent.STOP_FAILED))
+            except BaseException as error:
+                error_type, stacktrace = safe_exception_details(error)
+                _APPLICATION_LOGGER.error(
+                    "Application shutdown failed",
+                    extra=log_extra(ApplicationLogEvent.STOP_FAILED, error_type=error_type, stacktrace=stacktrace),
+                )
                 raise
             finally:
                 if container_exposed:

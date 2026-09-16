@@ -21,6 +21,7 @@ from app.config.database import DatabaseSettings
 from app.config.settings import Settings
 from app.contexts.user.application.login_attempts import LoginFailureStatus
 from app.contexts.user.jobs.login_succeeded import LoginSucceededJob
+from app.infrastructure.queue.errors import QueueError
 from app.interfaces.http.controllers.v1.auth.codes import AuthErrorCode
 from app.interfaces.http.controllers.v1.auth.router import _publish_login_succeeded
 from app.interfaces.http.shared.response.codes.error_code import ErrorCode
@@ -166,6 +167,23 @@ async def test_login_publisher_uses_default_queue_without_manual_correlation() -
         await _publish_login_succeeded(container, user_id)
 
     queues.dispatch.assert_awaited_once_with(LoginSucceededJob(user_id=user_id))
+
+
+@pytest.mark.asyncio
+async def test_login_publisher_failure_log_excludes_queue_error_message(caplog: pytest.LogCaptureFixture) -> None:
+    secret = "PRIVATE_QUEUE_TOKEN"
+    queues = Mock(dispatch=AsyncMock(side_effect=QueueError(secret)))
+    container = cast(ApplicationContainer, SimpleNamespace(queues=queues))
+    user_id = uuid7()
+    caplog.set_level("ERROR", logger="app.interfaces.http.controllers.v1.auth.router")
+
+    await _publish_login_succeeded(container, user_id)
+
+    record = next(record for record in caplog.records if getattr(record, "event", None) == "user.login_succeeded.dispatch_failed")
+    assert record.exc_info is None
+    assert getattr(record, "details")["error_type"] == "app.infrastructure.queue.errors.QueueError"
+    assert getattr(record, "details")["stacktrace"]
+    assert secret not in repr(record.__dict__)
 
 
 @pytest.mark.asyncio

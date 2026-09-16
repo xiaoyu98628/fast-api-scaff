@@ -9,7 +9,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Response, status
 from app.contexts.user.application.auth_dto import LoginCommand
 from app.contexts.user.application.auth_errors import AuthApplicationError
 from app.contexts.user.jobs.login_succeeded import LoginSucceededJob
-from app.infrastructure.logging.record import log_extra
+from app.infrastructure.logging.record import log_extra, safe_exception_details
 from app.infrastructure.queue.errors import QueueError
 from app.infrastructure.queue.job import job_reference
 from app.interfaces.http.controllers.v1.auth.dependencies import AuthServiceDependency, SessionCredentialDependency
@@ -39,11 +39,17 @@ async def _publish_login_succeeded(
 
     try:
         await container.queues.dispatch(LoginSucceededJob(user_id=user_id))
-    except QueueError:
+    except QueueError as error:
         # 异步副作用失败不能改变已经完成的认证结果，只记录稳定任务类型供诊断。
-        _logger.exception(
+        error_type, stacktrace = safe_exception_details(error)
+        _logger.error(
             "Login succeeded job dispatch failed",
-            extra=log_extra("user.login_succeeded.dispatch_failed", job_type=job_reference(LoginSucceededJob)),
+            extra=log_extra(
+                "user.login_succeeded.dispatch_failed",
+                job_type=job_reference(LoginSucceededJob),
+                error_type=error_type,
+                stacktrace=stacktrace,
+            ),
         )
 
 

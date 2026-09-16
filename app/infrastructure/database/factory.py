@@ -9,7 +9,7 @@ from app.infrastructure.database.contracts.provider import DatabaseResourceDefin
 from app.infrastructure.database.errors import DatabaseDriverError
 from app.infrastructure.database.logging import DatabaseLogEvent, configure_database_logging
 from app.infrastructure.database.resource import DatabaseResource
-from app.infrastructure.logging.record import log_extra
+from app.infrastructure.logging.record import log_extra, safe_exception_details
 
 _DATABASE_LOGGER = logging.getLogger("app.infrastructure.database")
 
@@ -23,12 +23,15 @@ async def create_database_resource(connection_name: str, definition: DatabaseRes
         # create_async_engine 只构造连接池；首次实际查询时才连接数据库。
         engine = create_async_engine(spec.url, hide_parameters=True, **dict(spec.options))
     except (ImportError, ModuleNotFoundError, NoSuchModuleError) as error:
-        _DATABASE_LOGGER.exception(
+        error_type, stacktrace = safe_exception_details(error)
+        _DATABASE_LOGGER.error(
             "Database resource creation failed",
             extra=log_extra(
                 DatabaseLogEvent.RESOURCE_CREATE_FAILED,
                 connection=connection_name,
                 driver=spec.url.drivername,
+                error_type=error_type,
+                stacktrace=stacktrace,
             ),
         )
         raise DatabaseDriverError(f"数据库驱动 {spec.url.drivername!r} 无法加载") from error
@@ -60,13 +63,16 @@ async def close_database_resource(resource: DatabaseResource) -> None:
 
     try:
         await resource.engine.dispose()
-    except Exception:
-        _DATABASE_LOGGER.exception(
+    except Exception as error:
+        error_type, stacktrace = safe_exception_details(error)
+        _DATABASE_LOGGER.error(
             "Database resource close failed",
             extra=log_extra(
                 DatabaseLogEvent.RESOURCE_CLOSE_FAILED,
                 connection=resource.connection_name,
                 driver=resource.engine.url.drivername,
+                error_type=error_type,
+                stacktrace=stacktrace,
             ),
         )
         raise
