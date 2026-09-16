@@ -44,13 +44,17 @@ ApplicationContainer
   → Connection（客户端/连接池与 ping/close）
   → Storage（后端字节级 KV 操作）
   → ManagedCacheClient（统一 key 与 TTL）
-      ↳ ManagedRedisCacheClient（显式 Redis String 原子能力）
+      ↳ ManagedRedisCacheClient（Redis TTL 与受控脚本执行）
   → Codec（业务值 ↔ bytes）
 ```
 
+缓存契约按职责拆分：`app.infrastructure.cache.contracts.storage` 定义通用 `KeyValueStorage`；`contracts.redis` 定义 Redis TTL 与组合协议；`contracts.script` 定义 `RedisScriptArgument` 和 `RedisScriptExecutor`。脚本具体实现位于 `storages/redis/script.py`，与契约分开；调用方从符号实际定义的模块导入。
+
 Redis 使用 `RedisStorage` 聚合数据类型适配器，当前 `strings` 实现通用 KV 契约。各数据类型 Storage 继承 `BaseRedisStorage`，统一保存从 Connection 借用的客户端引用；基类不拥有客户端，不负责连接建立、健康检查或关闭，这些生命周期职责仍由 Connection 承担。
 
-Redis String 原子操作的 Lua 资源位于 `app/infrastructure/cache/storages/redis/scripts/`：`increment_with_ttl.lua` 用于首次递增设置 TTL，`acquire_window.lua` 用于固定窗口配额。`string.py` 按模块文件位置在首次导入时读取脚本，后续请求复用字符串，不依赖启动工作目录。该目录只存放资源，不是 Python 包。源码发布必须包含这两个文件；当前 Dockerfile 整体复制项目且 `.dockerignore` 未排除 Lua 资源，无需新增复制规则。项目目前未配置 wheel 构建后端；若以后增加 wheel 发布，需要将这些资源纳入打包并验证。
+`RedisStorage.scripts` 使用与 String 相同的借用连接，通过独立 `RedisScriptExecutor` 执行脚本并转换驱动异常；缓存层不加载场景脚本，不解释计数、配额或锁定结果。
+
+Lua 资源由使用它们的组件持有：登录脚本位于 `app/contexts/user/infrastructure/security/scripts/`，固定窗口脚本位于 `app/infrastructure/rate_limit/scripts/`。所属适配器按模块位置在首次导入时读取资源，不依赖启动目录。资源目录不是 Python 包。源码发布必须包含这些 Lua 文件；当前 Dockerfile 整体复制项目且 `.dockerignore` 未排除 Lua 资源。若以后增加 wheel 发布，需要将资源纳入打包并验证。
 
 后续需要 ZSet 或 List 时，应分别增加继承同一基类的 `RedisSortedSetStorage`、`RedisListStorage`，由 `RedisStorage` 使用同一个客户端组合。Redis 专属能力不进入 Redis/Memcached 共用的 `CacheClient`。当前 `CacheManager.get_redis(name)` 是显式能力入口，返回 `ManagedRedisCacheClient`；选择 Memcached 或其他连接时会在创建资源前返回清楚的配置错误。后续类型应沿用这一入口和聚合方式增加专属客户端能力，不给 Memcached 增加伪实现。
 
@@ -76,7 +80,23 @@ class CacheClient(Protocol):
 
 `delete/exists` 的布尔值表示目标 key 当时是否存在或删除是否生效，不应当作强一致业务事实。缓存随时可能过期或被其他进程修改。
 
-Redis 专属客户端在这些公共方法之外提供 `increment`、`expire` 和 `ttl`。`increment` 使用 Lua 把 `INCR` 与首次 `EXPIRE` 合为一次原子操作，供登录失败固定窗口计数使用；它不把通用 Lua 执行能力或原生 `redis.asyncio.Redis` 暴露给业务层。上下文仍应定义业务窄协议，由基础设施适配器调用该客户端。
+Redis 专属客户端在公共 KV 方法之外提供 `expire`、`ttl` 和 `execute_script`。脚本入口只供基础设施适配器使用，不进入 Domain/Application，也不暴露原生 Redis 客户端。
+
+```python
+async def execute_script(
+    self,
+    script: str,
+    *,
+    keys: tuple[str, ...],
+    args: tuple[str | bytes | int, ...] = (),
+) -> object: ...
+```
+
+脚本必须为非空字符串，`keys` 为非空元组，所有 key 都在调用前经 namespace/prefix 规则处理；`args` 为字符串、字节或整数元组，不接受布尔值。默认缓存 TTL 不参与脚本执行。返回值保持驱动原始形态，由场景适配器校验；驱动错误统一转换为 `CacheOperationError`，取消继续传播。
+
+脚本只能来自随代码发布的受信任资源，不能来自 HTTP/Console 输入。脚本作者必须通过 `KEYS` 访问所有键，不从 `ARGV` 或文本拼接键。接口不会分析 Lua，也不是权限沙箱；多 key 脚本的 Redis Cluster 同槽约束仍由调用方负责，当前接口不增加 Cluster 支持。
+
+旧的 `increment`、`delete_below`、`acquire_window` 已从公共客户端移除。登录固定窗口、锁定阈值和条件清理由用户上下文适配器负责；请求配额由独立限流组件负责。新增场景应在所属模块实现策略和结果校验，复用脚本入口，不继续向公共缓存追加场景方法。
 
 ## 4. Key 规则
 
@@ -161,13 +181,9 @@ greeting = None if raw is None else TextCacheCodec.decode(raw)
 
 ### Redis
 
-适合共享缓存、分布式部署和需要成熟运维能力的场景。当前公共接口只使用 Redis String；Redis 专属客户端为登录失败限制提供受控的原子计数和 TTL，并为 HTTP 请求限流提供固定窗口原子配额，不提供通用 Lua、Hash/List/Set/ZSet、Pub/Sub 或分布式锁。
+适合共享缓存、分布式部署和需要原子脚本操作的场景。当前提供 String KV、TTL 与受控脚本执行；未提供 Hash/List/Set/ZSet、Pub/Sub 或分布式锁等封装。
 
-`ManagedRedisCacheClient.acquire_window(key, *, limit: int, window_ms: int) -> tuple[bool, int]` 返回准入结果与拒绝时的剩余毫秒数，允许时第二项为 0。配额范围 1–1000000，时长范围 1–86400000 毫秒，均要求整数且不接受布尔值。key 仍通过统一 namespace/prefix 规则构造，窗口始终使用显式时长，与默认缓存 TTL 无关。首次准入创建计数并设置过期时间；后续准入仅增加计数；拒绝不增加计数也不延长窗口。脚本原子完成判断、计数和剩余时间读取，异常状态通过 `CacheOperationError` 暴露。该能力只属于 Redis 专属客户端，不扩展 Memcached 公共协议。
-
-HTTP 限流组件位于 `app.infrastructure.rate_limit`，通过组合根注入 `CacheManager.get_redis` 的延迟工厂，并借用同一资源池。缓存 key 包含配额、窗口和客户端标识的 SHA-256 摘要，使用独立的 `rate-limit:http:ip:` 前缀，不与登录失败计数混用。共享计数要求各实例使用相同 Redis 数据库、namespace、连接 key_prefix 和配额配置；Redis 状态被清空或驱逐后会重新开始窗口。
-
-不要从 `CacheManager` 向业务泄露 `redis.asyncio.Redis`。若业务确实需要集合或原子脚本，应为那项能力定义独立协议和专用 Redis 适配器；不要不断扩大通用 `CacheClient`，迫使 Memcached 提供虚假实现。
+登录策略见[认证](authentication.md)，固定窗口的准入、重试秒数和故障策略见[HTTP 请求限流](http.md#13-http-请求限流)。两者借用同一缓存资源体系，策略与脚本分别归属其自身模块，不由缓存层决定。
 
 ### Memcached
 

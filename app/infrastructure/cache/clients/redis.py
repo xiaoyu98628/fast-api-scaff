@@ -1,12 +1,13 @@
 """为需要 Redis 原子语义的适配器提供受控客户端。"""
 
 from app.infrastructure.cache.clients.managed import ManagedCacheClient
-from app.infrastructure.cache.contracts.storage import RedisAtomicStorage
+from app.infrastructure.cache.contracts.redis import RedisAtomicStorage
+from app.infrastructure.cache.contracts.script import RedisScriptArgument
 from app.infrastructure.cache.key import CacheKeyBuilder
 
 
 class ManagedRedisCacheClient(ManagedCacheClient):
-    """在公共缓存能力之外显式提供 Redis String 原子操作。"""
+    """在公共缓存能力之外提供 Redis TTL 和受控脚本执行能力。"""
 
     def __init__(
         self,
@@ -19,25 +20,21 @@ class ManagedRedisCacheClient(ManagedCacheClient):
         super().__init__(storage, key_builder, default_ttl)
         self._redis_storage = storage
 
-    async def acquire_window(self, key: str, *, limit: int, window_ms: int) -> tuple[bool, int]:
-        """规范化 key 后原子消耗配额；拒绝不续期，窗口不使用默认缓存 TTL。"""
+    async def execute_script(self, script: str, *, keys: tuple[str, ...], args: tuple[RedisScriptArgument, ...] = ()) -> object:
+        """执行随代码发布的受信任脚本；所有 key 加前缀，结果由调用适配器校验。
 
-        for value, maximum in ((limit, 1_000_000), (window_ms, 86_400_000)):
-            if type(value) is not int or not 1 <= value <= maximum:
-                raise ValueError("窗口配额或毫秒时长超出允许范围")
-        return await self._redis_storage.strings.acquire_window(self._key_builder.build(key), limit, window_ms)
+        仅供基础设施适配器使用，不接受用户输入的脚本。脚本必须通过 KEYS 访问键，
+        不从 ARGV 或脚本文本拼接键；该约定不是 Lua 沙箱，也不自动处理跨槽请求。
+        """
 
-    async def increment(self, key: str, *, ttl: int) -> int:
-        """递增规范化后的 key，并在首次创建时设置正整数 TTL。"""
-
-        resolved_ttl = self._resolve_ttl(ttl)
-        if resolved_ttl is None:
-            raise ValueError("Redis 原子计数必须设置过期时间")
-
-        return await self._redis_storage.strings.increment(
-            self._key_builder.build(key),
-            resolved_ttl,
-        )
+        if not isinstance(script, str) or not script.strip():
+            raise ValueError("Redis 脚本不能为空")
+        if not isinstance(keys, tuple) or not keys:
+            raise ValueError("Redis 脚本必须显式提供非空 key 元组")
+        if not isinstance(args, tuple) or any(type(value) not in (str, bytes, int) for value in args):
+            raise ValueError("Redis 脚本参数必须为字符串、字节或整数元组")
+        normalized = tuple(self._key_builder.build(key) for key in keys)
+        return await self._redis_storage.scripts.execute(script, normalized, args)
 
     async def expire(self, key: str, *, ttl: int) -> bool:
         """更新规范化后 key 的正整数 TTL，返回 key 是否存在。"""

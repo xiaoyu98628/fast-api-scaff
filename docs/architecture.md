@@ -277,3 +277,10 @@ HTTP 独立定义 `page/limit` 查询协议和 `items + meta` 分页响应，并
 `WorkerContext` 是进程级宿主上下文，与 `ConsoleContext` 一样只在宿主/入站适配边界暴露当前配置和已经启动的 `ApplicationContainer`。执行器从它为每条消息创建独立、不可变的 `JobExecutionContext`，其中 `settings` 和 `container` 保持直接访问，任务、队列和关联元数据组合在 `context.job`；同一投递内重试复用同一个对象。Job 应优先从容器选择当前上下文的公开应用服务；需要数据库、缓存或外部服务的业务流程，仍由 Application 层定义窄协议并经 composition 注入实现。Application/Domain 不导入 Worker、具体 Manager、队列驱动或全局容器，共享 Infrastructure 不导入具体业务。所有消费槽共享应用级 Manager，任务级 Session、UoW 和事务不能跨 Job 共享。内置 `LoginSucceededJob` 由登录 HTTP 适配器在会话提交后尽力投递，HTTP request ID 通过 `TraceContext` 自动进入消息 correlation ID；Worker 通过 `context.container.users.service.get(user_id)` 进入用户应用服务并使用独立 UoW 查询数据库，只记录执行时的用户 ID 和状态，作为默认队列、数据库能力、跨宿主日志关联和 `handle(context)` 输出的最小示例。它不进入认证 Application/Domain，也不参与登录事务。
 
 SQL 失败表属于共享技术能力，在 main metadata 注册；失败写入使用独立短事务，不借用业务 UoW。正常首次投递不查询失败表，只有 Redis/RabbitMQ/Kafka 驱动标识为可能恢复的消息才执行补偿查询；最终失败仍先落库再确认。任务执行和消息确认不是跨系统原子事务。详见[队列](queue.md)、[Worker](worker.md)。
+
+
+## Redis 场景扩展边界
+
+公共缓存层提供 KV、TTL、连接生命周期和受控脚本执行，不持有登录或请求配额策略。`ManagedRedisCacheClient.execute_script` 统一处理 key 前缀，`RedisStorage.scripts` 借用现有连接执行并转换驱动异常；返回值由调用适配器解释。
+
+登录计数与条件清理脚本归属用户上下文的 `infrastructure/security/scripts/`，应用层继续只依赖 `LoginAttemptLimiter`。固定窗口脚本归属独立技术组件 `app.infrastructure.rate_limit/scripts/`，HTTP 中间件只处理请求身份、范围和响应策略。新增业务模块应定义自己的窄协议，在所属基础设施适配器中维护受信任脚本与结果校验，无需为每个场景扩展公共缓存 API。脚本仅通过 `KEYS` 访问统一命名空间下的键；脚本入口不是面向用户的执行接口或 Lua 沙箱。

@@ -9,7 +9,7 @@ from app.infrastructure.cache.clients.managed import ManagedCacheClient
 from app.infrastructure.cache.clients.redis import ManagedRedisCacheClient
 from app.infrastructure.cache.contracts.client import CacheClient
 from app.infrastructure.cache.contracts.provider import CacheResourceDefinition
-from app.infrastructure.cache.contracts.storage import RedisAtomicStorage
+from app.infrastructure.cache.contracts.redis import RedisAtomicStorage
 from app.infrastructure.cache.errors import CacheConfigurationError
 from app.infrastructure.cache.key import CacheKeyBuilder
 from app.infrastructure.cache.providers.registry import DEFAULT_CACHE_PROVIDERS, CacheProviderRegistry

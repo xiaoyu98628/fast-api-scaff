@@ -329,3 +329,28 @@ async def test_failed_session_commit_rolls_back(harness: AuthHarness, monkeypatc
         await harness.users.auth.login(LoginCommand(username="alice", password="password123"))
     assert limiter.cleared == ["alice"]
     assert await harness.session_count() == 0
+
+
+@pytest.mark.asyncio
+async def test_inflight_success_does_not_clear_lock_created_during_password_verification(harness: AuthHarness) -> None:
+    from tests.users.test_login_attempt_limiter import FakeRedisCacheClient, build_limiter
+
+    await harness.users.service.create(CreateUserCommand(username="alice", email="alice@example.com", password="password123"))
+    client = FakeRedisCacheClient()
+    limiter = build_limiter(client)
+    harness.users = replace(harness.users, auth=replace(harness.users.auth, login_attempts=limiter))
+    for _ in range(4):
+        await limiter.record_failure("alice")
+
+    async def establish_lock() -> None:
+        # 精确插入在入口检查之后、成功清理之前，模拟另一请求达到失败阈值。
+        await limiter.record_failure("alice")
+
+    harness.hasher.after_verify = establish_lock
+    result = await harness.users.auth.login(LoginCommand(username="alice", password="password123"))
+    assert result.access_token
+    assert await harness.session_count() == 1
+    assert await limiter.retry_after("alice") == 900
+    with pytest.raises(LoginTemporarilyLockedError):
+        await harness.users.auth.login(LoginCommand(username="alice", password="password123"))
+    assert await harness.session_count() == 1

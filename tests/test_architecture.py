@@ -264,3 +264,24 @@ def test_vector_sdks_are_confined_to_vector_drivers() -> None:
                 violations.append(f"{path.relative_to(PROJECT_ROOT)}:{line} imports {module}")
 
     assert violations == []
+
+
+def test_cache_does_not_depend_on_scenario_components() -> None:
+    assert (
+        _find_forbidden_dependencies(
+            _APP_ROOT / "infrastructure/cache",
+            forbidden_prefixes=("app.contexts", "app.interfaces", "app.infrastructure.rate_limit"),
+        )
+        == []
+    )
+
+
+def test_scenario_scripts_are_owned_outside_cache() -> None:
+    # 防止将场景策略重新塞回通用缓存；脚本资源目录不是 Python 包。
+    assert list((_APP_ROOT / "infrastructure/cache").rglob("*.lua")) == []
+    for relative in (
+        "contexts/user/infrastructure/security/scripts/increment_with_ttl.lua",
+        "contexts/user/infrastructure/security/scripts/delete_below.lua",
+        "infrastructure/rate_limit/scripts/acquire_window.lua",
+    ):
+        assert (_APP_ROOT / relative).is_file()

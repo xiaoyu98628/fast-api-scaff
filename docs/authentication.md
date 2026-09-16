@@ -102,7 +102,7 @@ uv run python -m app.worker
 
 完整响应码仍由 HTTP 状态、服务码和认证局部码拼接，以上示例使用默认服务码 `001`。锁定响应的 `Retry-After` 头与 `data.retry_after_seconds` 使用同一个值。用户名不存在、格式无效、密码错误和账户禁用都会生成相同结构，不通过文案、状态码或数据字段暴露账户是否存在。
 
-Redis key 只包含 `username.strip().lower()` 的 SHA-256 摘要，不保存原始用户名、密码或 Token。首次递增与固定窗口 TTL 由 Redis Lua 脚本原子完成；达到阈值后更新同一 key 的 TTL。多个应用进程共享计数。Redis 读取、递增、TTL 更新或成功后的清理失败都按安全状态不可确认处理，登录返回通用 500，不把故障当作未命中，也不自动回退到进程内计数。成功凭据的失败计数在新会话数据库事务提交前清理，因此清理失败会回滚会话，不会留下调用方未收到 Token 的有效记录。Redis 与数据库之间没有分布式事务：若计数已经清理而随后数据库提交失败，该次登录不会产生有效会话，但先前失败计数不会自动恢复。该路径只发生在密码及最终账户状态均已核验通过之后，避免为此引入 Saga 或额外持久化协调状态。
+Redis key 只包含 `username.strip().lower()` 的 SHA-256 摘要，不保存原始用户名、密码或 Token。首次递增与固定窗口 TTL 由 Redis Lua 脚本原子完成；达到阈值后更新同一 key 的 TTL。多个应用进程共享计数。Redis 读取、递增、TTL 更新或成功后的清理失败都按安全状态不可确认处理，登录返回通用 500，不把故障当作未命中，也不自动回退到进程内计数。成功凭据的失败计数在新会话数据库事务提交前通过 Lua 原子判断并清理：仅删除低于阈值的计数，达到阈值时保留原值和 TTL。如果请求通过入口检查后，其他请求在密码验证期间建立锁定，该次成功登录仍可完成，但不会清除新锁定；后续请求继续受锁定限制。异常计数不会被删除，而是按缓存故障处理。因此清理失败会回滚会话，不会留下调用方未收到 Token 的有效记录。Redis 与数据库之间没有分布式事务：若计数已经清理而随后数据库提交失败，该次登录不会产生有效会话，但先前失败计数不会自动恢复。该路径只发生在密码及最终账户状态均已核验通过之后，避免为此引入 Saga 或额外持久化协调状态。
 
 限流维度只有规范化用户名，因此攻击者可以针对已知用户名主动触发临时锁定。增加 IP 维度前必须先明确可信反向代理和客户端地址解析规则；当前实现不读取未经确认的转发头。
 
@@ -151,6 +151,6 @@ async def demonstrate_login(container: ApplicationContainer) -> UserDTO:
     return user
 ```
 
-Domain/Application 不持有容器、数据库 Manager 或缓存 Manager。认证服务依赖 `UserUnitOfWorkFactory`、`PasswordHasher`、`SessionTokenCodec`、`LoginAttemptLimiter` 窄协议和可注入时钟。Redis 适配器由用户上下文组合点注入。用户与会话 Repository 共享同一个 SQLAlchemy Session，由用例显式提交，退出时沿用现有 UoW 的回滚、取消与资源清理。
+Domain/Application 不持有容器、数据库 Manager 或缓存 Manager。认证服务依赖 `UserUnitOfWorkFactory`、`PasswordHasher`、`SessionTokenCodec`、`LoginAttemptLimiter` 窄协议和可注入时钟。Redis 适配器由用户上下文组合点注入。该适配器拥有 `security/scripts/increment_with_ttl.lua` 与 `delete_below.lua`，负责失败窗口、锁定阈值及脚本结果校验；它通过 `ManagedRedisCacheClient.execute_script` 借用连接和统一 key 前缀，公共缓存层不包含登录策略。用户与会话 Repository 共享同一个 SQLAlchemy Session，由用例显式提交，退出时沿用现有 UoW 的回滚、取消与资源清理。
 
 本示例不提供角色权限、IP 登录限流、客户端 Token 存储策略、自助改密、刷新令牌或会话后台清理。现有公开用户 CRUD 不能因为增加了登录示例就被视为受保护接口。

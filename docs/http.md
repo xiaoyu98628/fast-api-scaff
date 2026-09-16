@@ -370,6 +370,8 @@ data: {"code":"5000010101","message":"网络开小差了，请稍后重试"}
 
 ## 13. HTTP 请求限流
 
+固定窗口算法及 `scripts/acquire_window.lua` 归属 `app.infrastructure.rate_limit`。`RedisFixedWindowLimiter` 校验配额参数与脚本返回值，借用 `ManagedRedisCacheClient.execute_script` 执行；公共缓存层不包含限流策略。HTTP 中间件继续负责请求范围、客户端身份、故障放行与 429/503 响应，限流组件不依赖 HTTP 对象。
+
 设置 `RATE_LIMIT_ENABLED=true` 启用，默认每个客户端 IP 在首次准入后的 60 秒内共享 1000 次请求配额。`RATE_LIMIT_CACHE` 选择已配置的 Redis 连接；完整变量见[配置参考](configuration.md#http-请求限流)。多个进程和实例共享同一 Redis key 时共享配额，无进程内计数回退。
 
 - 范围为精确的 `/api` 以及 `/api/` 下所有方法、路径和查询参数，共享同一 IP 配额；按路由语义去除 ASGI `root_path` 部署前缀后匹配，`/api-other` 不在范围内。

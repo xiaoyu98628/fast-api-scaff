@@ -1,6 +1,6 @@
-"""定义各缓存驱动都必须实现的字节级 KV 语义。"""
+"""定义缓存驱动共用的字节级 KV 存储协议。"""
 
-from typing import Protocol, runtime_checkable
+from typing import Protocol
 
 
 class KeyValueStorage(Protocol):
@@ -25,34 +25,3 @@ class KeyValueStorage(Protocol):
         """判断驱动 key 是否存在有效值。"""
 
         ...
-
-
-class RedisStringStorage(Protocol):
-    """声明登录限制等适配器需要的 Redis String 原子操作。"""
-
-    async def acquire_window(self, key: str, limit: int, window_ms: int) -> tuple[bool, int]:
-        """原子消耗固定窗口配额；返回准入标识与拒绝时的剩余毫秒数。"""
-
-        ...
-
-    async def increment(self, key: str, ttl: int) -> int:
-        """原子递增，并在首次创建时设置 TTL。"""
-
-        ...
-
-    async def expire(self, key: str, ttl: int) -> bool:
-        """更新已有 key 的 TTL。"""
-
-        ...
-
-    async def ttl(self, key: str) -> int:
-        """返回 Redis TTL 状态值。"""
-
-        ...
-
-
-@runtime_checkable
-class RedisAtomicStorage(KeyValueStorage, Protocol):
-    """在公共 KV 能力之外暴露受控 Redis String 原子能力。"""
-
-    strings: RedisStringStorage

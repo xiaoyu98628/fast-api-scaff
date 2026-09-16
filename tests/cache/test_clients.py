@@ -74,34 +74,26 @@ async def test_redis_storage_uses_raw_key_and_translates_errors(monkeypatch: pyt
 
 
 @pytest.mark.asyncio
-async def test_redis_string_atomic_counter_and_ttl_operations(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_redis_string_ttl_operations(monkeypatch: pytest.MonkeyPatch) -> None:
     client = Redis(host="127.0.0.1", decode_responses=False)
-    evaluate = AsyncMock(return_value=3)
     expire = AsyncMock(return_value=True)
     ttl = AsyncMock(return_value=120)
-    monkeypatch.setattr(client, "eval", evaluate)
     monkeypatch.setattr(client, "expire", expire)
     monkeypatch.setattr(client, "ttl", ttl)
     storage = RedisStringStorage(client)
 
-    assert await storage.increment("app:login:key", 300) == 3
     assert await storage.expire("app:login:key", 900) is True
     assert await storage.ttl("app:login:key") == 120
 
-    assert evaluate.await_args is not None
-    script, key_count, key, initial_ttl = evaluate.await_args.args
-    assert "INCR" in script
-    assert (key_count, key, initial_ttl) == (1, "app:login:key", 300)
     expire.assert_awaited_once_with("app:login:key", 900)
     ttl.assert_awaited_once_with("app:login:key")
     await client.aclose()
 
 
 @pytest.mark.asyncio
-async def test_managed_redis_client_applies_key_to_atomic_operations() -> None:
+async def test_managed_redis_client_applies_key_to_ttl_operations() -> None:
     storage = Mock(spec=RedisStorage)
     storage.strings = AsyncMock()
-    storage.strings.increment.return_value = 2
     storage.strings.expire.return_value = True
     storage.strings.ttl.return_value = 60
     cache = ManagedRedisCacheClient(
@@ -110,63 +102,11 @@ async def test_managed_redis_client_applies_key_to_atomic_operations() -> None:
         default_ttl=300,
     )
 
-    assert await cache.increment("login", ttl=120) == 2
     assert await cache.expire("login", ttl=900) is True
     assert await cache.ttl("login") == 60
 
-    storage.strings.increment.assert_awaited_once_with("app:security:login", 120)
     storage.strings.expire.assert_awaited_once_with("app:security:login", 900)
     storage.strings.ttl.assert_awaited_once_with("app:security:login")
-
-
-@pytest.mark.asyncio
-async def test_managed_window_uses_namespaced_key_and_explicit_duration() -> None:
-    storage = Mock(spec=RedisStorage)
-    storage.strings = AsyncMock()
-    storage.strings.acquire_window.return_value = (False, 500)
-    cache = ManagedRedisCacheClient(storage, CacheKeyBuilder("app", "security"), default_ttl=300)
-    assert await cache.acquire_window("quota", limit=1000, window_ms=60_000) == (False, 500)
-    storage.strings.acquire_window.assert_awaited_once_with("app:security:quota", 1000, 60_000)
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("limit,window", [(0, 1000), (True, 1000), (1_000_001, 1000), (1, 0), (1, 86_400_001)])
-async def test_managed_window_rejects_invalid_parameters(limit: int, window: int) -> None:
-    storage = Mock(spec=RedisStorage)
-    storage.strings = AsyncMock()
-    cache = ManagedRedisCacheClient(storage, CacheKeyBuilder("app"), default_ttl=None)
-    with pytest.raises(ValueError):
-        await cache.acquire_window("quota", limit=limit, window_ms=window)
-    storage.strings.acquire_window.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("result,expected", [([1, 0], (True, 0)), ([0, 0], (False, 0)), ([0, 60_000], (False, 60_000))])
-async def test_window_is_one_atomic_operation(result: list[int], expected: tuple[bool, int]) -> None:
-    client = Mock(spec=Redis)
-    client.eval = AsyncMock(return_value=result)
-    assert await RedisStringStorage(client).acquire_window("app:quota", 1000, 60_000) == expected
-    client.eval.assert_awaited_once()
-    assert client.eval.await_args is not None
-    assert client.eval.await_args.args[1:] == (1, "app:quota", 1000, 60_000)
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("result", [None, [], [1], [1, 1], [0, -1], [0, 60_001], [True, 0], [0, False], [2, 0], ["1", 0]])
-async def test_window_rejects_invalid_script_results(result: object) -> None:
-    client = Mock(spec=Redis)
-    client.eval = AsyncMock(return_value=result)
-    with pytest.raises(CacheOperationError):
-        await RedisStringStorage(client).acquire_window("app:quota", 1000, 60_000)
-
-
-@pytest.mark.asyncio
-async def test_window_translates_driver_failure() -> None:
-    client = Mock(spec=Redis)
-    client.eval = AsyncMock(side_effect=OSError("unavailable"))
-    with pytest.raises(CacheOperationError) as captured:
-        await RedisStringStorage(client).acquire_window("app:quota", 1000, 60_000)
-    assert isinstance(captured.value.__cause__, OSError)
 
 
 @pytest.mark.asyncio
@@ -205,3 +145,65 @@ def test_memcached_converts_long_relative_ttl_to_timestamp(monkeypatch: pytest.M
     monkeypatch.setattr("app.infrastructure.cache.storages.memcached.time.time", lambda: 1_000_000.0)
 
     assert MemcachedCacheStorage._expiry(2_592_001) == 3_592_001
+
+
+@pytest.mark.asyncio
+async def test_script_execution_prefixes_every_key_and_preserves_raw_result() -> None:
+    client = Mock(spec=Redis)
+    result = [b"value", 12, None]
+    client.eval = AsyncMock(return_value=result)
+    cache = ManagedRedisCacheClient(RedisStorage(client), CacheKeyBuilder("app", "shared"), default_ttl=300)
+    script = "return {redis.call('GET', KEYS[1]), ARGV[1]}"
+    assert await cache.execute_script(script, keys=("first", "second"), args=(12, b"bytes", "text")) is result
+    client.eval.assert_awaited_once_with(script, 2, "app:shared:first", "app:shared:second", 12, b"bytes", "text")
+    client.expire.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "script,keys,args",
+    [
+        ("", ("key",), ()),
+        ("return 1", (), ()),
+        ("return 1", ["key"], ()),
+        ("return 1", ("key",), (True,)),
+        ("return 1", ("key",), (1.2,)),
+        ("return 1", ("key",), [1]),
+    ],
+)
+async def test_script_execution_rejects_invalid_transport_arguments(script, keys, args) -> None:
+    client = Mock(spec=Redis)
+    client.eval = AsyncMock()
+    cache = ManagedRedisCacheClient(RedisStorage(client), CacheKeyBuilder("app"), default_ttl=None)
+    with pytest.raises(ValueError):
+        await cache.execute_script(script, keys=keys, args=args)
+    client.eval.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_script_execution_validates_all_keys_before_io() -> None:
+    client = Mock(spec=Redis)
+    client.eval = AsyncMock()
+    cache = ManagedRedisCacheClient(RedisStorage(client), CacheKeyBuilder("app"), default_ttl=None)
+    with pytest.raises(CacheKeyError):
+        await cache.execute_script("return 1", keys=("valid", "bad key"))
+    client.eval.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cancel", [False, True])
+async def test_script_execution_translates_driver_errors_but_preserves_cancellation(cancel: bool) -> None:
+    import asyncio
+
+    from redis.exceptions import ResponseError
+
+    error = asyncio.CancelledError() if cancel else ResponseError("invalid state")
+    client = Mock(spec=Redis)
+    client.eval = AsyncMock(side_effect=error)
+    cache = ManagedRedisCacheClient(RedisStorage(client), CacheKeyBuilder("app"), default_ttl=None)
+    with pytest.raises(asyncio.CancelledError if cancel else CacheOperationError) as captured:
+        await cache.execute_script("return 1", keys=("key",))
+    if cancel:
+        assert captured.value is error
+    else:
+        assert captured.value.__cause__ is error
