@@ -23,7 +23,7 @@ docker compose up --build worker
 
 脚手架内置 `LoginSucceededJob` 最小任务。登录接口向默认连接配置的默认队列（`sample.env` 为 `default`）尽力投递 `user_id` 参数和固定文案，Dispatcher 自动把当前 HTTP request ID 作为 correlation ID；Worker 调用它的 `handle(context)`，通过用户应用服务查询数据库，再输出“用户登录成功，队列任务已执行。”并只记录结构化用户 ID 和状态。消息不含用户名、密码或 Token，日志也不含用户名、邮箱、密码、密码哈希或 Token；读取的是消费时的当前数据。用户已删除时记录警告并结束，数据库故障按现有策略重试。`user_id` 暂时可空，以兼容队列中已经存在的旧消息；旧消息不执行数据库查询。`sample.env` 以 Redis 为默认连接，因此 Worker 可以不带参数启动。
 
-新增任务时，在 `app/**/jobs.py` 或 `app/**/jobs/**/*.py` 中继承 `QueueJob[JobExecutionContext]`、声明可序列化字段并实现异步 `handle(context)`。Worker 启动时自动发现直接定义在这些模块中的具体任务，不需要修改上下文 composition 或应用组合根。投递端默认把实际类路径写入消息，也可通过 `reference` 使用稳定业务引用；移动或重命名任务时通过 `legacy_references` 兼容旧引用。payload 契约升级时递增 `version`，并按需要在 `legacy_decoders` 中把历史 payload 转换成当前 Job 类型。完整规则见[队列](queue.md#2-queuejob-与自动发现)。
+新增任务时，在 `app/**/jobs.py` 或 `app/**/jobs/**/*.py` 中继承 `QueueJob[JobExecutionContext]`、声明可序列化字段并实现异步 `handle(context)`。Worker 启动时自动发现直接定义在这些模块中的具体任务，不需要修改上下文 composition 或应用组合根。投递端默认把实际类路径写入消息，也可通过 `reference` 使用稳定业务引用；移动或重命名任务时通过 `legacy_references` 兼容旧引用。默认 JSON Codec 会拒绝当前 schema 未声明的字段；payload 契约升级时递增 `version`，并按需要在 `legacy_decoders` 中把历史 payload 转换成当前 Job 类型。完整规则见[队列](queue.md#2-queuejob-与自动发现)。
 
 一个默认 Worker 可以执行当前任务目录中的所有 QueueJob，但不会动态扫描 Redis Stream、Kafka Topic 或 RabbitMQ Queue。命名队列是用于优先级、并发和扩缩容隔离的可选高级能力，需要时为它单独启动 Worker。
 

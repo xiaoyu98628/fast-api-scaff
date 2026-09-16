@@ -80,13 +80,13 @@ class LoadUserJob(QueueJob[JobExecutionContext]):
 
 引用长度最多 500，只允许 ASCII 字母、数字、点、下划线、连字符和冒号，且必须以字母或数字开头。当前引用、历史引用以及其他任务的全部引用都必须唯一。Dispatcher 把当前引用、默认版本 1 和 JSON payload 写入消息；Worker 解码后执行 `await job.handle(context)`。可先运行 `uv run python -m app.console queue jobs` 查看当前部署会发现的任务、引用、支持版本和策略，命令只做发现与校验，不启动应用容器或连接队列。
 
-普通 dataclass 和 Pydantic Model 默认使用基于 Pydantic schema 的 JSON Codec；特殊当前协议可以在 Job 类上覆盖 `codec`。重试策略通过类级 `policy` 覆盖，当前版本通过类级 `version` 覆盖。`WorkerContext` 是不可变的进程级宿主上下文，保存当前 `Settings` 和已启动的 `ApplicationContainer`；执行器从它为每条消息创建独立的 `JobExecutionContext`，继续直接提供 `settings` 和 `container`，并把低频消息元数据收敛到 `context.job`。其中包括 `id`、`reference`、`version`、`enqueued_at`、`queue_connection`、`queue_name`、`correlation_id` 和 `replay_of`。同一条消息的全部投递内重试复用同一个任务上下文。所有消费槽共享同一个应用容器，数据库 Session 和业务 UoW 仍需按任务或用例单独创建。Manager 保持延迟初始化，未被 Job 使用的数据库、缓存、HTTP 或向量资源不会仅因 Worker 启动而连接。
+普通 dataclass 和 Pydantic Model 默认使用基于 Pydantic schema 的 JSON Codec。该 Codec 对当前版本执行严格解码，payload 包含 schema 未声明的字段时拒绝消息，避免生产者擅自扩展字段后被消费者静默忽略；特殊当前协议可以在 Job 类上覆盖 `codec`。重试策略通过类级 `policy` 覆盖，当前版本通过类级 `version` 覆盖。`WorkerContext` 是不可变的进程级宿主上下文，保存当前 `Settings` 和已启动的 `ApplicationContainer`；执行器从它为每条消息创建独立的 `JobExecutionContext`，继续直接提供 `settings` 和 `container`，并把低频消息元数据收敛到 `context.job`。其中包括 `id`、`reference`、`version`、`enqueued_at`、`queue_connection`、`queue_name`、`correlation_id` 和 `replay_of`。同一条消息的全部投递内重试复用同一个任务上下文。所有消费槽共享同一个应用容器，数据库 Session 和业务 UoW 仍需按任务或用例单独创建。Manager 保持延迟初始化，未被 Job 使用的数据库、缓存、HTTP 或向量资源不会仅因 Worker 启动而连接。
 
 Job 属于 Worker 入站适配边界。业务任务应通过 `context.container.<context>.service` 调用应用用例，让 Repository、事务和业务缓存策略继续封装在限界上下文中；不要把 `JobExecutionContext`、`WorkerContext` 或 `ApplicationContainer` 传入 Application/Domain。宿主级维护任务确实需要通用技术能力时，可以使用 `context.container.databases`、`caches`、`http`、`queues` 或 `vectors` 的公共入口，但不应直接依赖具体数据库、Redis、Memcached 或其他驱动。
 
 ### Job 版本兼容
 
-升级 payload 契约时递增 `version`，并通过 `legacy_decoders` 显式声明仍受支持的历史版本。历史 Decoder 接收旧 payload，但必须返回当前 Job 类型；当前版本始终使用 `codec`。例如：
+升级 payload 契约时递增 `version`，并通过 `legacy_decoders` 显式声明仍受支持的历史版本。不要在同一版本中直接增加生产者发送、消费者尚未声明的字段：默认 Codec 会将其判定为坏数据。历史 Decoder 接收旧 payload，但必须返回当前 Job 类型；当前版本始终使用 `codec`。例如：
 
 ```python
 import json

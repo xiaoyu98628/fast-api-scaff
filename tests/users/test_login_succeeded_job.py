@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock
 from uuid import UUID, uuid7
 
 import pytest
+from pydantic import ValidationError
 
 from app.contexts.user.application.dto import UserDTO
 from app.contexts.user.application.errors import UserNotFoundError
@@ -40,6 +41,15 @@ def test_login_succeeded_job_serializes_user_id_and_rejects_custom_message() -> 
         LoginSucceededJob(user_id=cast(UUID, "invalid"))
     with pytest.raises(ValueError, match="任务消息不合法"):
         descriptor.codec.decode(f'{{"user_id":"{user_id}","message":"other"}}'.encode())
+
+
+def test_login_succeeded_job_rejects_unknown_payload_fields() -> None:
+    descriptor = describe_job(LoginSucceededJob)
+
+    with pytest.raises(ValidationError) as captured:
+        descriptor.codec.decode(b'{"unexpected":true}')
+
+    assert captured.value.errors()[0]["type"] == "unexpected_keyword_argument"
 
 
 @pytest.mark.asyncio

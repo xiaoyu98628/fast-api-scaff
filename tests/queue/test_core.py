@@ -7,7 +7,7 @@ from typing import cast
 from uuid import uuid4
 
 import pytest
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from app.config.database import DatabaseSettings
 from app.config.queue import QueueConnection, QueueSettings, RabbitMQQueueSettings, RedisQueueSettings, WorkerSettings, parse_connection
@@ -15,8 +15,9 @@ from app.infrastructure.database.manager import DatabaseManager
 from app.infrastructure.queue.codecs.envelope_json import EnvelopeJsonCodec
 from app.infrastructure.queue.contracts.message import MessageEnvelope
 from app.infrastructure.queue.errors import InvalidMessageError, QueueConfigurationError, QueueError
-from app.infrastructure.queue.job import describe_job, encode_job, job_reference
+from app.infrastructure.queue.job import QueueJob, describe_job, encode_job, job_reference
 from app.infrastructure.queue.manager import QueueManager
+from app.interfaces.worker.context import JobExecutionContext
 from app.runtime.trace import TraceContext, bind_trace_context
 from tests.queue.fakes import (
     FakeQueueBackend,
@@ -26,6 +27,17 @@ from tests.queue.fakes import (
     create_queue_manager,
     queue_backend_factory,
 )
+
+
+class PydanticJob(BaseModel, QueueJob[JobExecutionContext]):
+    """提供默认 JSON Codec 的 Pydantic Model 测试任务。"""
+
+    value: int
+
+    async def handle(self, context: JobExecutionContext) -> None:
+        """测试任务不执行实际业务逻辑。"""
+
+        del context
 
 
 def message() -> MessageEnvelope:
@@ -105,6 +117,16 @@ def test_job_descriptor_encodes_subclass_and_rejects_unknown_type() -> None:
         encode_job(object())
     with pytest.raises(TypeError):
         descriptor.encode(object())
+
+
+def test_default_job_codec_rejects_unknown_fields_for_pydantic_model() -> None:
+    descriptor = describe_job(PydanticJob)
+
+    assert descriptor.codec.decode(b'{"value":7}') == PydanticJob(value=7)
+    with pytest.raises(ValidationError) as captured:
+        descriptor.codec.decode(b'{"value":7,"unexpected":true}')
+
+    assert captured.value.errors()[0]["type"] == "extra_forbidden"
 
 
 @pytest.mark.asyncio

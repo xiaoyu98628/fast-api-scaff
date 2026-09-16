@@ -136,6 +136,15 @@ def test_resolver_rejects_unknown_reference_and_version() -> None:
 
 
 @pytest.mark.asyncio
+async def test_resolver_maps_default_codec_unknown_fields_to_decode_error() -> None:
+    resolver = JobResolver((LoginSucceededJob,))
+    binding = resolver.resolve(job_type_path(LoginSucceededJob), 1)
+
+    with pytest.raises(JobDecodeError, match="业务任务数据解码失败"):
+        await binding.execute(b'{"unexpected":true}', cast(JobExecutionContext, object()))
+
+
+@pytest.mark.asyncio
 async def test_resolver_executes_supported_legacy_version_with_current_job_type() -> None:
     _HANDLED_VALUES.clear()
     resolver = JobResolver((VersionedJob,))
