@@ -1,38 +1,16 @@
 """将 Redis String 命令适配为统一字节级 KV Storage。"""
 
+from pathlib import Path
+
 from redis.asyncio import Redis
 
 from app.infrastructure.cache.errors import CacheOperationError
 from app.infrastructure.cache.storages.redis.base import BaseRedisStorage
 
-_INCREMENT_WITH_TTL_SCRIPT = """
-local value = redis.call('INCR', KEYS[1])
-if value == 1 then
-    redis.call('EXPIRE', KEYS[1], ARGV[1])
-end
-return value
-"""
-
-# 判断、扣减与 TTL 读取必须处于同一次脚本执行，避免并发超额或跨窗口读取。
-_ACQUIRE_WINDOW_SCRIPT = """
-local limit = tonumber(ARGV[1])
-local window_ms = tonumber(ARGV[2])
-local raw = redis.call('GET', KEYS[1])
-if not raw then
-    redis.call('SET', KEYS[1], 1, 'PX', window_ms)
-    return {1, 0}
-end
-local count = tonumber(raw)
-local ttl = redis.call('PTTL', KEYS[1])
-if not count or count < 1 or count ~= math.floor(count) or ttl < 0 then
-    return redis.error_reply('invalid rate limit state')
-end
-if count >= limit then
-    return {0, ttl}
-end
-redis.call('INCR', KEYS[1])
-return {1, 0}
-"""
+# 按模块位置定位资源，首次导入时读取一次，避免依赖工作目录或在请求中读取文件。
+_SCRIPT_DIRECTORY = Path(__file__).parent / "scripts"
+_INCREMENT_WITH_TTL_SCRIPT = (_SCRIPT_DIRECTORY / "increment_with_ttl.lua").read_text(encoding="utf-8")
+_ACQUIRE_WINDOW_SCRIPT = (_SCRIPT_DIRECTORY / "acquire_window.lua").read_text(encoding="utf-8")
 
 
 class RedisStringStorage(BaseRedisStorage):

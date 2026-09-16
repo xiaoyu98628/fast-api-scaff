@@ -50,6 +50,8 @@ ApplicationContainer
 
 Redis 使用 `RedisStorage` 聚合数据类型适配器，当前 `strings` 实现通用 KV 契约。各数据类型 Storage 继承 `BaseRedisStorage`，统一保存从 Connection 借用的客户端引用；基类不拥有客户端，不负责连接建立、健康检查或关闭，这些生命周期职责仍由 Connection 承担。
 
+Redis String 原子操作的 Lua 资源位于 `app/infrastructure/cache/storages/redis/scripts/`：`increment_with_ttl.lua` 用于首次递增设置 TTL，`acquire_window.lua` 用于固定窗口配额。`string.py` 按模块文件位置在首次导入时读取脚本，后续请求复用字符串，不依赖启动工作目录。该目录只存放资源，不是 Python 包。源码发布必须包含这两个文件；当前 Dockerfile 整体复制项目且 `.dockerignore` 未排除 Lua 资源，无需新增复制规则。项目目前未配置 wheel 构建后端；若以后增加 wheel 发布，需要将这些资源纳入打包并验证。
+
 后续需要 ZSet 或 List 时，应分别增加继承同一基类的 `RedisSortedSetStorage`、`RedisListStorage`，由 `RedisStorage` 使用同一个客户端组合。Redis 专属能力不进入 Redis/Memcached 共用的 `CacheClient`。当前 `CacheManager.get_redis(name)` 是显式能力入口，返回 `ManagedRedisCacheClient`；选择 Memcached 或其他连接时会在创建资源前返回清楚的配置错误。后续类型应沿用这一入口和聚合方式增加专属客户端能力，不给 Memcached 增加伪实现。
 
 职责隔离的价值：
