@@ -69,6 +69,10 @@ async def consume_events(container: ApplicationContainer) -> None:
 
 不要把 token、用户 ID、查询串或完整 URL 放进 `operation`。当前请求 header 使用 mapping，若上游要求重复请求头，应先扩展公共契约并同步驱动与测试。
 
+`params` 省略或为空时保留 URL 自带的查询参数；显式非空 `params` 替换 URL 原查询，不进行合并。普通和流式请求采用相同规则。
+
+共享客户端不保存响应中的 Cookie，也不会把某次调用的 `Set-Cookie` 自动用于重定向或后续调用。响应头仍原样提供给调用方，显式 `Cookie` 请求头仍可发送；需要上游会话的业务适配器必须自行管理身份隔离。
+
 基础客户端接受绝对 URL，但这不代表 HTTP/Console 用户可以选择目标主机。具体上游适配器必须从受信任配置取得 scheme、host 和 port，只把经过校验、编码的业务值放入 path/query；将用户提交的完整 URL 直接传给客户端会形成 SSRF 风险。
 
 ## 4. 超时与连接池

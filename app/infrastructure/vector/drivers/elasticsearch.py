@@ -261,7 +261,10 @@ def _response_mapping(response: object) -> Mapping[str, object]:
 
 
 def _is_found(document: object) -> bool:
-    return isinstance(document, Mapping) and document.get("found") is True
+    if not isinstance(document, Mapping) or "error" in document or type(document.get("found")) is not bool:
+        # Multi Get 的 HTTP 成功不代表每个分片读取成功，不能把错误伪装成缺失。
+        raise VectorOperationError("Elasticsearch Multi Get 文档读取失败或返回结构不合法")
+    return document["found"] is True
 
 
 def _elasticsearch_point(document: object) -> VectorPoint:

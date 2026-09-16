@@ -4,8 +4,12 @@ import logging
 from dataclasses import dataclass
 from uuid import UUID
 
+from sqlalchemy.exc import DBAPIError, DisconnectionError
+from sqlalchemy.exc import TimeoutError as SQLAlchemyTimeoutError
+
 from app.contexts.user.application.errors import UserNotFoundError
 from app.infrastructure.logging.record import log_extra
+from app.infrastructure.queue.errors import RetryableJobError
 from app.infrastructure.queue.job import QueueJob
 from app.interfaces.worker.context import JobExecutionContext
 
@@ -42,6 +46,13 @@ class LoginSucceededJob(QueueJob[JobExecutionContext]):
 
         try:
             user = await context.container.users.service.get(self.user_id)
+        except (DisconnectionError, SQLAlchemyTimeoutError) as error:
+            raise RetryableJobError("读取登录用户时数据库连接暂时不可用") from error
+        except DBAPIError as error:
+            # OperationalError 也可能是永久配置/语句错误，只重试驱动明确标记失效的连接。
+            if not error.connection_invalidated:
+                raise
+            raise RetryableJobError("读取登录用户时数据库连接已失效") from error
         except UserNotFoundError:
             # 登录和异步消费之间允许用户被删除；重试不会改变这一永久状态。
             _logger.warning(

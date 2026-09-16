@@ -12,7 +12,7 @@ type MetadataScalar = str | int | float | bool
 type VectorMetadata = Mapping[str, MetadataScalar]
 type VectorFilters = Mapping[str, MetadataScalar]
 
-_COLLECTION_NAME = re.compile(r"^[a-z0-9](?:[a-z0-9_-]*[a-z0-9])?$")
+_COLLECTION_NAME = re.compile(r"^[a-z][a-z0-9_]*[a-z0-9]$")
 _METADATA_KEY = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _RESERVED_METADATA_KEYS = frozenset(("id", "vector", "_vector_dimension", "_vector_metric", "_vector_record"))
 _MIN_METADATA_INTEGER = -(2**63)
@@ -134,7 +134,7 @@ def validate_ids(ids: tuple[str, ...]) -> None:
 
 def _validate_collection_name(name: str) -> None:
     if not isinstance(name, str) or not 3 <= len(name) <= 63 or _COLLECTION_NAME.fullmatch(name) is None:
-        raise VectorConfigurationError("Collection 名称必须为 3 到 63 位小写字母、数字、下划线或连字符，且首尾为字母或数字")
+        raise VectorConfigurationError("Collection 名称必须为 3 到 63 位小写字母、数字或下划线，以字母开头且以字母或数字结尾")
 
 
 def _validate_vector(vector: tuple[float, ...]) -> None:

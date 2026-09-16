@@ -26,6 +26,8 @@ HTTP 请求限流通过 `RATE_LIMIT_ENABLED=true` 启用；`RATE_LIMIT_CACHE` �
 
 向量 `upsert` 覆盖完整元数据，省略的旧字段会被删除。Chroma 每次写入额外读取一次旧元数据，并在同一客户端内串行执行读后写；多个独立客户端或进程覆盖同一 ID 时，调用方需协调写入顺序，不保证跨进程原子覆盖。详见[向量存储](docs/vector.md)。
 
+当前公共调用边界：出站 HTTP 不保存上游 Cookie，空 `params` 保留 URL 查询，非空 `params` 替换原查询，详见[出站 HTTP](docs/outbound-http.md)。向量 Collection 名称统一为 3–63 位小写字母、数字或下划线，以小写字母开头且以字母或数字结尾；本地同步操作取消会等待线程结束，Elasticsearch 批量读取的部分错误会明确失败，详见[向量存储](docs/vector.md)。
+
 ## 五分钟启动
 
 安装依赖并复制配置：
@@ -173,7 +175,7 @@ uv run python -m app.worker --connection redis --queue reports --concurrency 4
 docker compose up --build worker
 ```
 
-内置 `LoginSucceededJob` 由登录接口尽力投递到默认连接配置的默认队列（`sample.env` 为 `default`），消息以 `user_id` 参数标识登录用户，不包含用户名、密码或 Token；HTTP request ID 由运行时上下文自动作为 correlation ID 写入消息。Worker 收到后通过 `context.container.users.service.get(user_id)` 查询执行时的最新用户数据，证明 Job 可以经应用服务使用数据库，并只记录固定文案、结构化用户 ID 和状态，不把用户名或邮箱写入日志。用户在消费前已删除时记录稳定警告并结束；数据库故障进入现有重试和失败存储。每条消息获得不可变 `JobExecutionContext`，其中既有当前配置和正在运行的 `ApplicationContainer`，也有任务、队列和关联元数据；Job 可以像 Console operation 一样选择已装配的应用服务以及数据库、缓存、HTTP、队列和向量能力。业务 Job 应优先调用应用服务，不把容器继续传入 Application/Domain。新增任务放入带独立 `jobs` 路径段的模块即可，无需修改组合根；Worker 在开始消费前完成发现、导入和契约校验，具体规则见[QueueJob 自动发现](docs/queue.md#2-queuejob-与自动发现)。HTTP 与 Console 负责发布，独立 Worker 通过 Redis、Kafka 或 RabbitMQ 消费。
+内置 `LoginSucceededJob` 由登录接口尽力投递到默认连接配置的默认队列（`sample.env` 为 `default`），消息以 `user_id` 参数标识登录用户，不包含用户名、密码或 Token；HTTP request ID 由运行时上下文自动作为 correlation ID 写入消息。Worker 收到后通过 `context.container.users.service.get(user_id)` 查询执行时的最新用户数据，证明 Job 可以经应用服务使用数据库，并只记录固定文案、结构化用户 ID 和状态，不把用户名或邮箱写入日志。用户在消费前已删除时记录稳定警告并结束；数据库连接池超时、断连和驱动明确标记的失效连接按现有策略重试；其他数据库错误直接进入失败存储。每条消息获得不可变 `JobExecutionContext`，其中既有当前配置和正在运行的 `ApplicationContainer`，也有任务、队列和关联元数据；Job 可以像 Console operation 一样选择已装配的应用服务以及数据库、缓存、HTTP、队列和向量能力。业务 Job 应优先调用应用服务，不把容器继续传入 Application/Domain。新增任务放入带独立 `jobs` 路径段的模块即可，无需修改组合根；Worker 在开始消费前完成发现、导入和契约校验，具体规则见[QueueJob 自动发现](docs/queue.md#2-queuejob-与自动发现)。HTTP 与 Console 负责发布，独立 Worker 通过 Redis、Kafka 或 RabbitMQ 消费。
 
 失败任务固定使用 SQL 存储，需配置 QUEUE_FAILED__DATABASE 并执行对应 Alembic migration。外部适配器目前由模拟客户端测试覆盖，未进行真实 Redis/Kafka/RabbitMQ 服务集成验证。重试是投递内重试，不包含持久延迟调度或 exactly-once 保证。
 

@@ -146,7 +146,7 @@ async def index_documents(container: ApplicationContainer) -> None:
 
 ## 4. 可移植数据契约
 
-Collection 名称必须是 3–63 位小写字母、数字、下划线或连字符，首尾为字母或数字。维度范围是 1–4096，采用三个驱动的共同上限；支持 `cosine`、`dot_product` 和 `l2`。
+Collection 名称必须是 3–63 位小写字母、数字或下划线，以小写字母开头，以字母或数字结尾。例如 `docs_v1` 合法，`docs-v1` 和 `123docs` 不合法。该规则适用于全部驱动；已有不符合规则的 Collection 不会自动重命名，需要调用方在升级前迁移。维度范围是 1–4096，采用三个驱动的共同上限；支持 `cosine`、`dot_product` 和 `l2`。
 
 `VectorPoint` 由字符串 ID、调用方生成的有限浮点向量和元数据组成。ID 的 UTF-8 长度为 1–512 字节。元数据只接受字符串、有符号 64 位整数、有限浮点数和布尔值；字段名只能包含字母、数字和下划线且不能以数字开头。`id`、`vector` 和 `_vector_*` 是内部保留字段。
 
@@ -154,7 +154,7 @@ Collection 名称必须是 3–63 位小写字母、数字、下划线或连字�
 
 `upsert` 按 ID 覆盖向量和完整元数据：新元数据中省略的旧字段会被删除，传入空元数据会清空原有业务字段。Chroma 适配器会额外批量读取一次目标 ID 的元数据，再把旧字段的删除标记与新向量、新字段一起提交，不先删除整条记录。
 
-同一个 Chroma 客户端的 `upsert` 会串行执行完整的读后写流程，包括不同 Collection 的写入；本地与远程模式使用相同规则。该保护不跨独立客户端或进程，也不将并发删除、Collection 重建纳入事务。多个客户端或进程写入同一 ID 时，调用方必须协调写入顺序；接口不承诺跨进程原子覆盖或批量事务。先前已经残留的元数据无法自动判断是否仍然有效，需用完整的目标元数据再次 `upsert`。
+同一个 Chroma 客户端的 `upsert` 会串行执行完整的读后写流程，包括不同 Collection 的写入；本地与远程模式使用相同规则。同步调用发生取消时，会等待工作线程真正完成后才释放串行保护；创建期间取消会关闭已创建但尚未交付的本地客户端。取消和关闭可能因此等待正在执行的同步操作结束。该保护不跨独立客户端或进程，也不将并发删除、Collection 重建纳入事务。多个客户端或进程写入同一 ID 时，调用方必须协调写入顺序；接口不承诺跨进程原子覆盖或批量事务。先前已经残留的元数据无法自动判断是否仍然有效，需用完整的目标元数据再次 `upsert`。
 
 过滤器是顶层元数据字段的 AND 等值匹配。公共接口不承诺范围、全文、嵌套布尔表达式或驱动专有过滤语法。公共 `dot_product` 在 Milvus/Chroma 使用 IP，在 Elasticsearch 使用无需单位向量的 `max_inner_product`。检索结果按相关度降序返回，`score` 越大越相关；不同驱动或不同 metric 的 score 数值不可直接比较。
 
@@ -186,6 +186,8 @@ Collection 名称必须是 3–63 位小写字母、数字、下划线或连字�
 | `VectorCollectionNotFoundError` | Collection/Index 不存在 |
 | `VectorCollectionConflictError` | 创建的 Collection/Index 已存在 |
 | `VectorOperationError` | 其他后端操作或返回结构不符合公共契约 |
+
+Elasticsearch Multi Get 会逐项检查结果，仅明确的 `found=false` 作为数据不存在；含 `error` 或结构不合法的文档会使本次读取抛出 `VectorOperationError`，不会返回部分成功结果。
 
 脚手架不会在驱动失败时自动切换连接，也不会把连接故障当成空检索结果。是否降级、重试或回退到关键词检索属于具体业务策略。
 

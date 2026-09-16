@@ -1,5 +1,8 @@
 """根据全局设置构造普通与流式 HTTPX2 客户端资源。"""
 
+from http.cookiejar import Cookie, CookieJar, DefaultCookiePolicy
+from urllib.request import Request
+
 import httpx2
 
 from app.config.http import HttpPoolSettings, HttpSettings
@@ -30,6 +33,7 @@ def _create_client(settings: HttpSettings, pool: HttpPoolSettings) -> httpx2.Asy
     """把公共超时、连接池和 TLS 策略映射为 HTTPX2 配置。"""
 
     return httpx2.AsyncClient(
+        cookies=CookieJar(policy=_RejectCookies()),
         timeout=httpx2.Timeout(
             connect=settings.timeout.connect,
             read=settings.timeout.read,
@@ -45,3 +49,12 @@ def _create_client(settings: HttpSettings, pool: HttpPoolSettings) -> httpx2.Asy
         follow_redirects=settings.follow_redirects,
         trust_env=settings.trust_env,
     )
+
+
+class _RejectCookies(DefaultCookiePolicy):
+    """共享连接池不保存上游会话；显式 Cookie 请求头仍由调用方控制。"""
+
+    def set_ok(self, cookie: Cookie, request: Request) -> bool:
+        """拒绝所有响应 Cookie，避免跨用户和任务继承上游身份。"""
+
+        return False

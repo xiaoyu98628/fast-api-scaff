@@ -46,7 +46,7 @@ curl -X POST http://127.0.0.1:8000/api/v1/auth/logout \
 uv run python -m app.worker
 ```
 
-该通知是尽力而为的示例副作用：Redis 未配置、不可用或发布结果不确定时会记录 `user.login_succeeded.dispatch_failed`，但不改变已经成功的登录响应。数据库会话提交与消息发布不是原子事务，通知可能丢失或重复，不能据此实现审计、计费或安全控制。Job 查询的是消费时数据，可能与登录时不同；用户已经删除时记录 `user.login_succeeded.user_missing` 并正常结束，其他数据库故障继续进入队列重试和失败存储。日志只保留用户 ID 和状态，不包含用户名、邮箱、密码、密码哈希或 Token。
+该通知是尽力而为的示例副作用：Redis 未配置、不可用或发布结果不确定时会记录 `user.login_succeeded.dispatch_failed`，但不改变已经成功的登录响应。数据库会话提交与消息发布不是原子事务，通知可能丢失或重复，不能据此实现审计、计费或安全控制。Job 查询的是消费时数据，可能与登录时不同；用户已经删除时记录 `user.login_succeeded.user_missing` 并正常结束，数据库连接池超时、断连和驱动明确标记的失效连接进入队列重试，其他数据库错误直接进入失败存储。日志只保留用户 ID 和状态，不包含用户名、邮箱、密码、密码哈希或 Token。
 
 ## 输入与错误
 

@@ -113,3 +113,26 @@ def _resource(handler: Callable[[httpx2.Request], Coroutine[None, None, httpx2.R
         standard_client=httpx2.AsyncClient(transport=transport),
         stream_client=httpx2.AsyncClient(transport=transport),
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("params, query", [({}, b"user_id=123&signature=abc"), ({"page": 2}, b"page=2")])
+async def test_url_query_is_preserved_unless_nonempty_params_replace_it(stream: bool, params: dict[str, object], query: bytes) -> None:
+    received: list[bytes] = []
+
+    async def handler(request: httpx2.Request) -> httpx2.Response:
+        received.append(request.url.query)
+        return httpx2.Response(200)
+
+    resource = _resource(handler)
+    try:
+        request = HttpRequest(method="GET", url="https://example.com/items?user_id=123&signature=abc", params=params)
+        if stream:
+            async with resource.stream(request):
+                pass
+        else:
+            await resource.request(request)
+    finally:
+        await resource.aclose()
+    assert received == [query]

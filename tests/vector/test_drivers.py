@@ -589,3 +589,103 @@ async def test_elasticsearch_maps_connection_index_bulk_and_knn(monkeypatch: pyt
 
     await manager.aclose()
     assert created[0].closed is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("document", [{"_id": "doc-1", "error": {"type": "unavailable_shards_exception"}}, {"_id": "doc-1"}])
+async def test_elasticsearch_mget_rejects_partial_failure(document: dict[str, object]) -> None:
+    from elasticsearch import AsyncElasticsearch
+
+    sdk = FakeAsyncElasticsearch()
+    sdk.indices.exists_value = True
+    sdk.mget = AsyncMock(return_value={"docs": [document]})
+    client = elasticsearch_driver.ElasticsearchVectorClient(cast(AsyncElasticsearch, sdk))
+    with pytest.raises(VectorOperationError, match="Multi Get"):
+        await client.get("knowledge", ("doc-1",))
+    sdk.mget.return_value = {"docs": [{"_id": "doc-1", "found": False}]}
+    assert await client.get("knowledge", ("doc-1",)) == ()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("driver", ["chroma", "milvus"])
+@pytest.mark.parametrize("close_next", [False, True])
+async def test_local_cancellation_waits_for_thread_before_next_operation(driver: str, close_next: bool) -> None:
+    from threading import Event
+
+    from chromadb.api import ClientAPI
+
+    loop = asyncio.get_running_loop()
+    started = asyncio.Event()
+    release = Event()
+    next_started = asyncio.Event()
+
+    def slow() -> None:
+        loop.call_soon_threadsafe(started.set)
+        if not release.wait(5):
+            raise RuntimeError("测试未释放工作线程")
+
+    sdk = Mock(slow=slow, next=lambda: loop.call_soon_threadsafe(next_started.set), close=lambda: loop.call_soon_threadsafe(next_started.set))
+    if driver == "chroma":
+        backend = chroma_driver._ChromaBackend(cast(ClientAPI, sdk), local=True)
+        call = backend.client_call
+    else:
+        backend = milvus_driver._LocalMilvusBackend(sdk, Mock(operation_errors=(), connection_errors=()))
+        call = backend.call
+    first = asyncio.create_task(call("slow"))
+    second = None
+    try:
+        await asyncio.wait_for(started.wait(), 2)
+        first.cancel()
+        await asyncio.sleep(0)
+        first.cancel()  # 重复取消也不能提前释放线程额度或上层锁。
+        second = asyncio.create_task(backend.aclose() if close_next else call("next"))
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(next_started.wait(), 0.05)
+        assert not first.done()
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await first
+        await asyncio.wait_for(second, 2)
+        assert next_started.is_set()
+    finally:
+        release.set()
+        await asyncio.gather(first, *([second] if second is not None else []), return_exceptions=True)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("driver", ["chroma", "milvus"])
+async def test_cancelled_local_creation_closes_unpublished_client(driver: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from threading import Event
+
+    from app.config.vector import ChromaLocalVectorSettings, MilvusLocalVectorSettings
+
+    loop = asyncio.get_running_loop()
+    started = asyncio.Event()
+    release = Event()
+    client = Mock()
+
+    def create(*args: object, **kwargs: object) -> object:
+        loop.call_soon_threadsafe(started.set)
+        if not release.wait(5):
+            raise RuntimeError("测试未释放创建线程")
+        return client
+
+    if driver == "chroma":
+        monkeypatch.setattr(chroma_driver.chromadb, "PersistentClient", create)
+        creation = chroma_driver.create_chroma_resource(ChromaLocalVectorSettings(driver="chroma", mode="local", path=str(tmp_path)))
+    else:
+        monkeypatch.setattr(milvus_driver, "_load_milvus_sdk", lambda: Mock(sync_client=create, operation_errors=()))
+        creation = milvus_driver.create_milvus_resource(MilvusLocalVectorSettings(driver="milvus", mode="local", path=str(tmp_path / "db")))
+    task = asyncio.create_task(creation)
+    try:
+        await asyncio.wait_for(started.wait(), 2)
+        task.cancel()
+        await asyncio.sleep(0)
+        assert not task.done()
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        client.close.assert_called_once_with()
+    finally:
+        release.set()
+        await asyncio.gather(task, return_exceptions=True)

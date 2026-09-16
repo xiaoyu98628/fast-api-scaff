@@ -14,8 +14,10 @@ def build_httpx2_request_arguments(request: HttpRequest) -> dict[str, Any]:
         "method": request.method,
         "url": request.url,
         "headers": request.headers,
-        "params": request.params,
     }
+    # 空参数不覆盖 URL 自带的查询；显式非空参数沿用底层替换语义。
+    if request.params:
+        arguments["params"] = request.params
     if request.content is not None:
         arguments["content"] = request.content
     if request.json is None:
