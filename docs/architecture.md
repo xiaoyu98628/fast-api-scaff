@@ -1,6 +1,6 @@
 # 架构说明
 
-项目采用模块化单体：一个部署单元内按限界上下文划分业务，并在每个上下文内部保持 Domain、Application、Infrastructure 边界。HTTP、Console 与 Worker 是独立宿主，共享配置、组合根和资源生命周期；HTTP、Console 与 Worker Job 都可以在各自的入站边界选择已装配的应用用例，Worker 通过不可变上下文向动态解析的 QueueJob 提供当前应用容器。
+项目采用模块化单体：一个部署单元内按限界上下文划分业务，并在每个上下文内部保持 Domain、Application、Infrastructure 边界。HTTP、Console 与 Worker 是独立宿主，共享配置、组合根和资源生命周期；HTTP、Console 与 Worker Job 都可以在各自的入站边界选择已装配的应用用例，Worker 通过不可变上下文向启动期自动发现的 QueueJob 提供当前应用容器。
 
 这不是为了堆叠 DDD 名词，而是解决三个实际问题：业务规则不被框架入口绕过，基础设施可以替换/测试，多入口复用同一用例且不会出现行为分叉。
 
@@ -27,7 +27,7 @@ app/
 ├── interfaces/             # 入站协议适配，不负责启动与全局装配
 │   ├── http/               # FastAPI 请求、响应、中间件和路由
 │   ├── console/            # Typer 命令、参数、展示和退出码
-│   └── worker/             # 队列 Job 动态解析、执行和消费并发
+│   └── worker/             # 队列 Job 约定发现、目录解析、执行和消费并发
 └── runtime/                # 宿主无关的容器、生命周期、追踪上下文和进程路径约定
 
 database/main/              # main 数据库的 Alembic 环境与模型注册
@@ -58,7 +58,7 @@ bootstrap/composition 负责选择实现并完成装配
 - Runtime 保存宿主无关的 `ApplicationContainer`、`ApplicationRuntime` 和 `TraceContext`；
 - Bootstrap/Composition 是允许知道具体实现、Interfaces 和 Runtime 的装配边界。
 
-`tests/test_architecture.py` 用 AST 检查 Domain、Application、Infrastructure、Interfaces、Bootstrap 与上下文 Job 的导入。它不仅保护核心层，还禁止共享 Infrastructure 反向依赖业务或宿主、上下文 Infrastructure 跨上下文依赖、Interfaces 依赖 Bootstrap，以及 Interfaces 直接穿透到上下文 Infrastructure。上下文 `jobs/` 被视为 Worker 入站适配器：允许使用 `JobExecutionContext`、当前上下文公开服务和宿主级公共 Manager，但不能依赖 Bootstrap、具体队列驱动/SDK 或其他上下文的 Infrastructure。相对导入也会被视为违规，项目统一要求绝对、显式导入。这类测试防止边界在日常迭代中悄悄腐化。
+`tests/test_architecture.py` 用 AST 检查 Domain、Application、Infrastructure、Interfaces、Bootstrap 与 QueueJob 的导入。它不仅保护核心层，还禁止共享 Infrastructure 反向依赖业务或宿主、上下文 Infrastructure 跨上下文依赖、Interfaces 依赖 Bootstrap，以及 Interfaces 直接穿透到上下文 Infrastructure。所有模块路径中含独立 `jobs` 段的 Python 文件都被视为 Worker 入站适配器：允许使用 `JobExecutionContext`、当前上下文公开服务和宿主级公共 Manager，但不能依赖 Bootstrap、具体队列驱动/SDK 或其他上下文的 Infrastructure；上下文之外的 Job 不能直接依赖任一上下文 Infrastructure。相对导入也会被视为违规，项目统一要求绝对、显式导入。这类测试防止边界在日常迭代中悄悄腐化。
 
 ## 3. 用户限界上下文
 
@@ -197,7 +197,7 @@ HTTP lifespan、ConsoleHost 和 WorkerHost 都复用 runtime。这样资源的�
 
 ## 11. HTTP、Console 与 Worker 适配器
 
-HTTP 与 Console 都调用 `UserApplicationService`，Worker 则解析消息携带的 QueueJob 类型，并通过每条消息的 `JobExecutionContext` 调用其 `handle(context)`：
+HTTP 与 Console 都调用 `UserApplicationService`，Worker 则从启动期任务目录解析消息携带的 QueueJob 引用，并通过每条消息的 `JobExecutionContext` 调用其 `handle(context)`：
 
 - HTTP 负责 schema、status、统一 JSON 和异常到 HTTP 映射；
 - Console 负责 Typer 参数、每次调用的 command ID、JSON stdout、错误 stderr 和退出码；
@@ -272,7 +272,7 @@ HTTP 独立定义 `page/limit` 查询协议和 `items + meta` 分页响应，并
 
 共享基础设施 queue 提供 QueueJob、Dispatcher、QueueManager、驱动和 FailedJobStore。ApplicationContainer.queues 与数据库等 Manager 一样按需使用；队列先关闭，数据库后关闭。HTTP 不订阅队列。
 
-独立 `app.worker` 入口由 `app.bootstrap.worker` 完成装配并复用 ApplicationRuntime；`app.interfaces.worker` 负责 Job 类路径解析、宿主上下文注入、消息执行、重试和消费并发。QueueJob 将可序列化数据与 `handle(context)` 收敛在同一类，投递时自动把类路径写入消息，Worker 动态导入并验证该类型；框架不扫描 `contexts`、`jobs` 或其他业务目录，不维护业务注册表，应用组合根也不收集 Job。版本变化由 Job 自身的 `version` 和 `legacy_decoders` 显式维护，历史 Decoder 输出当前 Job 类型；未知引用/版本属于消息问题，导入依赖或任务定义错误属于部署问题，后者不会被吞成可确认失败。当前示例把任务放在上下文级 `jobs/` 包并按类名使用蛇形命名模块，但这只是组织习惯。
+独立 `app.worker` 入口由 `app.bootstrap.worker` 完成装配并复用 ApplicationRuntime；`app.interfaces.worker` 负责按 `app/**/jobs.py` 和 `app/**/jobs/**/*.py` 约定发现任务、建立不可变目录、注入宿主上下文、执行消息、重试和控制消费并发。QueueJob 将可序列化数据与 `handle(context)` 收敛在同一类，投递时写入显式稳定引用或默认类路径；Worker 在创建消费者前导入匹配模块并验证直接定义的具体任务，消息处理阶段只查询目录，不再执行 import。应用组合根无需逐项注册 Job，测试和自定义宿主仍可显式注入任务类型。版本变化由 Job 自身的 `version` 和 `legacy_decoders` 显式维护，类移动由 `legacy_references` 兼容；未知引用/版本属于消息问题，模块导入、引用冲突或任务定义错误属于启动部署问题，Decoder 运行时定义缺陷则保持消息未确认并终止消费。
 
 `WorkerContext` 是进程级宿主上下文，与 `ConsoleContext` 一样只在宿主/入站适配边界暴露当前配置和已经启动的 `ApplicationContainer`。执行器从它为每条消息创建独立、不可变的 `JobExecutionContext`，其中 `settings` 和 `container` 保持直接访问，任务、队列和关联元数据组合在 `context.job`；同一投递内重试复用同一个对象。Job 应优先从容器选择当前上下文的公开应用服务；需要数据库、缓存或外部服务的业务流程，仍由 Application 层定义窄协议并经 composition 注入实现。Application/Domain 不导入 Worker、具体 Manager、队列驱动或全局容器，共享 Infrastructure 不导入具体业务。所有消费槽共享应用级 Manager，任务级 Session、UoW 和事务不能跨 Job 共享。内置 `LoginSucceededJob` 由登录 HTTP 适配器在会话提交后尽力投递，HTTP request ID 通过 `TraceContext` 自动进入消息 correlation ID；Worker 通过 `context.container.users.service.get(user_id)` 进入用户应用服务并使用独立 UoW 查询数据库，只记录执行时的用户 ID 和状态，作为默认队列、数据库能力、跨宿主日志关联和 `handle(context)` 输出的最小示例。它不进入认证 Application/Domain，也不参与登录事务。
 

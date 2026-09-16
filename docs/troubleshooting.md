@@ -290,7 +290,7 @@ uv run python -m app.console users list 1>result.json 2>error.log
 - 镜像本身不声明健康检查，Compose 只为 HTTP 服务检测 `/health`；
 - 不启动数据库、缓存或队列服务。
 
-若使用 SQLite、Milvus Lite 或 Chroma 本地持久化，相对路径位于 bind mount 的项目 `storage/` 下；检查目录写权限，并保持单进程访问。若使用外部服务，容器内 `127.0.0.1` 不是宿主。Worker 需要容器可访问的 Redis、Kafka 或 RabbitMQ；业务 Job 无需注册，Worker 根据消息里的类路径动态解析。若容器退出，先用 Compose 日志查看配置、Job 解析和连接错误；当前 `restart: no`，不会自动重启。
+若使用 SQLite、Milvus Lite 或 Chroma 本地持久化，相对路径位于 bind mount 的项目 `storage/` 下；检查目录写权限，并保持单进程访问。若使用外部服务，容器内 `127.0.0.1` 不是宿主。Worker 需要容器可访问的 Redis、Kafka 或 RabbitMQ；业务 Job 无需逐项注册，但必须直接定义在 `app/**/jobs.py` 或 `app/**/jobs/**/*.py`。可先运行 `uv run python -m app.console queue jobs` 检查发现、导入、引用和任务契约；Worker 会在连接消费者前执行同样检查。若容器退出，先用 Compose 日志查看配置、任务发现和连接错误；当前 `restart: no`，不会自动重启。
 
 Dockerfile 的生产默认命令不带 reload，但 Compose 覆盖了它。不要把当前 Compose 直接当生产编排。
 

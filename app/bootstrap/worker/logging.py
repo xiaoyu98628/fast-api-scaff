@@ -11,6 +11,7 @@ class WorkerLogEvent(StrEnum):
 
     STARTING = "worker.starting"
     STARTED = "worker.started"
+    JOBS_DISCOVERED = "worker.jobs_discovered"
     START_FAILED = "worker.start_failed"
     STOPPING = "worker.stopping"
     STOPPED = "worker.stopped"

@@ -105,30 +105,28 @@ def test_context_composition_does_not_cross_context_or_depend_on_hosts() -> None
     assert violations == []
 
 
-def test_context_jobs_keep_the_worker_adapter_boundary() -> None:
+def test_jobs_modules_keep_the_worker_adapter_boundary() -> None:
     """Job 可用宿主公共能力，但不能反向依赖组合根、驱动或其他上下文实现。"""
 
     violations: list[str] = []
     context_names = tuple(path.name for path in _context_directories())
 
-    for context_name in context_names:
-        jobs_root = _CONTEXTS_ROOT / context_name / "jobs"
+    for source_path in _job_source_paths():
+        relative_parts = source_path.relative_to(_APP_ROOT).parts
+        context_name = relative_parts[1] if len(relative_parts) > 2 and relative_parts[0] == "contexts" else None
         forbidden_prefixes = (
             "app.bootstrap",
             "app.infrastructure.queue.drivers",
             *(f"app.contexts.{other_name}.infrastructure" for other_name in context_names if other_name != context_name),
         )
-        violations.extend(_find_forbidden_dependencies(jobs_root, forbidden_prefixes=forbidden_prefixes))
+        violations.extend(_find_forbidden_dependencies(source_path, forbidden_prefixes=forbidden_prefixes))
 
-        if not jobs_root.is_dir():
-            continue
-        for source_path in sorted(jobs_root.rglob("*.py")):
-            source = source_path.read_text(encoding="utf-8")
-            for module, line in _iter_imports(ast.parse(source, filename=str(source_path))):
-                if module.split(".", maxsplit=1)[0] not in {"redis", "aiokafka", "aio_pika"}:
-                    continue
-                relative_path = source_path.relative_to(PROJECT_ROOT)
-                violations.append(f"{relative_path}:{line} imports {module}")
+        source = source_path.read_text(encoding="utf-8")
+        for module, line in _iter_imports(ast.parse(source, filename=str(source_path))):
+            if module.split(".", maxsplit=1)[0] not in {"redis", "aiokafka", "aio_pika"}:
+                continue
+            relative_path = source_path.relative_to(PROJECT_ROOT)
+            violations.append(f"{relative_path}:{line} imports {module}")
 
     assert violations == []
 
@@ -186,6 +184,18 @@ def _find_dependency_violations(layer: str, *, allowed_layers: tuple[str, ...]) 
 
 def _context_directories() -> tuple[Path, ...]:
     return tuple(sorted(path for path in _CONTEXTS_ROOT.iterdir() if path.is_dir() and (path / "__init__.py").is_file()))
+
+
+def _job_source_paths() -> tuple[Path, ...]:
+    """返回模块路径中含独立 jobs 段的全部 Python 源文件。"""
+
+    paths: list[Path] = []
+    for source_path in sorted(_APP_ROOT.rglob("*.py")):
+        relative_path = source_path.relative_to(_APP_ROOT)
+        module_parts = (*relative_path.parent.parts, relative_path.stem)
+        if "jobs" in module_parts:
+            paths.append(source_path)
+    return tuple(paths)
 
 
 def _find_forbidden_dependencies(source_root: Path, *, forbidden_prefixes: tuple[str, ...]) -> list[str]:

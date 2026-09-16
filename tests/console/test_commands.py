@@ -12,10 +12,11 @@ from app.bootstrap.build import build_application_container
 from app.bootstrap.console.application import ConsoleHost
 from app.config.database import DatabaseSettings
 from app.contexts.user.infrastructure.persistence.models.user import UserModel
+from app.contexts.user.jobs.login_succeeded import LoginSucceededJob
 from app.infrastructure.queue.contracts.failed_store import FailedJobRecord
 from app.infrastructure.queue.errors import QueueError
 from app.interfaces.console.command import ConsoleCommand
-from app.interfaces.console.commands.queue import list_failures
+from app.interfaces.console.commands.queue import list_failures, list_jobs
 from app.interfaces.console.commands.users import create_user
 from app.interfaces.console.context import ConsoleContext
 from app.interfaces.console.discovery import discover_console_commands
@@ -104,9 +105,27 @@ def test_discovery_finds_concrete_commands_in_stable_order() -> None:
         ("app", "info"),
         ("queue", "failed"),
         ("queue", "forget"),
+        ("queue", "jobs"),
         ("queue", "retry"),
         ("users", "create"),
         ("users", "list"),
+    ]
+
+
+def test_list_jobs_returns_discovered_contracts_without_starting_runtime() -> None:
+    result = list_jobs()
+
+    assert result == [
+        {
+            "reference": "app.contexts.user.jobs.login_succeeded:LoginSucceededJob",
+            "type_path": "app.contexts.user.jobs.login_succeeded:LoginSucceededJob",
+            "version": 1,
+            "supported_versions": (1,),
+            "legacy_references": (),
+            "max_attempts": LoginSucceededJob.policy.max_attempts,
+            "backoff_seconds": LoginSucceededJob.policy.backoff_seconds,
+            "timeout_seconds": LoginSucceededJob.policy.timeout_seconds,
+        }
     ]
 
 

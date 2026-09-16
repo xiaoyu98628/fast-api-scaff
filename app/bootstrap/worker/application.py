@@ -12,6 +12,7 @@ from app.bootstrap.worker.logging import WorkerLogEvent
 from app.config.settings import Settings
 from app.infrastructure.logging.record import log_extra, safe_exception_details
 from app.interfaces.worker.context import WorkerContext
+from app.interfaces.worker.discovery import discover_job_types
 from app.interfaces.worker.executor import JobExecutor
 from app.interfaces.worker.resolver import JobResolver, JobTypeResolver
 from app.interfaces.worker.runner import WorkerRunner
@@ -24,13 +25,24 @@ type ResolverBuilder = Callable[[], JobTypeResolver]
 _logger = logging.getLogger("app.bootstrap.worker.lifecycle")
 
 
+def build_job_resolver() -> JobResolver:
+    """发现并校验当前部署中遵循 jobs 模块约定的全部任务。"""
+
+    resolver = JobResolver(discover_job_types())
+    _logger.info(
+        "Worker jobs discovered",
+        extra=log_extra(WorkerLogEvent.JOBS_DISCOVERED, job_count=len(resolver.descriptors)),
+    )
+    return resolver
+
+
 @dataclass(frozen=True, slots=True)
 class WorkerHost:
     """复用应用运行时，在独立进程中消费一个逻辑队列。"""
 
     settings: Settings
     container_builder: ContainerBuilder = build_application_container
-    resolver_builder: ResolverBuilder = JobResolver
+    resolver_builder: ResolverBuilder = build_job_resolver
 
     def run(self, *, connection: str | None, queue: str | None, concurrency: int | None) -> None:
         """从同步进程入口启动 Worker 事件循环。"""
@@ -54,6 +66,7 @@ class WorkerHost:
             try:
                 try:
                     container = await runtime.start()
+                    resolver = self.resolver_builder()
                 except BaseException as error:
                     error_type, stacktrace = safe_exception_details(error)
                     _logger.error(
@@ -66,6 +79,7 @@ class WorkerHost:
                 context = WorkerContext(settings=self.settings, container=container)
                 await self._consume(
                     context,
+                    resolver,
                     connection=connection,
                     queue=queue,
                     concurrency=concurrency,
@@ -90,6 +104,7 @@ class WorkerHost:
     async def _consume(
         self,
         context: WorkerContext,
+        resolver: JobTypeResolver,
         *,
         connection: str | None,
         queue: str | None,
@@ -103,7 +118,6 @@ class WorkerHost:
         name = container.queues.resolve_name(connection)
         target = container.queues.queue_name(name, queue)
         count = self.settings.queue.worker.concurrency if concurrency is None else concurrency
-        resolver = self.resolver_builder()
         executor = JobExecutor(name, target, resolver, container.queues.failed_jobs, container.queues.codec, context)
         runner = WorkerRunner(concurrency=count, shutdown_timeout=self.settings.queue.worker.shutdown_timeout_seconds)
         async with container.queues.consume(connection=name, queue=target, concurrency=count) as consumer:

@@ -14,7 +14,7 @@
 - Milvus（本地 Lite/远程）、Chroma（本地持久化/远程）和 Elasticsearch 统一异步向量存储；
 - 普通与流式 HTTP 出站请求、独立连接池、阶段超时、池压力诊断和结构化日志；
 - Redis Streams、Kafka、RabbitMQ 队列适配器和独立 Worker；
-- QueueJob 动态解析与分发、显式历史版本解码、投递内重试、SQL 失败存储及 Console 重放；
+- QueueJob 约定发现与不可变任务目录、稳定引用、显式历史版本解码、投递内重试、SQL 失败存储及 Console 诊断/重放；
 - JSON/Text 结构化日志、HTTP request ID、Console command ID、Worker 任务关联、访问日志和数据库查询日志；
 - 架构依赖测试、pytest、Ruff、ty 与 GitHub Actions 质量检查；
 - CI 使用临时 MySQL/PostgreSQL 服务验证 Alembic upgrade、downgrade 和再次 upgrade。
@@ -84,6 +84,7 @@ CORS 预检由跨域中间件直接处理，不生成 Request ID 或应用访问
 ```bash
 uv run python -m app.console --help
 uv run python -m app.console app info
+uv run python -m app.console queue jobs
 uv run python -m app.console users create \
   --username alice \
   --email alice@example.com
@@ -120,7 +121,7 @@ docker compose up --build service
 
 默认命令同时启动 HTTP 应用和独立 Worker；指定 `service` 时只启动 HTTP 应用。Compose 不提供 MySQL、PostgreSQL、Redis、Kafka、RabbitMQ、Memcached、Milvus、Chroma Server 或 Elasticsearch。容器内 `127.0.0.1` 指向容器自身；应用可以使用 SQLite、Milvus Lite 或 Chroma 本地持久化，但缓存必须配置容器可访问的 Redis 或 Memcached，队列 Worker 必须配置容器可访问的 Redis、Kafka 或 RabbitMQ 地址。Compose 使用 Uvicorn reload，仅适合本地开发。
 
-Worker 复用应用镜像、`.env` 和网络且不暴露端口。镜像本身不声明健康检查，Compose 只为 HTTP 服务配置 `/health` 检测。脚手架内置登录成功日志 Job；Worker 根据消息携带的类路径动态加载并执行它，不扫描业务目录，也不需要在组合根注册。Worker 持有与 HTTP、Console 同样完整且按需初始化的应用容器，Job 可以使用已装配的数据库、缓存、HTTP、队列和向量能力；Application/Domain 仍只接收明确的窄依赖。
+Worker 复用应用镜像、`.env` 和网络且不暴露端口。镜像本身不声明健康检查，Compose 只为 HTTP 服务配置 `/health` 检测。脚手架内置登录成功日志 Job；Worker 启动时自动发现 `app/**/jobs.py` 与 `app/**/jobs/**/*.py` 中直接定义的具体 QueueJob，校验后建立不可变任务目录，不需要在组合根逐项注册。Worker 持有与 HTTP、Console 同样完整且按需初始化的应用容器，Job 可以使用已装配的数据库、缓存、HTTP、队列和向量能力；Application/Domain 仍只接收明确的窄依赖。
 
 生产镜像以 UID/GID 1000 的非 root 用户运行。镜像中的应用代码和虚拟环境由 root 持有，运行用户只对 `storage/data`、`storage/logs` 和自己的 home 目录拥有写权限。Compose 会把项目目录挂载到 `/app`；若使用 SQLite、Milvus Lite 或 Chroma 本地持久化，请确保宿主机对应目录允许该用户写入。本地向量模式只用于单进程开发和小规模数据，不要让 HTTP 多 worker、HTTP 与 Worker 或多个容器共享同一路径。需要适配其他运行平台时，可通过 `APP_UID`、`APP_GID` 构建参数覆盖镜像用户。
 
@@ -169,7 +170,7 @@ uv run python -m app.worker --connection redis --queue reports --concurrency 4
 docker compose up --build worker
 ```
 
-内置 `LoginSucceededJob` 由登录接口尽力投递到默认连接配置的默认队列（`sample.env` 为 `default`），消息以 `user_id` 参数标识登录用户，不包含用户名、密码或 Token；HTTP request ID 由运行时上下文自动作为 correlation ID 写入消息。Worker 收到后通过 `context.container.users.service.get(user_id)` 查询执行时的最新用户数据，证明 Job 可以经应用服务使用数据库，并只记录固定文案、结构化用户 ID 和状态，不把用户名或邮箱写入日志。用户在消费前已删除时记录稳定警告并结束；数据库故障进入现有重试和失败存储。每条消息获得不可变 `JobExecutionContext`，其中既有当前配置和正在运行的 `ApplicationContainer`，也有任务、队列和关联元数据；Job 可以像 Console operation 一样选择已装配的应用服务以及数据库、缓存、HTTP、队列和向量能力。业务 Job 应优先调用应用服务，不把容器继续传入 Application/Domain。新增任务无需注册、扫描目录或修改组合根；Worker 在导入前拒绝进程入口和组合根模块，具体限制见[队列动态解析](docs/queue.md#2-queuejob-与动态解析)。HTTP 与 Console 负责发布，独立 Worker 通过 Redis、Kafka 或 RabbitMQ 消费。
+内置 `LoginSucceededJob` 由登录接口尽力投递到默认连接配置的默认队列（`sample.env` 为 `default`），消息以 `user_id` 参数标识登录用户，不包含用户名、密码或 Token；HTTP request ID 由运行时上下文自动作为 correlation ID 写入消息。Worker 收到后通过 `context.container.users.service.get(user_id)` 查询执行时的最新用户数据，证明 Job 可以经应用服务使用数据库，并只记录固定文案、结构化用户 ID 和状态，不把用户名或邮箱写入日志。用户在消费前已删除时记录稳定警告并结束；数据库故障进入现有重试和失败存储。每条消息获得不可变 `JobExecutionContext`，其中既有当前配置和正在运行的 `ApplicationContainer`，也有任务、队列和关联元数据；Job 可以像 Console operation 一样选择已装配的应用服务以及数据库、缓存、HTTP、队列和向量能力。业务 Job 应优先调用应用服务，不把容器继续传入 Application/Domain。新增任务放入带独立 `jobs` 路径段的模块即可，无需修改组合根；Worker 在开始消费前完成发现、导入和契约校验，具体规则见[QueueJob 自动发现](docs/queue.md#2-queuejob-与自动发现)。HTTP 与 Console 负责发布，独立 Worker 通过 Redis、Kafka 或 RabbitMQ 消费。
 
 失败任务固定使用 SQL 存储，需配置 QUEUE_FAILED__DATABASE 并执行对应 Alembic migration。外部适配器目前由模拟客户端测试覆盖，未进行真实 Redis/Kafka/RabbitMQ 服务集成验证。重试是投递内重试，不包含持久延迟调度或 exactly-once 保证。
 

@@ -19,6 +19,7 @@ uv run python -m app.console queue --help
 | `app info` | 否 | 显示应用、时区和已声明连接名 |
 | `users create` | 是 | 通过用户应用服务创建用户 |
 | `users list` | 是 | 通过用户应用服务分页查询用户 |
+| `queue jobs` | 否 | 发现并校验当前部署的任务目录 |
 | `queue failed` | 是 | 分页查询持久失败任务 |
 | `queue retry` | 是 | 重新发布指定失败任务并保留原记录 |
 | `queue forget` | 是 | 删除指定失败任务记录 |
@@ -183,7 +184,15 @@ class ExampleConsoleCommand(ConsoleCommand):
 
 架构关系见[架构说明](architecture.md)，数据库命令故障见[故障排查](troubleshooting.md)。
 
-## 队列失败管理
+## 队列任务与失败管理
+
+查看 Worker 启动时会建立的任务目录：
+
+```bash
+uv run python -m app.console queue jobs
+```
+
+命令按稳定引用排序输出 `reference`、诊断用 `type_path`、当前和支持版本、历史引用，以及重试/退避/超时策略。它会执行与 Worker 相同的模块发现和契约校验，但不构建应用容器、不连接队列，也不输出任务 payload。发现模块导入失败、定义不合法或引用冲突时命令失败，可用于发布前检查。
 
 分页查询失败任务：
 
@@ -214,4 +223,4 @@ uv run python -m app.console queue forget <failure-id>
 
 成功结果包含被删除的 `failure_id`。删除后无法再通过 Console 重放该记录。
 
-这些命令要求启用 SQL 失败任务存储并完成对应数据库迁移。更完整的队列配置与失败处理语义见[队列](queue.md)。
+`queue failed/retry/forget` 要求启用 SQL 失败任务存储并完成对应数据库迁移；`queue jobs` 不需要。更完整的自动发现、队列配置与失败处理语义见[队列](queue.md)。
