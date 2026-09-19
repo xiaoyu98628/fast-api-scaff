@@ -1,6 +1,6 @@
 # 日志
 
-项目使用 Python 标准库 logging，并在应用边界统一配置结构化字段、输出格式、HTTP request ID、Console command ID、Worker 任务上下文和驱动。默认是单行 JSON 写 stdout；Console 会把 stream 日志强制写 stderr，以保护命令结果的 stdout 协议。
+项目使用 Python 标准库 logging，并在应用边界统一配置结构化字段、输出格式、HTTP request ID、Console command ID、Worker 任务上下文、Scheduler 计划事件和驱动。默认是单行 JSON 写 stdout；Console 会把 stream 日志强制写 stderr，以保护命令结果的 stdout 协议。
 
 ## 1. 最小配置
 
@@ -135,7 +135,7 @@ Console 不伪造 request ID。HTTP 缺少调用方 ID 和 Console 启动命令�
 
 Dispatcher 未收到显式 `correlation_id` 时会读取当前 `TraceContext`。因此 HTTP 后台任务、Console 命令和 Worker Job 调用 `dispatch(job)` 都会自动延续同一条调用链；显式值仍可用于建立或覆盖调用链。Worker 执行每条消息时使用独立 `ContextVar` 绑定追踪及任务字段，因此 `QueueJob.handle(context)`、Application 服务、数据库、缓存和出站 HTTP 客户端在当前异步执行流内产生的日志都会自动携带同一组任务标识。绑定在消息处理结束后按 token 恢复，并发槽之间不会共享任务级上下文。Worker 不把 correlation ID 伪装成 request ID 或 command ID；三者在日志中保持不同字段。
 
-`JobExecutionContext` 同时通过 `context.job` 向 Job 显式提供这些元数据，供幂等键、低基数 operation 选择等执行逻辑使用。不要把整个上下文继续传入 Application/Domain，也不要把任务 payload 或敏感值放入日志关联字段。Scheduler 仍应采用自己的执行上下文。
+`JobExecutionContext` 同时通过 `context.job` 向 Job 显式提供这些元数据，供幂等键、低基数 operation 选择等执行逻辑使用。不要把整个上下文继续传入 Application/Domain，也不要把任务 payload 或敏感值放入日志关联字段。Scheduler 不执行业务 Job；它把稳定计划 ID 和新消息 ID 写入调度事件 details，Worker 消费后再建立任务上下文。
 
 ## 7. 应用生命周期日志
 
@@ -157,7 +157,19 @@ Worker 进程对应产生：
 - `worker.stopped`；
 - `worker.stop_failed`。
 
-资源层还记录数据库资源创建/关闭和失败事件。HTTP 与 Worker 启动失败时，runtime 都会尝试关闭已经构建的容器；日志顺序可用于判断失败发生在配置、容器启动还是关闭阶段。
+Scheduler 进程对应产生：
+
+- `scheduler.starting`；
+- `scheduler.schedules_discovered`；
+- `scheduler.started`；
+- `scheduler.start_failed`；
+- `scheduler.stopping`；
+- `scheduler.stopped`；
+- `scheduler.stop_failed`；
+- 顶层进程失败时记录 `scheduler.failed`；
+- 投递成功或失败时记录 `scheduler.job_dispatched` 或 `scheduler.dispatch_failed`。
+
+资源层还记录数据库资源创建/关闭和失败事件。HTTP、Worker 与 Scheduler 启动失败时，runtime 都会尝试关闭已经构建的容器；日志顺序可用于判断失败发生在配置、容器启动还是关闭阶段。
 
 ## 8. 数据库日志
 

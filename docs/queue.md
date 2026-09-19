@@ -123,7 +123,7 @@ class LoadUserJob(QueueJob[JobExecutionContext]):
 
 任务引用属于队列消息契约。现有任务未声明 `reference` 时仍使用类路径；移动它之前应先发布包含旧类路径 `legacy_references` 的兼容版本，再移动代码，最后在生产者升级且旧消息排空后删除别名。新任务优先选择稳定、表达业务含义的引用，可减少目录重构对消息协议的影响。不要通过在旧模块重新导入新类维持兼容：发现器会忽略非当前模块直接定义的类，兼容关系应显式写在任务定义中。
 
-当前内置 `LoginSucceededJob` 作为最小业务示例：登录 HTTP 适配器在会话提交后向默认队列尽力投递 `user_id` 参数和固定文案，Dispatcher 自动把当前 request ID 写入消息的 `correlation_id`；Worker 调用其 `handle(context)`，再通过 `context.container.users.service.get(user_id)` 使用数据库读取当前用户，最后只记录文案、结构化用户 ID 和状态。消息本身不携带用户名、密码或 Token，日志也不记录用户名、邮箱或认证秘密。用户已删除属于永久业务状态，任务记录 `user.login_succeeded.user_missing` 后结束；数据库连接池超时、断连和驱动明确标记的失效连接进行投递内重试；其他数据库错误直接进入失败存储。`user_id` 暂时可空，以兼容队列中已经存在的旧消息，旧消息会跳过数据库查询。发布失败不改变登录响应。该通知不具备 Outbox 或 exactly-once 保证，不应用于审计或安全决策。
+当前内置两个用户上下文任务。`LoginSucceededJob` 由登录 HTTP 适配器在会话提交后向默认队列尽力投递，Worker 通过用户应用服务读取最新用户并记录不含认证秘密的固定事件；发布失败不改变登录响应。`CleanupExpiredSessionsJob` 由 Scheduler 在容器本地时间每天 0 点投递，Worker 通过认证应用服务批量删除已经过期的数据库会话并记录删除数量。两个任务都只对明确的暂时性数据库故障执行投递内重试，其他数据库错误进入失败存储；队列不提供 exactly-once 保证，清理任务依靠 `expires_at <= now` 条件删除保持重复执行安全。
 
 ## 3. 信封与交付保证
 

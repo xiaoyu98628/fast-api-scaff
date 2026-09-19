@@ -170,6 +170,26 @@ async def test_successful_login_removes_only_expired_sessions(harness: AuthHarne
     assert expired_digest not in stored_digests
 
 
+@pytest.mark.asyncio
+async def test_cleanup_expired_sessions_removes_only_expired_sessions(harness: AuthHarness) -> None:
+    await harness.users.service.create(CreateUserCommand(username="alice", email="alice@example.com", password="password123"))
+    expired = await harness.users.auth.login(LoginCommand(username="alice", password="password123"))
+    harness.now += timedelta(seconds=30)
+    active = await harness.users.auth.login(LoginCommand(username="alice", password="password123"))
+    harness.now += timedelta(seconds=30)
+
+    removed_count = await harness.users.auth.cleanup_expired_sessions()
+
+    expired_digest = harness.users.auth.tokens.digest(SessionCredential(expired.access_token))
+    active_digest = harness.users.auth.tokens.digest(SessionCredential(active.access_token))
+    async with harness.databases.session("main") as session:
+        stored_digests = set(await session.scalars(select(UserSessionModel.token_digest)))
+
+    assert removed_count == 1
+    assert stored_digests == {active_digest}
+    assert expired_digest not in stored_digests
+
+
 @pytest.mark.parametrize(
     ("username", "password", "disabled"),
     [("alice", "wrong", False), ("alice", "password123", True)],

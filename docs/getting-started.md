@@ -121,15 +121,16 @@ docker compose up --build
 docker compose up --build service
 ```
 
-默认命令同时启动 HTTP 应用和独立队列消费容器；指定 `service` 时只启动 HTTP 应用。Compose 不会自动创建 MySQL、PostgreSQL、Redis、Kafka、RabbitMQ 或 Memcached。你需要按使用范围准备依赖：
+默认命令同时启动 HTTP 应用、独立 Worker 和独立 Scheduler；指定 `service` 时只启动 HTTP 应用。Compose 不会自动创建 MySQL、PostgreSQL、Redis、Kafka、RabbitMQ 或 Memcached。你需要按使用范围准备依赖：
 
 1. HTTP 应用可以使用 SQLite，但缓存操作必须连接容器可访问的 Redis 或 Memcached；
 2. 使用外部数据库或缓存时，把 `.env` 中的主机名改成容器可访问的地址；
-3. 启动 Worker 时，必须提供 Redis、Kafka 或 RabbitMQ，并配置对应队列连接。
+3. 启动 Worker 时，必须提供 Redis、Kafka 或 RabbitMQ，并配置对应队列连接；
+4. 存在已注册计划时，Scheduler 与 Worker 必须连接同一套可达的队列后端。
 
 容器内的 `127.0.0.1` 指向应用容器自身，不是宿主机，也不是另一个服务容器。连接宿主机服务时，macOS/Windows 通常使用 `host.docker.internal`；连接同一 Compose 网络中的服务时使用服务名。具体可达性仍需以你的部署网络为准。
 
-HTTP 容器启动命令带 `--reload`，适合本地开发，不是生产部署配置。脚手架内置登录成功 Job；配置默认队列连接后，`uv run python -m app.worker` 即可消费默认队列中的 QueueJob。
+HTTP 容器启动命令带 `--reload`，适合本地开发，不是生产部署配置。脚手架内置登录成功 Job，以及每天 0 点投递的过期会话清理 Job；配置默认队列连接后，`uv run python -m app.worker` 可消费默认队列中的 QueueJob，`uv run python -m app.scheduler` 会自动发现并运行 `app/**/schedules/**/*.py` 中注册的计划。
 
 ## 5. 首次运行的正确顺序
 
@@ -157,7 +158,7 @@ TZ=Asia/Shanghai
 
 - 时间值不携带 UTC offset，也不会自动转换为 UTC；
 - 写入数据后更改 `TZ` 会改变新时间值的语义，已有数据不会自动迁移；
-- HTTP、Console、迁移和未来其他宿主应使用相同 `TZ`；
+- HTTP、Console、Worker、Scheduler 和迁移应使用相同 `TZ`；
 - 跨时区业务若需要绝对时间，应明确设计 UTC 或带时区值，不要直接复用当前约定。
 
 可以通过 `app info` 检查当前应用配置摘要，通过数据库查询对比新记录的 `created_at` 与本地时间。

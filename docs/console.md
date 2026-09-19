@@ -10,6 +10,7 @@ uv run python -m app.console --version
 uv run python -m app.console app --help
 uv run python -m app.console users --help
 uv run python -m app.console queue --help
+uv run python -m app.console scheduler --help
 ```
 
 不带命令时显示帮助。当前命令：
@@ -23,6 +24,7 @@ uv run python -m app.console queue --help
 | `queue failed` | 是 | 分页查询持久失败任务 |
 | `queue retry` | 是 | 重新发布指定失败任务并保留原记录 |
 | `queue forget` | 是 | 删除指定失败任务记录 |
+| `scheduler list` | 否 | 列出当前部署声明的代码定时计划 |
 
 ## 2. 应用信息
 
@@ -117,7 +119,7 @@ uv run python -m app.console users list \
 
 ## 7. 新增命令
 
-命令自动扫描 `app.interfaces.console.commands` 包。一个典型命令应继承 `ConsoleCommand`：
+Console 分别扫描 `app.interfaces.console.system` 和 `app.interfaces.console.commands`。`system` 保存脚手架提供的应用信息、队列管理和定时计划等系统命令，业务命令统一放在 `commands`。一个典型业务命令应继承 `ConsoleCommand`：
 
 ```python
 from app.interfaces.console.command import ConsoleCommand
@@ -137,7 +139,7 @@ class ExampleConsoleCommand(ConsoleCommand):
 
 自动发现规则：
 
-- 模块必须位于 `app.interfaces.console.commands` 下；
+- 脚手架系统命令位于 `app.interfaces.console.system`，业务命令位于 `app.interfaces.console.commands`；
 - 类必须是定义在该模块中的非抽象 `ConsoleCommand` 子类；
 - 按 `(group, name)` 排序注册；
 - 相同 group 的 `group_help` 必须一致；
@@ -180,7 +182,7 @@ class ExampleConsoleCommand(ConsoleCommand):
 - 修改 `.env` 后，已经运行的 Python 进程仍持有缓存配置；重新执行命令即可获得新进程。
 - stdout 是结果协议，不应混入日志。
 - Console 不应复制 HTTP controller 逻辑，而应直接复用 application service。
-- 一次性 Console 不适合承载常驻调度循环；未来 Scheduler 应作为独立宿主复用 runtime，而不是塞进某个命令后无限运行。
+- 一次性 Console 不承载常驻调度循环；Scheduler 通过独立宿主复用 runtime。
 
 架构关系见[架构说明](architecture.md)，数据库命令故障见[故障排查](troubleshooting.md)。
 
@@ -224,3 +226,15 @@ uv run python -m app.console queue forget <failure-id>
 成功结果包含被删除的 `failure_id`。删除后无法再通过 Console 重放该记录。
 
 `queue failed/retry/forget` 要求启用 SQL 失败任务存储并完成对应数据库迁移；`queue jobs` 不需要。更完整的自动发现、队列配置与失败处理语义见[队列](queue.md)。
+
+## 定时计划目录
+
+查看 Scheduler 启动时使用的代码计划目录：
+
+```bash
+uv run python -m app.console scheduler list
+```
+
+命令按稳定计划 ID 输出 JSON 数组。每项包含 Trigger、Job 引用和版本、声明的队列连接与逻辑队列、合并策略以及 `misfire_grace_seconds`，不包含 Job payload。`connection` 或 `queue` 为 `null` 表示该计划使用对应默认值；命令不会解析默认路由，也不会连接队列或构建应用容器。计划目录为空时输出 `[]`。
+
+Trigger 输出只使用项目契约：Cron 展示 `second`、`minute`、`hour`、`day`、`month` 和 `day_of_week`；Interval 展示 `seconds` 和首次触发策略 `start`。命令不依赖 APScheduler 类型，因此调度库升级不会改变该输出边界。完整规则见[独立 Scheduler](scheduler.md)。

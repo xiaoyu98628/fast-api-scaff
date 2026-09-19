@@ -41,6 +41,23 @@ services:
     networks:
       - fast-api-scaff
 
+  scheduler:
+    build:
+      context: ./
+      dockerfile: Dockerfile
+    env_file:
+      - ./.env
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+    container_name: ${APP_NAME}-scheduler
+    volumes:
+      - .:/app
+      - /app/.venv
+    command: ["python", "-m", "app.scheduler"]
+    restart: no
+    networks:
+      - fast-api-scaff
+
 networks:
   fast-api-scaff:
     name: fast-api-scaff

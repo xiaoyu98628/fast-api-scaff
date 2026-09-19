@@ -55,6 +55,24 @@ def test_httpx2_is_confined_to_outbound_http_driver() -> None:
     assert violations == []
 
 
+def test_apscheduler_is_confined_to_scheduler_adapter() -> None:
+    """避免第三方调度 API 越过 Scheduler 入站适配器边界。"""
+
+    violations: list[str] = []
+    allowed_module = _APP_ROOT / "interfaces/scheduler/apscheduler.py"
+
+    for source_path in sorted(_APP_ROOT.rglob("*.py")):
+        if source_path == allowed_module:
+            continue
+        source = source_path.read_text(encoding="utf-8")
+        for module, line in _iter_imports(ast.parse(source, filename=str(source_path))):
+            if module == "apscheduler" or module.startswith("apscheduler."):
+                relative_path = source_path.relative_to(PROJECT_ROOT)
+                violations.append(f"{relative_path}:{line} imports {module}")
+
+    assert violations == []
+
+
 def test_shared_infrastructure_does_not_depend_on_business_or_host_layers() -> None:
     violations = _find_forbidden_dependencies(
         _APP_ROOT / "infrastructure",

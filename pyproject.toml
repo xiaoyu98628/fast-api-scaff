@@ -43,6 +43,9 @@ dependencies = [
     # Console 与 Worker 命令行
     "typer>=0.21.0",
 
+    # 独立 Scheduler 的时间规则与触发循环
+    "apscheduler>=3.11.3,<4",
+
     # 队列驱动：RabbitMQ 与 Kafka；Redis 队列复用上面的 redis 客户端
     "aio-pika>=10.0.1,<11",
     "aiokafka>=0.12,<1",

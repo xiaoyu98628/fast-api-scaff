@@ -249,7 +249,7 @@ uv run python -m app.console users list 1>result.json 2>error.log
 
 ### 命令未出现
 
-- 模块是否位于 `app/interfaces/console/commands/`；
+- 系统命令是否位于 `app/interfaces/console/system/`，业务命令是否位于 `app/interfaces/console/commands/`；
 - 类是否直接/间接继承 `ConsoleCommand`；
 - 类是否定义在被扫描模块自身；
 - 是否为抽象类；
@@ -275,11 +275,11 @@ uv run python -m app.console users list 1>result.json 2>error.log
 
 ### 时间或 request ID 异常
 
-日志时间是本地 aware 时间，领域数据是本地 naive 时间，两者表现不同但应对应同一 `TZ`。request ID 只在 HTTP 上下文自然存在；Console/启动日志没有是正常行为。
+日志时间是本地 aware 时间，领域数据是本地 naive 时间，两者表现不同但应对应同一 `TZ`。Scheduler Trigger 也使用进程本地时区。request ID 只在 HTTP 上下文自然存在；Console、Scheduler 和启动日志没有是正常行为。
 
 ## 12. Docker 问题
 
-当前 `compose.yml` 执行 `docker compose up` 时默认同时启动 HTTP 服务和独立消费服务；只需要 HTTP 时显式执行 `docker compose up service`。它们：
+当前 `compose.yml` 执行 `docker compose up` 时默认同时启动 HTTP 服务、独立 Worker 和独立 Scheduler；只需要 HTTP 时显式执行 `docker compose up service`。它们：
 
 - 从 `.env` 读取配置；
 - 复用应用镜像、源码挂载和 Compose 网络；
@@ -287,10 +287,11 @@ uv run python -m app.console users list 1>result.json 2>error.log
 - bind mount 项目源码并使用独立 `/app/.venv` volume；
 - HTTP 服务运行 Uvicorn `--reload`；
 - Worker 运行 `python -m app.worker`，不开放端口，也不配置健康检查；
+- Scheduler 运行 `python -m app.scheduler`，不开放端口，也不配置健康检查；
 - 镜像本身不声明健康检查，Compose 只为 HTTP 服务检测 `/health`；
 - 不启动数据库、缓存或队列服务。
 
-若使用 SQLite、Milvus Lite 或 Chroma 本地持久化，相对路径位于 bind mount 的项目 `storage/` 下；检查目录写权限，并保持单进程访问。若使用外部服务，容器内 `127.0.0.1` 不是宿主。Worker 需要容器可访问的 Redis、Kafka 或 RabbitMQ；业务 Job 无需逐项注册，但必须直接定义在 `app/**/jobs.py` 或 `app/**/jobs/**/*.py`。可先运行 `uv run python -m app.console queue jobs` 检查发现、导入、引用和任务契约；Worker 会在连接消费者前执行同样检查。若容器退出，先用 Compose 日志查看配置、任务发现和连接错误；当前 `restart: no`，不会自动重启。
+若使用 SQLite、Milvus Lite 或 Chroma 本地持久化，相对路径位于 bind mount 的项目 `storage/` 下；检查目录写权限，并保持单进程访问。若使用外部服务，容器内 `127.0.0.1` 不是宿主。Worker 需要容器可访问的 Redis、Kafka 或 RabbitMQ；存在已注册计划时，Scheduler 也需要相同后端。业务 Job 无需逐项注册，但必须直接定义在 `app/**/jobs.py` 或 `app/**/jobs/**/*.py`。可运行 `uv run python -m app.console queue jobs` 检查发现、导入、引用和任务契约；Worker 会在连接消费者前执行同样检查。若容器退出，用 Compose 日志查看配置、计划目录、任务发现和连接错误；当前 `restart: no`，不会自动重启。
 
 Dockerfile 的生产默认命令不带 reload，但 Compose 覆盖了它。不要把当前 Compose 直接当生产编排。
 
@@ -299,7 +300,7 @@ Dockerfile 的生产默认命令不带 reload，但 Compose 覆盖了它。不�
 当前设计要求本地无时区业务时间。常见错误：
 
 - 某个宿主使用 `datetime.now(timezone.utc)`，Domain 会拒绝；
-- HTTP 和 Console 的 `TZ` 不同，写出语义不一致的 naive 值；
+- HTTP、Console、Worker 和 Scheduler 的 `TZ` 不同，导致业务时间与触发时间语义不一致；
 - 数据库服务器自动转换 timestamp，而模型期待普通 DATETIME；
 - 更改 `TZ` 后把旧 naive 数据按新时区解释；
 - API 消费方把无 offset 字符串默认当 UTC。
