@@ -668,7 +668,7 @@ wheels = [
 [[package]]
 name = "fast-api-scaff"
 version = "1.0.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "aio-pika" },
     { name = "aiokafka" },

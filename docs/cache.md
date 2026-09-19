@@ -54,7 +54,7 @@ Redis 使用 `RedisStorage` 聚合数据类型适配器，当前 `strings` 实�
 
 `RedisStorage.scripts` 使用与 String 相同的借用连接，通过独立 `RedisScriptExecutor` 执行脚本并转换驱动异常；缓存层不加载场景脚本，不解释计数、配额或锁定结果。
 
-Lua 资源由使用它们的组件持有：登录脚本位于 `app/contexts/user/infrastructure/security/scripts/`，固定窗口脚本位于 `app/infrastructure/rate_limit/scripts/`。所属适配器按模块位置在首次导入时读取资源，不依赖启动目录。资源目录不是 Python 包。源码发布必须包含这些 Lua 文件；当前 Dockerfile 整体复制项目且 `.dockerignore` 未排除 Lua 资源。若以后增加 wheel 发布，需要将资源纳入打包并验证。
+Lua 资源由使用它们的组件持有：登录脚本位于 `app/contexts/user/infrastructure/security/scripts/`，固定窗口脚本位于 `app/infrastructure/rate_limit/scripts/`。所属适配器按模块位置在首次导入时读取资源，不依赖启动目录。资源目录不是 Python 包。项目通过 `uv_build` 将顶层 `app` 模块及其中的 Lua 资源写入 wheel；`tests/test_distribution.py` 会构建并安装 wheel，再从安装目录导入登录限制和 HTTP 限流适配器，验证三个脚本均可加载。Dockerfile 仍通过整体复制项目包含这些资源。
 
 后续需要 ZSet 或 List 时，应分别增加继承同一基类的 `RedisSortedSetStorage`、`RedisListStorage`，由 `RedisStorage` 使用同一个客户端组合。Redis 专属能力不进入 Redis/Memcached 共用的 `CacheClient`。当前 `CacheManager.get_redis(name)` 是显式能力入口，返回 `ManagedRedisCacheClient`；选择 Memcached 或其他连接时会在创建资源前返回清楚的配置错误。后续类型应沿用这一入口和聚合方式增加专属客户端能力，不给 Memcached 增加伪实现。
 

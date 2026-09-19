@@ -1,3 +1,7 @@
+[build-system]
+requires = ["uv_build>=0.12.8,<0.13"]
+build-backend = "uv_build"
+
 [project]
 name = "fast-api-scaff"
 version = "1.0.0"
@@ -62,6 +66,10 @@ dev = [
     "ruff>=0.15.21",
     "ty>=0.0.59",
 ]
+
+[tool.uv.build-backend]
+module-name = "app"
+module-root = ""
 
 # 目标 Python 版本
 [tool.ty.environment]
