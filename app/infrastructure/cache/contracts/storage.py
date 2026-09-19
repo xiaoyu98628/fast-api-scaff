@@ -1,4 +1,4 @@
-"""定义各缓存驱动都必须实现的字节级 KV 语义。"""
+"""定义缓存驱动共用的字节级 KV 存储协议。"""
 
 from typing import Protocol
 

@@ -8,12 +8,11 @@ from typing import cast
 
 import chromadb
 import httpx
-from anyio import CapacityLimiter, fail_after, to_thread
+from anyio import CancelScope, CapacityLimiter, fail_after, to_thread
 from chromadb.api import AsyncClientAPI, ClientAPI
 from chromadb.errors import ChromaError, NotFoundError, UniqueConstraintError
 
-from app.config.vector import ChromaLocalVectorSettings, ChromaRemoteVectorSettings, parse_vector_connection
-from app.infrastructure.vector.contracts.provider import VectorResourceDefinition
+from app.config.vector import ChromaLocalVectorSettings, ChromaRemoteVectorSettings
 from app.infrastructure.vector.errors import (
     VectorCollectionConflictError,
     VectorCollectionNotFoundError,
@@ -82,7 +81,7 @@ class _ChromaBackend:
             return
         assert self._limiter is not None
         try:
-            await to_thread.run_sync(close, abandon_on_cancel=False, limiter=self._limiter)
+            await _run_sync(close, limiter=self._limiter)
         except Exception as error:
             raise VectorOperationError("Chroma 本地客户端关闭失败") from error
 
@@ -91,9 +90,8 @@ class _ChromaBackend:
             if self._local:
                 sync_operation = cast(Callable[..., ChromaResult], operation)
                 assert self._limiter is not None
-                return await to_thread.run_sync(
+                return await _run_sync(
                     partial(sync_operation, **kwargs),
-                    abandon_on_cancel=False,
                     limiter=self._limiter,
                 )
             async_operation = cast(Callable[..., Awaitable[ChromaResult]], operation)
@@ -270,30 +268,22 @@ class ChromaVectorClient:
             raise VectorCollectionNotFoundError(f"Chroma Collection {name!r} 不存在") from error
 
 
-class ChromaVectorProvider:
-    """根据 mode 创建 Chroma 本地持久化或远程异步客户端。"""
+async def create_chroma_resource(settings: ChromaLocalVectorSettings | ChromaRemoteVectorSettings) -> VectorResource:
+    """根据已校验配置创建本地或远程 Chroma 资源。"""
 
-    driver = "chroma"
-
-    def prepare(self, raw_config: dict[str, object]) -> VectorResourceDefinition:
-        """严格校验 Chroma 配置并返回延迟资源工厂。"""
-
-        settings = parse_vector_connection(raw_config)
-        if isinstance(settings, ChromaLocalVectorSettings):
-            return VectorResourceDefinition(factory=partial(_create_local_resource, settings))
-        if isinstance(settings, ChromaRemoteVectorSettings):
-            return VectorResourceDefinition(factory=partial(_create_remote_resource, settings))
-        raise ValueError("配置不是 Chroma 连接")
+    if isinstance(settings, ChromaLocalVectorSettings):
+        return await _create_local_resource(settings)
+    return await _create_remote_resource(settings)
 
 
 async def _create_local_resource(settings: ChromaLocalVectorSettings) -> VectorResource:
     path = settings.resolved_path
     limiter = CapacityLimiter(1)
     try:
-        client = await to_thread.run_sync(
+        client = await _run_sync(
             partial(chromadb.PersistentClient, path=path, tenant=settings.tenant, database=settings.database),
-            abandon_on_cancel=False,
             limiter=limiter,
+            on_cancel=_close_local_client,
         )
     except Exception as error:
         raise VectorConnectionError(f"无法打开 Chroma 本地目录 {path}") from error
@@ -413,3 +403,41 @@ def _sequence(value: object) -> Sequence[object]:
 def _first_sequence(value: object) -> Sequence[object]:
     outer = _sequence(value)
     return _sequence(outer[0]) if outer else ()
+
+
+def _close_local_client(client: ClientAPI) -> None:
+    """关闭创建完成但因取消未能交付的本地 Chroma 客户端。"""
+
+    close = getattr(client, "close", None)
+    if callable(close):
+        close()
+
+
+async def _run_sync[T](operation: Callable[[], T], *, limiter: CapacityLimiter | None = None, on_cancel: Callable[[T], None] | None = None) -> T:
+    """取消后等待线程结束；创建中取消时释放已经创建但尚未交付的资源。"""
+
+    work = asyncio.create_task(to_thread.run_sync(operation, limiter=limiter))
+    try:
+        return await asyncio.shield(work)
+    except asyncio.CancelledError:
+        # AnyIO 的取消域不能单独防护 Task.cancel()；线程实际结束前不能释放上层锁。
+        with CancelScope(shield=True):
+            await _finish_worker(work)
+            if not work.cancelled() and work.exception() is None and on_cancel is not None:
+                cleanup = asyncio.create_task(to_thread.run_sync(partial(on_cancel, work.result()), limiter=limiter))
+                await _finish_worker(cleanup)
+        raise
+
+
+async def _finish_worker[T](work: asyncio.Task[T]) -> None:
+    """承受重复取消直到线程完成，并取回异常，保留调用方的取消语义。"""
+
+    while not work.done():
+        try:
+            await asyncio.shield(work)
+        except asyncio.CancelledError:
+            continue
+        except Exception:
+            break
+    if not work.cancelled():
+        work.exception()

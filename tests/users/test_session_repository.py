@@ -138,9 +138,17 @@ async def test_user_and_session_share_transaction_and_foreign_key_cascades() -> 
             issued_at=datetime(2026, 9, 6, 12),
             expires_at=datetime(2026, 9, 6, 13),
         )
+        other_user = User.create(username="bob", email="bob@example.com", password_hash=PasswordHash("test-hash"), now=datetime.now())
+        other_stored = UserSession(
+            token_digest="b" * 64,
+            user_id=other_user.id,
+            issued_at=datetime(2026, 9, 6, 12),
+            expires_at=datetime(2026, 9, 6, 13),
+        )
 
         async with SqlAlchemyUserUnitOfWork(databases, "main") as uow:
             await uow.users.add(user)
+            await uow.users.add(other_user)
             await uow.commit()
         with pytest.raises(RuntimeError, match="rollback"):
             async with SqlAlchemyUserUnitOfWork(databases, "main") as uow:
@@ -151,12 +159,23 @@ async def test_user_and_session_share_transaction_and_foreign_key_cascades() -> 
         async with SqlAlchemyUserUnitOfWork(databases, "main") as uow:
             assert await uow.sessions.find(stored.token_digest) is None
             await uow.sessions.add(stored)
+            await uow.sessions.add(other_stored)
             await uow.commit()
         async with SqlAlchemyUserUnitOfWork(databases, "main") as uow:
             assert await uow.sessions.find(stored.token_digest) == stored
+            assert await uow.sessions.find(other_stored.token_digest) == other_stored
+            assert await uow.sessions.remove_for_user(user.id) == 1
+            await uow.commit()
+        async with SqlAlchemyUserUnitOfWork(databases, "main") as uow:
+            assert await uow.sessions.find(stored.token_digest) is None
+            assert await uow.sessions.find(other_stored.token_digest) == other_stored
+            await uow.sessions.add(stored)
+            await uow.commit()
+        async with SqlAlchemyUserUnitOfWork(databases, "main") as uow:
             await uow.users.remove(user.id)
             await uow.commit()
         async with databases.session("main") as session:
             assert await session.get(UserSessionModel, stored.token_digest) is None
+            assert await session.get(UserSessionModel, other_stored.token_digest) is not None
     finally:
         await databases.aclose()

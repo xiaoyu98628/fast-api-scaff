@@ -13,9 +13,10 @@ from typer.testing import CliRunner
 
 import app.interfaces.worker.cli as worker_cli_module
 from app.bootstrap.build import build_application_container
-from app.bootstrap.worker.application import WorkerHost
+from app.bootstrap.worker.application import WorkerHost, build_job_resolver
 from app.config.database import DatabaseSettings
 from app.config.queue import QueueSettings
+from app.contexts.user.jobs.login_succeeded import LoginSucceededJob
 from app.infrastructure.logging.formatter import JsonLogFormatter, TextLogFormatter
 from app.infrastructure.queue.errors import QueueError
 from app.infrastructure.queue.failed.sql.model import FailedJobModel
@@ -34,6 +35,39 @@ def test_worker_host_keeps_an_immutable_settings_snapshot() -> None:
     assert application.settings is settings
     with pytest.raises(FrozenInstanceError):
         setattr(application, "settings", build_settings())
+
+
+def test_worker_resolver_builder_discovers_and_logs_catalog(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.INFO, logger="app.bootstrap.worker.lifecycle")
+
+    resolver = build_job_resolver()
+
+    assert tuple(descriptor.job_type for descriptor in resolver.descriptors) == (LoginSucceededJob,)
+    records = [record for record in caplog.records if getattr(record, "event", None) == "worker.jobs_discovered"]
+    assert len(records) == 1
+    assert getattr(records[0], "details") == {"job_count": 1}
+
+
+@pytest.mark.asyncio
+async def test_worker_treats_catalog_failure_as_startup_failure(caplog: pytest.LogCaptureFixture) -> None:
+    settings = build_settings()
+
+    def fail_resolver() -> JobResolver:
+        raise QueueError("invalid job catalog")
+
+    application = WorkerHost(settings, resolver_builder=fail_resolver)
+    caplog.set_level(logging.INFO, logger="app.bootstrap.worker.lifecycle")
+
+    with pytest.raises(QueueError, match="invalid job catalog"):
+        await application.serve(connection=None, queue=None, concurrency=None, stop=asyncio.Event())
+
+    events = [getattr(record, "event", None) for record in caplog.records if record.name == "app.bootstrap.worker.lifecycle"]
+    assert events == [
+        "worker.starting",
+        "worker.start_failed",
+        "worker.stopping",
+        "worker.stopped",
+    ]
 
 
 def test_worker_cli_logs_sanitized_unexpected_failure(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -137,6 +171,7 @@ async def test_worker_logs_shutdown_failure(
     events = [getattr(record, "event", None) for record in caplog.records if record.name == "app.bootstrap.worker.lifecycle"]
     assert events == [
         "worker.starting",
+        "worker.jobs_discovered",
         "worker.started",
         "worker.stopping",
         "worker.stop_failed",
@@ -198,7 +233,7 @@ async def test_worker_uses_production_resolver_and_drains_job(
     application = WorkerHost(
         settings,
         container_builder=lambda _: container,
-        resolver_builder=lambda: JobResolver(("tests",)),
+        resolver_builder=lambda: JobResolver((Job,)),
     )
     caplog.set_level(logging.INFO, logger="app.bootstrap.worker.lifecycle")
     await asyncio.wait_for(application.serve(connection=None, queue=None, concurrency=2, stop=stop), 1)

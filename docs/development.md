@@ -45,6 +45,13 @@ uv run python -m pytest -q tests/logging
 uv run python -m pytest -q tests/test_architecture.py
 ```
 
+wheel 构建和非 Python 资源分发：
+
+```bash
+uv build --wheel --no-sources
+uv run python -m pytest -q tests/test_distribution.py
+```
+
 Lint、格式检查和类型检查：
 
 ```bash

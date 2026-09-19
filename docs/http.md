@@ -193,7 +193,7 @@ CORS_EXPOSE_HEADERS=["X-Request-ID"]
 CORS_MAX_AGE=600
 ```
 
-应用中间件从外到内依次为 CORS、Request ID、访问日志（启用时）、异常捕获、查询解码。非法 Request ID 的 400 和业务链路的错误响应也会经过 CORS；只有允许的来源才能读取跨域响应。带有 `Origin` 和 `Access-Control-Request-Method` 的 OPTIONS 预检由 CORS 直接处理，不进入请求上下文或应用访问日志，也不生成 Request ID。
+应用中间件从外到内依次为 CORS、Request ID、Trace Context、访问日志（启用时）、异常捕获、请求限流（启用时）、查询解码。非法 Request ID 的 400 和业务链路的错误响应也会经过 CORS；只有允许的来源才能读取跨域响应。带有 `Origin` 和 `Access-Control-Request-Method` 的 OPTIONS 预检由 CORS 直接处理，不进入请求上下文或应用访问日志，也不生成 Request ID。
 
 允许凭据时来源不能包含 `*`。即使 CORS 配置正确，非浏览器调用方仍能访问接口。当前认证只保护 `/auth/me`，没有角色或权限体系，CORS 不能代替访问控制。
 
@@ -367,3 +367,20 @@ data: {"code":"5000010101","message":"网络开小差了，请稍后重试"}
 ```
 
 非法整数、超出范围、`fail_at > count` 或未知查询参数均返回 HTTP 422 的统一 JSON 载荷；模拟失败则属于已开始的 SSE 流，HTTP 状态仍为 200。OpenAPI 分别声明这两种媒体类型。该接口不支持断点续传，重新请求从序号 1 开始；客户端应在收到 `done` 或 `stream_error` 时关闭连接。客户端断开时取消继续传播，路由不会继续等待并生成后续消息。
+
+## 13. HTTP 请求限流
+
+固定窗口算法及 `scripts/acquire_window.lua` 归属 `app.infrastructure.rate_limit`。`RedisFixedWindowLimiter` 校验配额参数与脚本返回值，借用 `ManagedRedisCacheClient.execute_script` 执行；公共缓存层不包含限流策略。HTTP 中间件继续负责请求范围、客户端身份、故障放行与 429/503 响应，限流组件不依赖 HTTP 对象。
+
+设置 `RATE_LIMIT_ENABLED=true` 启用，默认每个客户端 IP 在首次准入后的 60 秒内共享 1000 次请求配额。`RATE_LIMIT_CACHE` 选择已配置的 Redis 连接；完整变量见[配置参考](configuration.md#http-请求限流)。多个进程和实例共享同一 Redis key 时共享配额，无进程内计数回退。
+
+- 范围为精确的 `/api` 以及 `/api/` 下所有方法、路径和查询参数，共享同一 IP 配额；按路由语义去除 ASGI `root_path` 部署前缀后匹配，`/api-other` 不在范围内。
+- `/health`、在线文档、OpenAPI 和 CORS 预检不消耗配额；普通 OPTIONS 仍计数。被外层 Request ID 或 CORS 拒绝的请求不会到达限流组件。
+- 计数发生在业务处理前；准入后即使业务返回错误也不退还配额，未知 API 路径也计数。SSE 只在建立请求时计数，不逐事件计数；WebSocket 不参与。
+- 超额返回 HTTP 429，沿用统一 JSON 和 `ErrorCode.TOO_MANY_REQUESTS`，携带正整数 `Retry-After` 秒数及 `Cache-Control: no-store`。拒绝不会延长窗口，剩余不足一秒时等待值向上取整为 1。
+- Redis 操作或连接失败默认返回统一 HTTP 503；显式设置 `RATE_LIMIT_FAIL_OPEN=true` 时放行，两种策略均记录 `http.rate_limit.unavailable` 结构化日志。故障响应不伪造配额重试时间。
+- 限流响应保留 Request ID、允许来源的 CORS 响应头，并进入访问日志。浏览器若需要读取 `Retry-After`，应在 `CORS_EXPOSE_HEADERS` 中显式加入它，尤其是启用凭据时。
+
+客户端标识仅来自 ASGI `scope["client"]`，应用不直接读取 `X-Forwarded-For` 或 `Forwarded`。IPv6 会规范化，IPv4 映射地址与对应 IPv4 共用配额；缺失或非 IP 地址共享 `ip:unknown` 配额。反向代理部署应在服务器层配置可信代理，只接受受信任上游传来的地址；错误配置可能导致所有请求按代理 IP 共用配额或允许地址伪造。同一公网 IP 下的用户天然共享配额。
+
+这是固定窗口请求频率限制，不是并发限制；窗口交界处允许短时突发。登录接口也受这项 API 总配额约束，但用户名登录失败锁定仍由认证组件独立处理。请求中间件不为各路由自动添加 OpenAPI 的 429/503 声明。

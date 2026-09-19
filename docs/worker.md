@@ -17,17 +17,17 @@ docker compose up --build worker
 
 配置加载、日志初始化和宿主装配在 `main()` 的进程错误边界内执行；包括 `--help` 在内的调用都会校验完整配置。配置失败输出稳定错误和退出码 1，不暴露 Python traceback；单纯导入 `app.worker` 不读取环境配置。
 
-只要默认队列连接配置有效且后端可访问，即使队列当前没有消息、项目也没有预先注册的 Job，Worker 仍可启动并等待。Job 在消息到达后根据类路径动态解析，不存在启动前注册清单。
+只要默认队列连接配置有效且后端可访问，即使队列当前没有消息、自动发现得到空任务目录，Worker 仍可启动并等待。Worker 在开始消费前发现并校验任务；消息到达后只查询不可变目录，不执行动态导入。
 
 `docker compose up --build` 默认同时启动 `service` 和 `worker`；只需要 HTTP 时使用 `docker compose up --build service`。Compose 中的 `worker` 服务复用应用镜像、`.env` 和网络，不暴露端口，也不配置只适用于 HTTP 的健康检查。镜像本身不声明健康检查，Compose 只为 HTTP 服务检测 `/health`。Worker 不会自动创建队列服务；`.env` 必须配置容器可访问的 Redis、Kafka 或 RabbitMQ 地址。容器内的 `127.0.0.1` 是 Worker 容器自身。
 
-脚手架内置 `LoginSucceededJob` 最小任务。登录接口向默认连接配置的默认队列（`sample.env` 为 `default`）尽力投递 `user_id` 参数和固定文案，Dispatcher 自动把当前 HTTP request ID 作为 correlation ID；Worker 调用它的 `handle(context)`，通过用户应用服务查询数据库，再输出“用户登录成功，队列任务已执行。”并只记录结构化用户 ID 和状态。消息不含用户名、密码或 Token，日志也不含用户名、邮箱、密码、密码哈希或 Token；读取的是消费时的当前数据。用户已删除时记录警告并结束，数据库故障按现有策略重试。`user_id` 暂时可空，以兼容队列中已经存在的旧消息；旧消息不执行数据库查询。`sample.env` 以 Redis 为默认连接，因此 Worker 可以不带参数启动。
+脚手架内置 `LoginSucceededJob` 最小任务。登录接口向默认连接配置的默认队列（`sample.env` 为 `default`）尽力投递 `user_id` 参数和固定文案，Dispatcher 自动把当前 HTTP request ID 作为 correlation ID；Worker 调用它的 `handle(context)`，通过用户应用服务查询数据库，再输出“用户登录成功，队列任务已执行。”并只记录结构化用户 ID 和状态。消息不含用户名、密码或 Token，日志也不含用户名、邮箱、密码、密码哈希或 Token；读取的是消费时的当前数据。用户已删除时记录警告并结束，数据库连接池超时、断连和驱动明确标记的失效连接按现有策略重试；未明确识别为暂时性的数据库错误直接失败，不统一重试所有 `OperationalError`。`user_id` 暂时可空，以兼容队列中已经存在的旧消息；旧消息不执行数据库查询。`sample.env` 以 Redis 为默认连接，因此 Worker 可以不带参数启动。
 
-新增任务时，继承 `QueueJob[JobExecutionContext]`、声明可序列化字段并实现异步 `handle(context)`。投递端自动把实际类路径写入消息；Worker 收到后动态导入、验证、解码并执行，不扫描业务目录，也不需要修改上下文 composition 或应用组合根。payload 契约升级时递增 `version`，并按需要在 `legacy_decoders` 中把历史 payload 转换成当前 Job 类型。完整示例见[队列](queue.md#job-版本兼容)。
+新增任务时，在 `app/**/jobs.py` 或 `app/**/jobs/**/*.py` 中继承 `QueueJob[JobExecutionContext]`、声明可序列化字段并实现异步 `handle(context)`。Worker 启动时自动发现直接定义在这些模块中的具体任务，不需要修改上下文 composition 或应用组合根。投递端默认把实际类路径写入消息，也可通过 `reference` 使用稳定业务引用；移动或重命名任务时通过 `legacy_references` 兼容旧引用。默认 JSON Codec 会拒绝当前 schema 未声明的字段；payload 契约升级时递增 `version`，并按需要在 `legacy_decoders` 中把历史 payload 转换成当前 Job 类型。完整规则见[队列](queue.md#2-queuejob-与自动发现)。
 
-一个默认 Worker 可以执行默认队列中的所有合法 QueueJob，但不会动态扫描 Redis Stream、Kafka Topic 或 RabbitMQ Queue。命名队列是用于优先级、并发和扩缩容隔离的可选高级能力，需要时为它单独启动 Worker。
+一个默认 Worker 可以执行当前任务目录中的所有 QueueJob，但不会动态扫描 Redis Stream、Kafka Topic 或 RabbitMQ Queue。命名队列是用于优先级、并发和扩缩容隔离的可选高级能力，需要时为它单独启动 Worker。
 
-`jobs/` 是当前示例的组织习惯，不是 Worker 约定。Job 可放在应用根包的业务模块，Worker 只依据消息携带的类路径解析。导入前会拒绝 `app.main`、`app.console`、`app.worker`、`app.bootstrap` 及其子模块，避免消息触发其他宿主或组合根的初始化；即使显式扩展导入白名单，也不能放开这些模块。类移动后应暂时保留旧模块兼容入口，以便处理已经入队的消息。Application/Domain 不导入 Worker、队列驱动或全局容器。
+`jobs` 是 Worker 的发现边界，必须是模块路径中的独立段；`my_jobs`、`jobs_backup` 不会匹配。发现器会枚举 `app` 包树，只主动导入匹配模块，且忽略从其他模块导入的 QueueJob 别名和抽象任务。Python 为递归枚举可能导入包本身，因此包初始化文件必须保持完全空，任务模块顶层也必须无外部副作用。可用 `uv run python -m app.console queue jobs` 在部署前查看发现结果和契约。Application/Domain 不导入 Worker、队列驱动或全局容器。
 
 Worker 在容器启动成功后创建不可变 `WorkerContext`，其中保存当前 `Settings` 和同一个 `ApplicationContainer`。执行器从它为每条消息创建独立的 `JobExecutionContext`：常用的 `settings` 和 `container` 保持直接访问，任务 ID、类型和版本、入队时间、连接、队列、correlation ID 与重放来源集中在 `context.job`，再把整个执行上下文传给 `handle(context)`；同一投递内重试复用同一个对象。因此 Job 可以选择 `container.users` 等上下文公开服务，也可以在宿主级维护场景中使用 `container.databases`、`caches`、`http`、`queues` 和 `vectors`。多个并发槽共享 Manager 和底层连接池，但不得共享任务级 `AsyncSession`、事务或其他可变状态。
 
@@ -35,11 +35,11 @@ Job 应保持入站适配器职责：把消息数据转换成应用 Command 并�
 
 ## 重试与超时
 
-JobPolicy 的 max_attempts 包含首次执行；backoff_seconds 依次使用，超过长度后复用最后一个值，空元组表示立即重试。策略在首次投递或解析 Job 类型时验证。
+JobPolicy 的 max_attempts 包含首次执行；backoff_seconds 依次使用，超过长度后复用最后一个值，空元组表示立即重试。策略在首次投递编码或 Worker 建立任务目录时验证。
 
 仅 `RetryableJobError` 和框架执行超时进行重试。QueueJob 可把明确的暂时性适配错误转换为 `app.infrastructure.queue.errors.RetryableJobError`；业务层不直接依赖该基础设施异常。业务自己抛出的 TimeoutError 单独分类并最终失败。
 
-重试属于本次投递，在同一执行槽内等待；不是持久延迟调度。崩溃后尝试次数可能重新开始，没有跨崩溃的全局次数上限。可终结的失败分类包含 unknown_job、unsupported_job_version、invalid_envelope、invalid_job_payload、handler_error、handler_timeout_error、execution_timeout、retry_exhausted、timeout_suppressed。Job 模块或其依赖导入失败、Codec/Policy/Decoder 配置错误，以及 Decoder 的意外异常属于部署定义缺陷，Worker 保持消息未确认并退出，修复部署后再由后端恢复，避免永久误分类为 unknown_job。
+重试属于本次投递，在同一执行槽内等待；不是持久延迟调度。崩溃后尝试次数可能重新开始，没有跨崩溃的全局次数上限。可终结的失败分类包含 unknown_job、unsupported_job_version、invalid_envelope、invalid_job_payload、handler_error、handler_timeout_error、execution_timeout、retry_exhausted、timeout_suppressed。jobs 模块或其依赖导入失败、重复引用、Codec/Policy/Decoder 配置错误会在消费者创建前阻止启动；消息处理时 Decoder 的意外异常仍会让 Worker 保持消息未确认并退出。修复部署后再由后端恢复，避免把定义缺陷误分类为 unknown_job。
 
 asyncio 超时只能协作式取消。`handle(context)` 应及时让出事件循环，不吞 CancelledError，不执行长时间阻塞调用；它无法强制终止阻塞线程或外部副作用。超时后重试仍可能重复业务效果，必要时由业务实现幂等。
 
@@ -55,7 +55,7 @@ SIGINT/SIGTERM 设置停止信号：停止安排新任务，取消等待消息�
 
 队列连接最后装配，先于数据库/缓存/HTTP 出站资源关闭。关闭失败仍尝试剩余资源并聚合异常。
 
-Worker 生命周期使用 `worker.starting`、`worker.started`、`worker.start_failed`、`worker.stopping`、`worker.stopped` 和 `worker.stop_failed`。执行器的完成日志使用事件 `queue.job.finished`，details 中包含 job_id、queue_name、queue_connection、attempts、failure_reason、correlation_id 和 duration_ms；捕获到异常的失败任务使用 ERROR 级别，并额外记录异常类型及仅含模块、函数和行号的调用栈位置。Worker 进程级故障使用 `worker.failed` 事件记录相同的安全诊断。生命周期中的 `worker.start_failed` 和 `worker.stop_failed` 同样只记录异常类型和栈位置，不输出异常正文、异常链或异常组中的敏感文本；原始异常仍向调用方传播，退出行为不变。
+Worker 生命周期使用 `worker.starting`、`worker.started`、`worker.start_failed`、`worker.stopping`、`worker.stopped` 和 `worker.stop_failed`；任务目录建立成功后另记 `worker.jobs_discovered`，details 只包含 `job_count`。执行器的完成日志使用事件 `queue.job.finished`，details 中包含 job_id、queue_name、queue_connection、attempts、failure_reason、correlation_id 和 duration_ms；捕获到异常的失败任务使用 ERROR 级别，并额外记录异常类型及仅含模块、函数和行号的调用栈位置。Worker 进程级故障使用 `worker.failed` 事件记录相同的安全诊断。生命周期中的 `worker.start_failed` 和 `worker.stop_failed` 同样只记录异常类型和栈位置，不输出异常正文、异常链或异常组中的敏感文本；原始异常仍向调用方传播，退出行为不变。
 
 任务执行期间，Worker 把消息 correlation ID 绑定到追踪上下文。日志过滤器会给 Job、Application 和 Infrastructure 产生的日志自动附加 `job_id`、`job_type`、`job_version`、`queue_connection`、`queue_name`，以及存在时的 `correlation_id` 和 `replay_of`；Job 发布后续任务时也自动继承 correlation ID。这些字段通过异步上下文绑定，任务结束后恢复，不会跨并发槽泄漏。任务日志和失败诊断都不记录异常消息、运行时局部变量或任务数据。
 

@@ -3,10 +3,9 @@
 from functools import partial
 
 from app.config.cache import MemcachedCacheSettings
-from app.infrastructure.cache.connections.memcached import MemcachedCacheConnection
 from app.infrastructure.cache.contracts.provider import CacheResourceDefinition
+from app.infrastructure.cache.errors import CacheConfigurationError
 from app.infrastructure.cache.resource import CacheResource
-from app.infrastructure.cache.storages.memcached import MemcachedCacheStorage
 
 
 class MemcachedCacheProvider:
@@ -26,6 +25,12 @@ class MemcachedCacheProvider:
 
     async def _create(self, settings: MemcachedCacheSettings) -> CacheResource:
         """构造共享同一原生客户端的连接和 Storage。"""
+
+        try:
+            from app.infrastructure.cache.connections.memcached import MemcachedCacheConnection
+            from app.infrastructure.cache.storages.memcached import MemcachedCacheStorage
+        except ModuleNotFoundError as error:
+            raise CacheConfigurationError("Memcached 缓存驱动的客户端依赖无法加载") from error
 
         connection = MemcachedCacheConnection.from_settings(settings)
         return CacheResource(

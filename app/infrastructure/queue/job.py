@@ -1,9 +1,11 @@
 """定义可投递 QueueJob 及其类型描述和编码规则。"""
 
+import re
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import cache
+from inspect import isabstract
 from types import MappingProxyType
 from typing import Any, ClassVar, cast
 
@@ -12,10 +14,14 @@ from app.infrastructure.queue.contracts.codec import JobCodec, JobDecoder
 from app.infrastructure.queue.errors import QueueConfigurationError, UnsupportedJobVersionError
 from app.infrastructure.queue.policies import JobPolicy
 
+_JOB_REFERENCE_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,499}")
+
 
 class QueueJob[TContext](ABC):
     """把可序列化任务数据与单次执行上下文入口收敛在同一类型。"""
 
+    reference: ClassVar[str | None] = None
+    legacy_references: ClassVar[tuple[str, ...]] = ()
     version: ClassVar[int] = 1
     policy: ClassVar[JobPolicy] = JobPolicy()
     codec: ClassVar[JobCodec[Any] | None] = None
@@ -42,6 +48,7 @@ class JobDescriptor[T: QueueJob[Any]]:
     """缓存一个 QueueJob 类型的稳定消息契约。"""
 
     reference: str
+    legacy_references: tuple[str, ...]
     version: int
     job_type: type[T]
     codec: JobCodec[T]
@@ -69,24 +76,35 @@ class JobDescriptor[T: QueueJob[Any]]:
 
 
 def job_reference(job_type: type[QueueJob[Any]]) -> str:
-    """生成 Worker 可动态导入的 ``module:qualname`` 类型标识。"""
+    """返回显式稳定引用，未声明时回退到模块级类路径。"""
+
+    default_reference = job_type_path(job_type)
+    configured_reference = job_type.reference
+    if configured_reference is None:
+        return default_reference
+    return _validate_job_reference(configured_reference, label="任务稳定引用")
+
+
+def job_type_path(job_type: type[QueueJob[Any]]) -> str:
+    """返回可用于诊断的模块级 ``module:qualname`` 类路径。"""
 
     module = job_type.__module__.strip()
     qualified_name = job_type.__qualname__.strip()
     if not module or not qualified_name or "<locals>" in qualified_name:
         raise QueueConfigurationError("队列任务必须是可导入的模块级类")
-    reference = f"{module}:{qualified_name}"
-    if len(reference) > 500:
-        raise QueueConfigurationError("队列任务类路径过长")
-    return reference
+    return _validate_job_reference(f"{module}:{qualified_name}", label="任务类路径")
 
 
 @cache
 def describe_job[T: QueueJob[Any]](job_type: type[T]) -> JobDescriptor[T]:
     """验证并缓存任务类型、当前 Codec 和历史版本 Decoder。"""
 
-    if not issubclass(job_type, QueueJob):
+    if not isinstance(job_type, type) or not issubclass(job_type, QueueJob):
         raise QueueConfigurationError("任务类型必须继承 QueueJob")
+    if isabstract(job_type):
+        raise QueueConfigurationError("任务类型不能是抽象类")
+    reference = job_reference(job_type)
+    legacy_references = _validate_legacy_references(job_type, reference)
     version = job_type.version
     if type(version) is not int or version < 1:
         raise QueueConfigurationError("任务版本不合法")
@@ -110,7 +128,8 @@ def describe_job[T: QueueJob[Any]](job_type: type[T]) -> JobDescriptor[T]:
         legacy_decoders[legacy_version] = cast(JobDecoder[T], decoder)
 
     return JobDescriptor(
-        job_reference(job_type),
+        reference,
+        legacy_references,
         version,
         job_type,
         codec,
@@ -125,3 +144,23 @@ def encode_job(job: object) -> EncodedJob:
     if not isinstance(job, QueueJob):
         raise QueueConfigurationError("任务必须继承 QueueJob")
     return describe_job(type(job)).encode(job)
+
+
+def _validate_job_reference(value: object, *, label: str) -> str:
+    """校验消息协议中的任务引用为短小、可移植的 ASCII 标识。"""
+
+    if not isinstance(value, str) or _JOB_REFERENCE_PATTERN.fullmatch(value) is None:
+        raise QueueConfigurationError(f"{label}不合法")
+    return value
+
+
+def _validate_legacy_references(job_type: type[QueueJob[Any]], reference: str) -> tuple[str, ...]:
+    """验证移动或重命名任务时保留的历史引用。"""
+
+    configured = job_type.legacy_references
+    if not isinstance(configured, tuple):
+        raise QueueConfigurationError("任务历史引用必须是元组")
+    legacy_references = tuple(_validate_job_reference(item, label="任务历史引用") for item in configured)
+    if reference in legacy_references or len(set(legacy_references)) != len(legacy_references):
+        raise QueueConfigurationError("任务历史引用不能与当前引用或彼此重复")
+    return legacy_references

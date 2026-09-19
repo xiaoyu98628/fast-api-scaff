@@ -1,8 +1,8 @@
-"""根据消息中的类路径动态解析并执行 QueueJob。"""
+"""从启动期任务目录解析并执行 QueueJob。"""
 
-from dataclasses import dataclass
-from functools import cache
-from importlib import import_module
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import Protocol, cast
 
 from pydantic import ValidationError
@@ -14,6 +14,7 @@ from app.infrastructure.queue.errors import (
     JobDefinitionError,
     QueueConfigurationError,
     UnknownJobError,
+    UnsupportedJobVersionError,
 )
 from app.infrastructure.queue.job import JobDescriptor, QueueJob, describe_job
 from app.infrastructure.queue.policies import JobPolicy
@@ -74,64 +75,57 @@ class JobBinding[T: QueueJob[JobExecutionContext]]:
         await job.handle(context)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class JobResolver:
-    """只允许从可信应用包动态导入模块级 QueueJob 类型。"""
+    """校验发现结果并从不可变任务目录解析消息引用。"""
 
-    allowed_packages: tuple[str, ...] = ("app",)
+    job_types: tuple[type[QueueJob[JobExecutionContext]], ...]
+    _descriptors: tuple[JobDescriptor[QueueJob[JobExecutionContext]], ...] = field(init=False, repr=False)
+    _bindings: Mapping[tuple[str, int], ExecutableJob] = field(init=False, repr=False)
+    _references: frozenset[str] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
-        """确保动态导入白名单至少包含一个有效包名。"""
+        """在开始消费前校验任务定义、引用唯一性和全部版本绑定。"""
 
-        if not self.allowed_packages or any(not package.strip() for package in self.allowed_packages):
-            raise QueueConfigurationError("任务模块范围不合法")
-
-    @cache
-    def resolve(self, reference: str, version: int) -> ExecutableJob:
-        """解析并缓存任务绑定，同时区分未知消息和部署定义错误。"""
-
-        try:
-            job_type = self._load(reference)
-            descriptor = describe_job(job_type)
-        except UnknownJobError:
-            raise
-        except QueueConfigurationError as error:
-            raise JobDefinitionError("队列任务定义不合法") from error
-        return JobBinding(descriptor, descriptor.decoder_for(version))
-
-    def _load(self, reference: str) -> type[QueueJob[JobExecutionContext]]:
-        """从白名单模块加载模块级 QueueJob 子类。"""
-
-        module_name, qualified_name = self._validate_reference(reference)
-        try:
-            value: object = import_module(module_name)
-        except ModuleNotFoundError as error:
-            if error.name is not None and (module_name == error.name or module_name.startswith(f"{error.name}.")):
-                raise UnknownJobError("任务模块不存在") from None
-            raise JobDefinitionError("任务模块依赖导入失败") from error
-        except Exception as error:
-            raise JobDefinitionError("任务模块导入失败") from error
-        for part in qualified_name.split("."):
+        descriptor_by_reference: dict[str, JobDescriptor[QueueJob[JobExecutionContext]]] = {}
+        bindings: dict[tuple[str, int], ExecutableJob] = {}
+        descriptors: list[JobDescriptor[QueueJob[JobExecutionContext]]] = []
+        for job_type in self.job_types:
             try:
-                value = getattr(value, part)
-            except AttributeError:
-                raise UnknownJobError("任务类型不存在") from None
+                descriptor = cast(JobDescriptor[QueueJob[JobExecutionContext]], describe_job(job_type))
             except Exception as error:
-                raise JobDefinitionError("任务类型读取失败") from error
-        if not isinstance(value, type) or not issubclass(value, QueueJob):
-            raise UnknownJobError("任务类型必须继承 QueueJob")
-        return cast(type[QueueJob[JobExecutionContext]], value)
+                raise QueueConfigurationError("发现的队列任务定义不合法") from error
 
-    def _validate_reference(self, reference: str) -> tuple[str, str]:
-        """解析类路径并在任何模块导入前检查宿主隔离边界。"""
+            references = (descriptor.reference, *descriptor.legacy_references)
+            for reference in references:
+                if reference in descriptor_by_reference:
+                    raise QueueConfigurationError(f"队列任务引用 {reference!r} 重复")
+                descriptor_by_reference[reference] = descriptor
 
-        # 类路径来自队列消息，因此导入前必须先限制在可信包前缀内。
-        module_name, separator, qualified_name = reference.partition(":")
-        if not separator or not module_name or not qualified_name or "<locals>" in qualified_name:
-            raise UnknownJobError("任务类路径不合法")
-        if not any(module_name == package or module_name.startswith(f"{package}.") for package in self.allowed_packages):
-            raise UnknownJobError("任务模块不在允许范围内")
-        # 进程入口和组合根可能在导入时初始化宿主，不能等类型检查后再拒绝。
-        if any(module_name == root or module_name.startswith(f"{root}.") for root in ("app.main", "app.console", "app.worker", "app.bootstrap")):
-            raise UnknownJobError("任务模块不能是进程入口或组合根")
-        return module_name, qualified_name
+            for reference in references:
+                for version in (descriptor.version, *descriptor.legacy_decoders):
+                    bindings[(reference, version)] = JobBinding(descriptor, descriptor.decoder_for(version))
+            descriptors.append(descriptor)
+
+        descriptors.sort(key=lambda descriptor: descriptor.reference)
+        object.__setattr__(self, "_descriptors", tuple(descriptors))
+        object.__setattr__(self, "_bindings", MappingProxyType(bindings))
+        object.__setattr__(self, "_references", frozenset(descriptor_by_reference))
+
+    def resolve(self, reference: str, version: int) -> ExecutableJob:
+        """查询预校验绑定，并区分未知引用和不兼容版本。"""
+
+        if reference not in self._references:
+            raise UnknownJobError("任务引用未发现")
+        if type(version) is not int or version < 1:
+            raise UnsupportedJobVersionError("任务消息版本不受支持")
+        try:
+            return self._bindings[(reference, version)]
+        except KeyError:
+            raise UnsupportedJobVersionError("任务消息版本不受支持") from None
+
+    @property
+    def descriptors(self) -> tuple[JobDescriptor[QueueJob[JobExecutionContext]], ...]:
+        """返回按稳定引用排序的不可变任务描述快照。"""
+
+        return self._descriptors

@@ -17,6 +17,6 @@ class JsonJobCodec[T]:
         return self._adapter.dump_json(job)
 
     def decode(self, payload: bytes) -> T:
-        """校验 payload 并恢复为具体 Job 实例。"""
+        """严格校验 payload 并恢复为具体 Job 实例。"""
 
-        return self._adapter.validate_json(payload)
+        return self._adapter.validate_json(payload, extra="forbid")

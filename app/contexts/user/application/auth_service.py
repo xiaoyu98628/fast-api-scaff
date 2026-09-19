@@ -82,11 +82,10 @@ class AuthApplicationService:
                     expires_at=now + timedelta(seconds=self.session_ttl_seconds),
                 )
             )
+            if self.login_attempts is not None:
+                # 清理失败必须发生在提交前，使失败关闭时不会留下未返回给调用方的有效会话。
+                await self.login_attempts.clear(identity)
             await uow.commit()
-
-        if self.login_attempts is not None:
-            # 先提交数据库会话，再清除失败记录，避免提交失败时丢失安全计数。
-            await self.login_attempts.clear(identity)
 
         return TokenDTO(
             access_token=credential.token,

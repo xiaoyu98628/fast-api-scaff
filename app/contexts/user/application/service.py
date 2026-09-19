@@ -18,7 +18,7 @@ from app.contexts.user.application.password_hasher import PasswordHasher
 from app.contexts.user.application.unit_of_work import UserUnitOfWorkFactory
 from app.contexts.user.domain.repository import UserRepository, UserUpdateResult
 from app.contexts.user.domain.user import User
-from app.contexts.user.domain.values import EmailAddress, Password, UserId, Username
+from app.contexts.user.domain.values import EmailAddress, Password, UserId, Username, UserStatus
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,7 +104,7 @@ class UserApplicationService:
         return UserDTO.from_domain(user)
 
     async def change_status(self, command: ChangeUserStatusCommand) -> UserDTO:
-        """修改账户启用状态。"""
+        """修改账户启用状态，并在禁用时撤销全部已有会话。"""
 
         user_id = UserId(command.user_id)
 
@@ -115,13 +115,15 @@ class UserApplicationService:
 
             user.change_status(status=command.status, now=self.clock())
             self._ensure_updated(await unit_of_work.users.update(user), command.user_id)
+            if user.status is UserStatus.DISABLED:
+                await unit_of_work.sessions.remove_for_user(user_id)
 
             await unit_of_work.commit()
 
         return UserDTO.from_domain(user)
 
     async def reset_password(self, command: ResetUserPasswordCommand) -> None:
-        """确认目标存在后在事务外生成新哈希，再替换用户密码。"""
+        """在事务外生成新哈希，再原子替换密码并撤销已有会话。"""
 
         user_id = UserId(command.user_id)
         password = Password(command.password)
@@ -141,6 +143,7 @@ class UserApplicationService:
 
             user.reset_password(password_hash=password_hash, now=self.clock())
             self._ensure_updated(await unit_of_work.users.update(user), command.user_id)
+            await unit_of_work.sessions.remove_for_user(user_id)
 
             await unit_of_work.commit()
 

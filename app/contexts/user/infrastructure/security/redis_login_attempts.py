@@ -3,12 +3,19 @@
 import hashlib
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from pathlib import Path
 
 from app.contexts.user.application.login_attempts import LoginFailureStatus
 from app.infrastructure.cache.clients.redis import ManagedRedisCacheClient
 from app.infrastructure.cache.errors import CacheOperationError
 
 type RedisCacheClientFactory = Callable[[], Awaitable[ManagedRedisCacheClient]]
+
+
+# 登录策略资源归属于用户上下文，按模块位置读取，不依赖运行目录。
+_SCRIPT_DIRECTORY = Path(__file__).parent / "scripts"
+_INCREMENT_SCRIPT = (_SCRIPT_DIRECTORY / "increment_with_ttl.lua").read_text(encoding="utf-8")
+_CLEAR_SCRIPT = (_SCRIPT_DIRECTORY / "delete_below.lua").read_text(encoding="utf-8")
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,7 +60,9 @@ class RedisLoginAttemptLimiter:
 
         client = await self.client_factory()
         key = self._key(identity)
-        count = await client.increment(key, ttl=self.failure_window_seconds)
+        count = await client.execute_script(_INCREMENT_SCRIPT, keys=(key,), args=(self.failure_window_seconds,))
+        if type(count) is not int or count <= 0:
+            raise CacheOperationError("Redis 返回了无效的登录失败计数")
         if count < self.max_failures:
             return LoginFailureStatus(remaining_attempts=self.max_failures - count)
 
@@ -64,10 +73,12 @@ class RedisLoginAttemptLimiter:
         return LoginFailureStatus(remaining_attempts=0, retry_after_seconds=self.lock_seconds)
 
     async def clear(self, identity: str) -> None:
-        """在登录成功后删除该标识的失败计数。"""
+        """登录成功后仅清除未达到阈值的计数，保留并发请求建立的锁定。"""
 
         client = await self.client_factory()
-        await client.delete(self._key(identity))
+        result = await client.execute_script(_CLEAR_SCRIPT, keys=(self._key(identity),), args=(self.max_failures,))
+        if type(result) is not int or result not in (0, 1):
+            raise CacheOperationError("Redis 返回了无效的登录计数清理结果")
 
     @staticmethod
     def _key(identity: str) -> str:

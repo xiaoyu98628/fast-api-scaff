@@ -2,6 +2,7 @@
 
 from redis.asyncio import Redis
 
+from app.infrastructure.cache.storages.redis.script import RedisScriptExecutor
 from app.infrastructure.cache.storages.redis.string import RedisStringStorage
 
 
@@ -12,6 +13,7 @@ class RedisStorage:
         """用同一个 Redis 客户端创建已实现的数据类型适配器。"""
 
         self.strings = RedisStringStorage(client)
+        self.scripts = RedisScriptExecutor(client)
 
     async def get(self, key: str) -> bytes | None:
         """读取 bytes；拒绝客户端配置错误导致的文本返回值。"""

@@ -3,10 +3,9 @@
 from functools import partial
 
 from app.config.cache import RedisCacheSettings
-from app.infrastructure.cache.connections.redis import RedisCacheConnection
 from app.infrastructure.cache.contracts.provider import CacheResourceDefinition
+from app.infrastructure.cache.errors import CacheConfigurationError
 from app.infrastructure.cache.resource import CacheResource
-from app.infrastructure.cache.storages.redis.storage import RedisStorage
 
 
 class RedisCacheProvider:
@@ -26,6 +25,12 @@ class RedisCacheProvider:
 
     async def _create(self, settings: RedisCacheSettings) -> CacheResource:
         """构造共享同一原生客户端的连接和 Storage。"""
+
+        try:
+            from app.infrastructure.cache.connections.redis import RedisCacheConnection
+            from app.infrastructure.cache.storages.redis.storage import RedisStorage
+        except ModuleNotFoundError as error:
+            raise CacheConfigurationError("Redis 缓存驱动的客户端依赖无法加载") from error
 
         connection = RedisCacheConnection.from_settings(settings)
         return CacheResource(

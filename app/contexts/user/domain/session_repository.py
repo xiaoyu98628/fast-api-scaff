@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Protocol
 
 from app.contexts.user.domain.session import UserSession
+from app.contexts.user.domain.values import UserId
 
 
 class SessionRepository(Protocol):
@@ -21,6 +22,11 @@ class SessionRepository(Protocol):
 
     async def remove(self, token_digest: str) -> None:
         """幂等删除；不存在时也视为成功。"""
+
+        ...
+
+    async def remove_for_user(self, user_id: UserId) -> int:
+        """撤销指定用户的全部会话，并返回删除数量。"""
 
         ...
 

@@ -31,9 +31,9 @@ await container.queues.dispatch(job, connection="redis", queue="reports")
 
 配置见[配置参考](configuration.md#队列与-worker)与 `sample.env`。未配置连接时，HTTP/Console 仍可启动；调用队列公共入口才报告未配置错误。连接字段在容器构建时严格校验。
 
-## 2. QueueJob 与动态解析
+## 2. QueueJob 与自动发现
 
-一个业务任务由一个 QueueJob 类表达，数据与执行入口放在同一个类中。项目当前把用户任务组织在 `app/contexts/user/jobs/` 并按类名使用蛇形命名模块，但这是代码组织方式，不是队列框架的扫描规则；Job 可以移动到应用根包内的其他模块。包的 `__init__.py` 保持完全空，调用方从实际定义模块显式导入：
+一个业务任务由一个 QueueJob 类表达，数据与执行入口放在同一个类中。可消费任务必须直接定义在 `app/**/jobs.py` 或 `app/**/jobs/**/*.py`，也就是相对 `app` 的模块路径中包含独立的 `jobs` 段。推荐在限界上下文内使用 `jobs/` 包并按类名建立蛇形命名模块。包的 `__init__.py` 保持完全空，调用方从实际定义模块显式导入：
 
 ```python
 from dataclasses import dataclass
@@ -58,15 +58,35 @@ class LoadUserJob(QueueJob[JobExecutionContext]):
 await container.queues.dispatch(LoadUserJob(user_id=user_id))
 ```
 
-Dispatcher 自动取得 `类型.__module__:类型.__qualname__`，将类路径、默认版本 1 和 JSON payload 写入消息。Worker 不扫描 `contexts`、`jobs` 或其他业务目录，也没有 Job Catalog 或 Handler 注册表；它按消息中的类路径动态导入类型，确认模块属于应用根包且类型继承 `QueueJob`，解码后执行 `await job.handle(context)`。解析结果会缓存。
+Worker 启动时通过 Python 包语义枚举 `app` 下的模块名称，只主动导入路径中含独立 `jobs` 段的模块和包。发现器只收集直接定义在当前模块中的非抽象 `QueueJob` 子类，忽略导入进来的别名；结果按模块和类名稳定排序。包遍历为读取子包 `__path__` 会导入包本身，因此所有 `__init__.py` 必须继续保持无副作用的空文件。`jobs` 模块顶层同样不得连接外部服务、读取业务数据或执行注册之外的实际动作。
 
-普通 dataclass 和 Pydantic Model 默认使用基于 Pydantic schema 的 JSON Codec；特殊当前协议可以在 Job 类上覆盖 `codec`。重试策略通过类级 `policy` 覆盖，当前版本通过类级 `version` 覆盖。`WorkerContext` 是不可变的进程级宿主上下文，保存当前 `Settings` 和已启动的 `ApplicationContainer`；执行器从它为每条消息创建独立的 `JobExecutionContext`，继续直接提供 `settings` 和 `container`，并把低频消息元数据收敛到 `context.job`。其中包括 `id`、`reference`、`version`、`enqueued_at`、`queue_connection`、`queue_name`、`correlation_id` 和 `replay_of`。同一条消息的全部投递内重试复用同一个任务上下文。所有消费槽共享同一个应用容器，数据库 Session 和业务 UoW 仍需按任务或用例单独创建。Manager 保持延迟初始化，未被 Job 使用的数据库、缓存、HTTP 或向量资源不会仅因 Worker 启动而连接。
+发现完成后，Worker 在创建消费者前一次性校验任务引用、版本、Codec、历史 Decoder 和执行策略，并建立不可变任务目录。重复引用、模块导入失败或任务定义不合法都会阻止 Worker 启动，不会等到某条消息触发导入。消息处理只按 `(reference, version)` 查询目录，不执行由消息内容控制的 import。测试或自定义宿主仍可直接向 `JobResolver` 注入任务类型元组，以隔离自动发现。
+
+默认任务引用仍是 `类型.__module__:类型.__qualname__`，因此现有消息协议不变。新任务可以显式声明与 Python 路径解耦的稳定 `reference`；移动或重命名已有任务时，用 `legacy_references` 保留旧消息引用：
+
+```python
+from typing import ClassVar
+
+
+class LoadUserJob(QueueJob[JobExecutionContext]):
+    reference: ClassVar[str | None] = "users.load"
+    legacy_references: ClassVar[tuple[str, ...]] = (
+        "app.contexts.user.jobs.load_user:LoadUserJob",
+    )
+
+    async def handle(self, context: JobExecutionContext) -> None:
+        ...
+```
+
+引用长度最多 500，只允许 ASCII 字母、数字、点、下划线、连字符和冒号，且必须以字母或数字开头。当前引用、历史引用以及其他任务的全部引用都必须唯一。Dispatcher 把当前引用、默认版本 1 和 JSON payload 写入消息；Worker 解码后执行 `await job.handle(context)`。可先运行 `uv run python -m app.console queue jobs` 查看当前部署会发现的任务、引用、支持版本和策略，命令只做发现与校验，不启动应用容器或连接队列。
+
+普通 dataclass 和 Pydantic Model 默认使用基于 Pydantic schema 的 JSON Codec。该 Codec 对当前版本执行严格解码，payload 包含 schema 未声明的字段时拒绝消息，避免生产者擅自扩展字段后被消费者静默忽略；特殊当前协议可以在 Job 类上覆盖 `codec`。重试策略通过类级 `policy` 覆盖，当前版本通过类级 `version` 覆盖。`WorkerContext` 是不可变的进程级宿主上下文，保存当前 `Settings` 和已启动的 `ApplicationContainer`；执行器从它为每条消息创建独立的 `JobExecutionContext`，继续直接提供 `settings` 和 `container`，并把低频消息元数据收敛到 `context.job`。其中包括 `id`、`reference`、`version`、`enqueued_at`、`queue_connection`、`queue_name`、`correlation_id` 和 `replay_of`。同一条消息的全部投递内重试复用同一个任务上下文。所有消费槽共享同一个应用容器，数据库 Session 和业务 UoW 仍需按任务或用例单独创建。Manager 保持延迟初始化，未被 Job 使用的数据库、缓存、HTTP 或向量资源不会仅因 Worker 启动而连接。
 
 Job 属于 Worker 入站适配边界。业务任务应通过 `context.container.<context>.service` 调用应用用例，让 Repository、事务和业务缓存策略继续封装在限界上下文中；不要把 `JobExecutionContext`、`WorkerContext` 或 `ApplicationContainer` 传入 Application/Domain。宿主级维护任务确实需要通用技术能力时，可以使用 `context.container.databases`、`caches`、`http`、`queues` 或 `vectors` 的公共入口，但不应直接依赖具体数据库、Redis、Memcached 或其他驱动。
 
 ### Job 版本兼容
 
-升级 payload 契约时递增 `version`，并通过 `legacy_decoders` 显式声明仍受支持的历史版本。历史 Decoder 接收旧 payload，但必须返回当前 Job 类型；当前版本始终使用 `codec`。例如：
+升级 payload 契约时递增 `version`，并通过 `legacy_decoders` 显式声明仍受支持的历史版本。不要在同一版本中直接增加生产者发送、消费者尚未声明的字段：默认 Codec 会将其判定为坏数据。历史 Decoder 接收旧 payload，但必须返回当前 Job 类型；当前版本始终使用 `codec`。例如：
 
 ```python
 import json
@@ -99,15 +119,15 @@ class LoadUserJob(QueueJob[JobExecutionContext]):
         await context.container.users.service.get(self.user_id)
 ```
 
-自定义 Codec 和历史 Decoder 对坏数据应抛出 `JobDecodeError`，Worker 会把它记录为 `invalid_job_payload` 并确认消息。消息引用不存在的类记为 `unknown_job`，未声明的历史版本记为 `unsupported_job_version`。Job 导入依赖损坏、Codec/Policy/Decoder 配置错误、Decoder 意外异常或返回错误类型属于部署定义缺陷：Worker 保持消息未确认并退出，不能把它伪装成可丢弃的未知消息。删除历史 Decoder 前，应确认所有生产者已经升级且对应旧版本消息已经排空。
+自定义 Codec 和历史 Decoder 对坏数据应抛出 `JobDecodeError`，Worker 会把它记录为 `invalid_job_payload` 并确认消息。任务目录中不存在的引用记为 `unknown_job`，未声明的历史版本记为 `unsupported_job_version`。jobs 模块或其依赖导入失败、Codec/Policy/Decoder 配置错误会在开始消费前阻止启动；消息到达后 Decoder 意外异常或返回错误类型仍属于部署定义缺陷，Worker 保持消息未确认并退出，不能把它伪装成可丢弃的未知消息。删除历史 Decoder 或历史引用前，应确认所有生产者已经升级且对应旧消息已经排空。
 
-类路径属于队列消息契约。移动或重命名 Job 时，尚未消费的消息仍引用旧路径；应在旧模块暂时保留一个指向新类的显式导入，待旧队列排空后再删除。动态导入以队列服务是内部可信资源为前提，默认拒绝应用根包之外的类路径。`app.main`、`app.console`、`app.worker`、`app.bootstrap` 及其子模块始终在导入前拒绝，归类为 `unknown_job`，不能通过扩展白名单放开。Job 应放在无宿主初始化副作用的业务模块中；该检查不会隔离合法业务模块自身的导入副作用。
+任务引用属于队列消息契约。现有任务未声明 `reference` 时仍使用类路径；移动它之前应先发布包含旧类路径 `legacy_references` 的兼容版本，再移动代码，最后在生产者升级且旧消息排空后删除别名。新任务优先选择稳定、表达业务含义的引用，可减少目录重构对消息协议的影响。不要通过在旧模块重新导入新类维持兼容：发现器会忽略非当前模块直接定义的类，兼容关系应显式写在任务定义中。
 
-当前内置 `LoginSucceededJob` 作为最小业务示例：登录 HTTP 适配器在会话提交后向默认队列尽力投递 `user_id` 参数和固定文案，Dispatcher 自动把当前 request ID 写入消息的 `correlation_id`；Worker 调用其 `handle(context)`，再通过 `context.container.users.service.get(user_id)` 使用数据库读取当前用户，最后只记录文案、结构化用户 ID 和状态。消息本身不携带用户名、密码或 Token，日志也不记录用户名、邮箱或认证秘密。用户已删除属于永久业务状态，任务记录 `user.login_succeeded.user_missing` 后结束；数据库运行故障继续由投递内重试和失败存储处理。`user_id` 暂时可空，以兼容队列中已经存在的旧消息，旧消息会跳过数据库查询。发布失败不改变登录响应。该通知不具备 Outbox 或 exactly-once 保证，不应用于审计或安全决策。
+当前内置 `LoginSucceededJob` 作为最小业务示例：登录 HTTP 适配器在会话提交后向默认队列尽力投递 `user_id` 参数和固定文案，Dispatcher 自动把当前 request ID 写入消息的 `correlation_id`；Worker 调用其 `handle(context)`，再通过 `context.container.users.service.get(user_id)` 使用数据库读取当前用户，最后只记录文案、结构化用户 ID 和状态。消息本身不携带用户名、密码或 Token，日志也不记录用户名、邮箱或认证秘密。用户已删除属于永久业务状态，任务记录 `user.login_succeeded.user_missing` 后结束；数据库连接池超时、断连和驱动明确标记的失效连接进行投递内重试；其他数据库错误直接进入失败存储。`user_id` 暂时可空，以兼容队列中已经存在的旧消息，旧消息会跳过数据库查询。发布失败不改变登录响应。该通知不具备 Outbox 或 exactly-once 保证，不应用于审计或安全决策。
 
 ## 3. 信封与交付保证
 
-信封包含 `schema_version=2`、`job_id`、`job_type`、`job_version`、`payload`、`enqueued_at`、`correlation_id`、`replay_of`。`job_type` 是可导入的 Job 类路径。业务 payload 必须是合法 JSON 字节，在外层 JSON 中采用 Base64 表达；不接受 NaN/Infinity。默认整个信封不超过 1 MiB。时间保持本地无时区，各宿主应使用相同 `TZ`。旧的 schema version 1 消息会按非法信封写入失败记录，不会尝试执行。
+信封包含 `schema_version=2`、`job_id`、`job_type`、`job_version`、`payload`、`enqueued_at`、`correlation_id`、`replay_of`。`job_type` 保存任务稳定引用；未显式声明时它与可导入类路径相同。业务 payload 必须是合法 JSON 字节，在外层 JSON 中采用 Base64 表达；不接受 NaN/Infinity。默认整个信封不超过 1 MiB。时间保持本地无时区，各宿主应使用相同 `TZ`。旧的 schema version 1 消息会按非法信封写入失败记录，不会尝试执行。
 
 发布成功表示后端接受，不表示业务完成。发布超时或连接故障可能发生在接受之后，因此结果可能不确定，不能盲目重投。消息成功处理后再确认，外部后端恢复未确认消息时可能重复执行；业务幂等不由框架自动提供。数据库提交与发布不是原子操作，首版显式在 UoW 提交后投递，没有 after_commit 包装器或 Outbox。
 
@@ -135,6 +155,7 @@ QUEUE_FAILED__DATABASE=main
 
 ```bash
 uv run alembic -c database/main/alembic.ini upgrade head
+uv run python -m app.console queue jobs
 uv run python -m app.console queue failed --limit 20 --offset 0
 uv run python -m app.console queue retry <failure-id>
 uv run python -m app.console queue forget <failure-id>

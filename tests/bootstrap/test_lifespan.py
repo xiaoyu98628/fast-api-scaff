@@ -74,9 +74,10 @@ async def test_application_lifecycle_is_logged(caplog: pytest.LogCaptureFixture)
 @pytest.mark.asyncio
 async def test_application_startup_failure_is_logged(caplog: pytest.LogCaptureFixture) -> None:
     settings = build_settings()
+    secret = "PRIVATE_STARTUP_TOKEN"
 
     async def fail_startup() -> None:
-        raise RuntimeError("startup failed")
+        raise RuntimeError(secret)
 
     databases = DatabaseManager(settings.database)
     caches = CacheManager(settings.cache)
@@ -92,13 +93,18 @@ async def test_application_startup_failure_is_logged(caplog: pytest.LogCaptureFi
     app = create_app(settings, container_builder=lambda _settings: container)
     caplog.set_level(logging.INFO, logger="app.bootstrap.lifecycle")
 
-    with pytest.raises(RuntimeError, match="startup failed"):
+    with pytest.raises(RuntimeError, match=secret):
         async with app.router.lifespan_context(app):
             pass
 
     events = [getattr(record, "event", None) for record in caplog.records]
     assert ApplicationLogEvent.START_FAILED in events
     assert ApplicationLogEvent.STOPPED in events
+    record = next(record for record in caplog.records if getattr(record, "event", None) is ApplicationLogEvent.START_FAILED)
+    assert record.exc_info is None
+    assert getattr(record, "details")["error_type"] == "builtins.RuntimeError"
+    assert getattr(record, "details")["stacktrace"]
+    assert secret not in repr(record.__dict__)
 
 
 @pytest.mark.asyncio
@@ -137,9 +143,10 @@ async def test_application_logs_base_exception_during_startup(caplog: pytest.Log
 @pytest.mark.asyncio
 async def test_application_clears_exposed_container_when_shutdown_fails(caplog: pytest.LogCaptureFixture) -> None:
     settings = build_settings()
+    secret = "PRIVATE_SHUTDOWN_TOKEN"
 
     async def fail_shutdown() -> None:
-        raise RuntimeError("shutdown failed")
+        raise RuntimeError(secret)
 
     container = replace(
         build_application_container(settings),
@@ -155,3 +162,8 @@ async def test_application_clears_exposed_container_when_shutdown_fails(caplog: 
     assert not hasattr(app.state, "container")
     events = [getattr(record, "event", None) for record in caplog.records]
     assert ApplicationLogEvent.STOP_FAILED in events
+    record = next(record for record in caplog.records if getattr(record, "event", None) is ApplicationLogEvent.STOP_FAILED)
+    assert record.exc_info is None
+    assert getattr(record, "details")["error_type"] == "builtins.ExceptionGroup"
+    assert getattr(record, "details")["stacktrace"]
+    assert secret not in repr(record.__dict__)

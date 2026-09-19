@@ -54,10 +54,12 @@ class TrackingLoginAttemptLimiter:
         retry_after: int | None = None,
         remaining_attempts: int = 4,
         failure_retry_after: int | None = None,
+        clear_error: Exception | None = None,
     ) -> None:
         self.retry_after_seconds = retry_after
         self.remaining_attempts = remaining_attempts
         self.failure_retry_after = failure_retry_after
+        self.clear_error = clear_error
         self.checked: list[str] = []
         self.failures: list[str] = []
         self.cleared: list[str] = []
@@ -74,6 +76,8 @@ class TrackingLoginAttemptLimiter:
 
     async def clear(self, identity: str) -> None:
         self.cleared.append(identity)
+        if self.clear_error is not None:
+            raise self.clear_error
 
 
 @dataclass
@@ -241,31 +245,53 @@ async def test_successful_login_clears_previous_failures(harness: AuthHarness) -
 
 
 @pytest.mark.asyncio
+async def test_failed_attempt_cleanup_rolls_back_new_session(harness: AuthHarness) -> None:
+    await harness.users.service.create(CreateUserCommand(username="alice", email="alice@example.com", password="password123"))
+    limiter = TrackingLoginAttemptLimiter(clear_error=RuntimeError("cache unavailable"))
+    harness.users = replace(harness.users, auth=replace(harness.users.auth, login_attempts=limiter))
+
+    with pytest.raises(RuntimeError, match="cache unavailable"):
+        await harness.users.auth.login(LoginCommand(username="alice", password="password123"))
+
+    assert limiter.cleared == ["alice"]
+    assert await harness.session_count() == 0
+
+
+@pytest.mark.asyncio
 async def test_expiry_disable_reenable_password_reset_and_delete_contract(harness: AuthHarness) -> None:
     user = await harness.users.service.create(CreateUserCommand(username="alice", email="alice@example.com", password="password123"))
     token = await harness.users.auth.login(LoginCommand(username="alice", password="password123"))
-    credential = SessionCredential(token.access_token)
+    disabled_credential = SessionCredential(token.access_token)
 
     await harness.users.service.change_status(ChangeUserStatusCommand(user_id=user.id, status=UserStatus.DISABLED))
     with pytest.raises(AuthenticationRequiredError):
-        await harness.users.auth.current_user(credential)
-    await harness.users.service.change_status(ChangeUserStatusCommand(user_id=user.id, status=UserStatus.ACTIVE))
-    assert (await harness.users.auth.current_user(credential)).id == user.id
+        await harness.users.auth.current_user(disabled_credential)
+    assert await harness.session_count() == 0
 
+    await harness.users.service.change_status(ChangeUserStatusCommand(user_id=user.id, status=UserStatus.ACTIVE))
+    with pytest.raises(AuthenticationRequiredError):
+        await harness.users.auth.current_user(disabled_credential)
+
+    active_token = await harness.users.auth.login(LoginCommand(username="alice", password="password123"))
+    active_credential = SessionCredential(active_token.access_token)
     await harness.users.service.reset_password(ResetUserPasswordCommand(user_id=user.id, password="replacement-password"))
-    assert (await harness.users.auth.current_user(credential)).id == user.id
+    with pytest.raises(AuthenticationRequiredError):
+        await harness.users.auth.current_user(active_credential)
+    assert await harness.session_count() == 0
+
     with pytest.raises(InvalidCredentialsError):
         await harness.users.auth.login(LoginCommand(username="alice", password="password123"))
-    await harness.users.auth.login(LoginCommand(username="alice", password="replacement-password"))
+    replacement = await harness.users.auth.login(LoginCommand(username="alice", password="replacement-password"))
+    replacement_credential = SessionCredential(replacement.access_token)
 
     harness.now += timedelta(seconds=60)
     with pytest.raises(AuthenticationRequiredError):
-        await harness.users.auth.current_user(credential)
+        await harness.users.auth.current_user(replacement_credential)
     harness.now -= timedelta(microseconds=1)
-    assert (await harness.users.auth.current_user(credential)).id == user.id
+    assert (await harness.users.auth.current_user(replacement_credential)).id == user.id
     await harness.users.service.delete(user.id)
     with pytest.raises(AuthenticationRequiredError):
-        await harness.users.auth.current_user(credential)
+        await harness.users.auth.current_user(replacement_credential)
 
 
 @pytest.mark.parametrize("change", ["password", "status", "delete"])
@@ -290,6 +316,8 @@ async def test_login_rechecks_account_after_password_verification(harness: AuthH
 @pytest.mark.asyncio
 async def test_failed_session_commit_rolls_back(harness: AuthHarness, monkeypatch: pytest.MonkeyPatch) -> None:
     await harness.users.service.create(CreateUserCommand(username="alice", email="alice@example.com", password="password123"))
+    limiter = TrackingLoginAttemptLimiter()
+    harness.users = replace(harness.users, auth=replace(harness.users.auth, login_attempts=limiter))
 
     async def fail_commit(uow: SqlAlchemyUserUnitOfWork) -> None:
         assert uow._session is not None
@@ -299,4 +327,30 @@ async def test_failed_session_commit_rolls_back(harness: AuthHarness, monkeypatc
     monkeypatch.setattr(SqlAlchemyUserUnitOfWork, "commit", fail_commit)
     with pytest.raises(RuntimeError, match="commit failed"):
         await harness.users.auth.login(LoginCommand(username="alice", password="password123"))
+    assert limiter.cleared == ["alice"]
     assert await harness.session_count() == 0
+
+
+@pytest.mark.asyncio
+async def test_inflight_success_does_not_clear_lock_created_during_password_verification(harness: AuthHarness) -> None:
+    from tests.users.test_login_attempt_limiter import FakeRedisCacheClient, build_limiter
+
+    await harness.users.service.create(CreateUserCommand(username="alice", email="alice@example.com", password="password123"))
+    client = FakeRedisCacheClient()
+    limiter = build_limiter(client)
+    harness.users = replace(harness.users, auth=replace(harness.users.auth, login_attempts=limiter))
+    for _ in range(4):
+        await limiter.record_failure("alice")
+
+    async def establish_lock() -> None:
+        # 精确插入在入口检查之后、成功清理之前，模拟另一请求达到失败阈值。
+        await limiter.record_failure("alice")
+
+    harness.hasher.after_verify = establish_lock
+    result = await harness.users.auth.login(LoginCommand(username="alice", password="password123"))
+    assert result.access_token
+    assert await harness.session_count() == 1
+    assert await limiter.retry_after("alice") == 900
+    with pytest.raises(LoginTemporarilyLockedError):
+        await harness.users.auth.login(LoginCommand(username="alice", password="password123"))
+    assert await harness.session_count() == 1

@@ -5,8 +5,30 @@ from uuid import UUID
 
 import typer
 
+from app.infrastructure.queue.job import job_type_path
 from app.interfaces.console.command import ConsoleCommand
 from app.interfaces.console.context import ConsoleContext
+from app.interfaces.worker.discovery import discover_job_types
+from app.interfaces.worker.resolver import JobResolver
+
+
+def list_jobs() -> list[dict[str, object]]:
+    """返回启动期会发现的任务契约和执行策略摘要。"""
+
+    resolver = JobResolver(discover_job_types())
+    return [
+        {
+            "reference": descriptor.reference,
+            "type_path": job_type_path(descriptor.job_type),
+            "version": descriptor.version,
+            "supported_versions": tuple(sorted((descriptor.version, *descriptor.legacy_decoders))),
+            "legacy_references": descriptor.legacy_references,
+            "max_attempts": descriptor.policy.max_attempts,
+            "backoff_seconds": descriptor.policy.backoff_seconds,
+            "timeout_seconds": descriptor.policy.timeout_seconds,
+        }
+        for descriptor in resolver.descriptors
+    ]
 
 
 async def list_failures(context: ConsoleContext, *, limit: int, offset: int) -> list[dict[str, object]]:
@@ -47,7 +69,7 @@ class FailedQueueConsoleCommand(ConsoleCommand):
     """注册并处理 ``queue failed`` 查询命令。"""
 
     group = "queue"
-    group_help = "管理持久失败任务。"
+    group_help = "查看队列任务并管理持久失败记录。"
     name = "failed"
     help = "查询失败任务元数据，不输出任务数据。"
 
@@ -62,7 +84,7 @@ class RetryQueueConsoleCommand(ConsoleCommand):
     """注册并处理 ``queue retry`` 重放命令。"""
 
     group = "queue"
-    group_help = "管理持久失败任务。"
+    group_help = "查看队列任务并管理持久失败记录。"
     name = "retry"
     help = "重放失败记录并保留原记录；结果不确定时不要盲目重复执行。"
 
@@ -76,7 +98,7 @@ class ForgetQueueConsoleCommand(ConsoleCommand):
     """注册并处理 ``queue forget`` 删除命令。"""
 
     group = "queue"
-    group_help = "管理持久失败任务。"
+    group_help = "查看队列任务并管理持久失败记录。"
     name = "forget"
     help = "删除指定失败记录。"
 
@@ -84,3 +106,17 @@ class ForgetQueueConsoleCommand(ConsoleCommand):
         """删除指定失败记录并输出其 ID。"""
 
         self._console.presenter.result(self._console.run(partial(forget_failure, failure_id=failure_id)))
+
+
+class ListQueueJobsConsoleCommand(ConsoleCommand):
+    """注册并处理 ``queue jobs`` 任务目录查询命令。"""
+
+    group = "queue"
+    group_help = "查看队列任务并管理持久失败记录。"
+    name = "jobs"
+    help = "列出 Worker 启动时会发现的任务契约。"
+
+    def handle(self) -> None:
+        """发现并校验任务后输出不含业务数据的契约摘要。"""
+
+        self._console.presenter.result(list_jobs())

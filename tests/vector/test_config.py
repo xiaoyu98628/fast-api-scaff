@@ -172,3 +172,14 @@ def test_point_id_uses_cross_driver_utf8_byte_limit() -> None:
 def test_collection_dimension_uses_cross_driver_limit() -> None:
     with pytest.raises(VectorConfigurationError, match="4096"):
         VectorCollectionSpec(name="knowledge", dimension=4097)
+
+
+@pytest.mark.parametrize("name", ["docs-v1", "123docs", "_docs", "docs_", "ab", "a" * 64])
+def test_collection_names_reject_nonportable_names(name: str) -> None:
+    with pytest.raises(VectorConfigurationError):
+        VectorCollectionSpec(name=name, dimension=2)
+
+
+@pytest.mark.parametrize("name", ["abc", "docs_v1", "a12", "a" * 63])
+def test_collection_names_accept_shared_backend_subset(name: str) -> None:
+    assert VectorCollectionSpec(name=name, dimension=2).name == name

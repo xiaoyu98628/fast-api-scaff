@@ -12,6 +12,7 @@ from app.config.database import DatabaseSettings
 from app.config.http import HttpSettings
 from app.config.logging import LoggingSettings
 from app.config.queue import QueueSettings
+from app.config.rate_limit import RateLimitSettings
 from app.config.vector import VectorSettings
 
 
@@ -23,6 +24,7 @@ class Settings(BaseModel):
     queue: QueueSettings = Field(default_factory=lambda: QueueSettings(_env_file=None))
     app: AppSettings
     auth: AuthSettings = Field(default_factory=lambda: AuthSettings(_env_file=None))
+    rate_limit: RateLimitSettings = Field(default_factory=lambda: RateLimitSettings(_env_file=None))
     database: DatabaseSettings
     cache: CacheSettings
     vector: VectorSettings = Field(default_factory=lambda: VectorSettings(_env_file=None))
@@ -40,6 +42,7 @@ def load_settings() -> Settings:
         queue=QueueSettings(),
         app=AppSettings(),
         auth=AuthSettings(),
+        rate_limit=RateLimitSettings(),
         database=DatabaseSettings(),
         cache=CacheSettings(),
         vector=VectorSettings(),

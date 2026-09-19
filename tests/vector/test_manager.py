@@ -1,6 +1,8 @@
 """验证向量存储管理器的命名资源、并发和关闭语义。"""
 
 import asyncio
+import subprocess
+import sys
 
 import pytest
 
@@ -8,6 +10,7 @@ from app.config.vector import VectorSettings
 from app.infrastructure.vector.errors import VectorConfigurationError
 from app.infrastructure.vector.manager import VectorStoreManager
 from app.infrastructure.vector.providers.registry import DEFAULT_VECTOR_PROVIDERS, VectorProviderRegistry
+from app.runtime.paths import PROJECT_ROOT
 from tests.vector.fakes import FakeVectorProvider
 
 
@@ -89,6 +92,69 @@ def test_default_registry_contains_every_builtin_driver_and_can_be_extended() ->
     assert DEFAULT_VECTOR_PROVIDERS.drivers == ("milvus", "chroma", "elasticsearch")
     extended = DEFAULT_VECTOR_PROVIDERS.extended(FakeVectorProvider())
     assert extended.drivers == ("milvus", "chroma", "elasticsearch", "fake")
+
+
+def test_vector_manager_validates_builtin_connections_without_importing_driver_sdks() -> None:
+    script = """
+import sys
+from app.config.vector import VectorSettings
+from app.infrastructure.vector.manager import VectorStoreManager
+
+manager = VectorStoreManager(VectorSettings(
+    connections={
+        "milvus": {"driver": "milvus", "mode": "remote"},
+        "chroma": {"driver": "chroma", "mode": "remote"},
+        "search": {"driver": "elasticsearch", "mode": "remote"},
+    },
+    _env_file=None,
+))
+assert manager.connection_names == ("milvus", "chroma", "search")
+for module in (
+    "app.infrastructure.vector.drivers.milvus",
+    "app.infrastructure.vector.drivers.chroma",
+    "app.infrastructure.vector.drivers.elasticsearch",
+    "pymilvus",
+    "chromadb",
+    "elasticsearch",
+):
+    assert module not in sys.modules, module
+"""
+
+    result = subprocess.run([sys.executable, "-c", script], cwd=PROJECT_ROOT, capture_output=True, text=True, timeout=10)
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_missing_vector_driver_dependency_has_stable_configuration_error() -> None:
+    script = """
+import asyncio
+import builtins
+from app.config.vector import VectorSettings
+from app.infrastructure.vector.errors import VectorConfigurationError
+from app.infrastructure.vector.manager import VectorStoreManager
+
+manager = VectorStoreManager(VectorSettings(
+    default="search",
+    connections={"search": {"driver": "elasticsearch", "mode": "remote"}},
+    _env_file=None,
+))
+original_import = builtins.__import__
+def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
+    if name == "elasticsearch" or name.startswith("elasticsearch.") or name == "elastic_transport":
+        raise ModuleNotFoundError("blocked Elasticsearch dependency")
+    return original_import(name, globals, locals, fromlist, level)
+builtins.__import__ = guarded_import
+try:
+    asyncio.run(manager.get())
+except VectorConfigurationError as error:
+    assert "客户端依赖无法加载" in str(error)
+else:
+    raise AssertionError("missing Elasticsearch dependency was accepted")
+"""
+
+    result = subprocess.run([sys.executable, "-c", script], cwd=PROJECT_ROOT, capture_output=True, text=True, timeout=10)
+
+    assert result.returncode == 0, result.stderr
 
 
 def test_registry_rejects_duplicate_driver() -> None:

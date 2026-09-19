@@ -1,7 +1,6 @@
 """使用 AsyncElasticsearch 和 dense_vector 适配统一向量协议。"""
 
 from collections.abc import Awaitable, Mapping, Sequence
-from functools import partial
 from typing import cast
 
 from elastic_transport import ObjectApiResponse
@@ -9,8 +8,7 @@ from elasticsearch import AsyncElasticsearch
 from elasticsearch.exceptions import ApiError, ConflictError, NotFoundError
 from elasticsearch.exceptions import ConnectionError as ElasticsearchConnectionError
 
-from app.config.vector import ElasticsearchVectorSettings, parse_vector_connection
-from app.infrastructure.vector.contracts.provider import VectorResourceDefinition
+from app.config.vector import ElasticsearchVectorSettings
 from app.infrastructure.vector.errors import (
     VectorCollectionConflictError,
     VectorCollectionNotFoundError,
@@ -223,21 +221,9 @@ class ElasticsearchVectorClient:
             raise VectorOperationError("Elasticsearch 操作失败") from error
 
 
-class ElasticsearchVectorProvider:
-    """创建配置严格且连接延迟建立的 AsyncElasticsearch。"""
+async def create_elasticsearch_resource(settings: ElasticsearchVectorSettings) -> VectorResource:
+    """根据已校验配置创建 Elasticsearch 资源。"""
 
-    driver = "elasticsearch"
-
-    def prepare(self, raw_config: dict[str, object]) -> VectorResourceDefinition:
-        """校验 Elasticsearch 配置并返回延迟资源工厂。"""
-
-        settings = parse_vector_connection(raw_config)
-        if not isinstance(settings, ElasticsearchVectorSettings):
-            raise ValueError("配置不是 Elasticsearch 连接")
-        return VectorResourceDefinition(factory=partial(_create_resource, settings))
-
-
-async def _create_resource(settings: ElasticsearchVectorSettings) -> VectorResource:
     basic_auth = None
     if settings.username is not None and settings.password is not None:
         basic_auth = (settings.username, settings.password.get_secret_value())
@@ -275,7 +261,10 @@ def _response_mapping(response: object) -> Mapping[str, object]:
 
 
 def _is_found(document: object) -> bool:
-    return isinstance(document, Mapping) and document.get("found") is True
+    if not isinstance(document, Mapping) or "error" in document or type(document.get("found")) is not bool:
+        # Multi Get 的 HTTP 成功不代表每个分片读取成功，不能把错误伪装成缺失。
+        raise VectorOperationError("Elasticsearch Multi Get 文档读取失败或返回结构不合法")
+    return document["found"] is True
 
 
 def _elasticsearch_point(document: object) -> VectorPoint:

@@ -143,11 +143,13 @@ def test_text_formatter_renders_structured_fields_on_one_line() -> None:
     assert 'details={"status_code":200}' in rendered
 
 
-def test_text_formatter_keeps_exception_on_one_line() -> None:
-    formatter = TextLogFormatter(service="test-service", environment="test", service_version="1.2.3")
+def test_formatters_render_safe_exception_diagnostics_on_one_line() -> None:
+    text_formatter = TextLogFormatter(service="test-service", environment="test", service_version="1.2.3")
+    json_formatter = JsonLogFormatter(service="test-service", environment="test", service_version="1.2.3")
+    secret = "invalid\nvalue"
 
     try:
-        raise ValueError("invalid\nvalue")
+        raise ValueError(secret)
     except ValueError as error:
         record = logging.LogRecord(
             name="app.test",
@@ -159,11 +161,48 @@ def test_text_formatter_keeps_exception_on_one_line() -> None:
             exc_info=(type(error), error, error.__traceback__),
         )
 
-    rendered = formatter.format(record)
+    rendered = text_formatter.format(record)
+    payload = json.loads(json_formatter.format(record))
 
     assert "\n" not in rendered
     assert 'message="Operation failed"' in rendered
-    assert 'exception={"type":"ValueError","message":"invalid\\nvalue","stacktrace":"Traceback' in rendered
+    assert 'exception={"type":"builtins.ValueError","stacktrace":[' in rendered
+    assert set(payload["exception"]) == {"type", "stacktrace"}
+    assert payload["exception"]["type"] == "builtins.ValueError"
+    assert payload["exception"]["stacktrace"]
+    assert secret not in rendered
+    assert secret not in json.dumps(payload)
+
+
+def test_formatter_excludes_exception_group_children_and_chained_messages() -> None:
+    formatter = JsonLogFormatter(service="test-service", environment="test", service_version="1.2.3")
+    cause_secret = "PRIVATE_CAUSE_TOKEN"
+    group_secret = "PRIVATE_GROUP_TOKEN"
+    child_secret = "PRIVATE_CHILD_TOKEN"
+
+    try:
+        try:
+            raise ValueError(cause_secret)
+        except ValueError as error:
+            raise ExceptionGroup(group_secret, [RuntimeError(child_secret)]) from error
+    except ExceptionGroup as error:
+        record = logging.LogRecord(
+            name="app.test",
+            level=logging.ERROR,
+            pathname=__file__,
+            lineno=10,
+            msg="Operation failed",
+            args=(),
+            exc_info=(type(error), error, error.__traceback__),
+        )
+
+    rendered = formatter.format(record)
+    payload = json.loads(rendered)
+
+    assert payload["exception"]["type"] == "builtins.ExceptionGroup"
+    assert payload["exception"]["stacktrace"]
+    for secret in (cause_secret, group_secret, child_secret):
+        assert secret not in rendered
 
 
 def test_json_formatter_uses_runtime_local_timezone() -> None:

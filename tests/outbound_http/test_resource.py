@@ -44,3 +44,38 @@ async def test_factory_creates_independent_standard_and_stream_clients() -> None
         assert resource._max_response_bytes == 4096
     finally:
         await resource.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("redirect", [False, True])
+async def test_factory_does_not_share_response_cookies(monkeypatch: pytest.MonkeyPatch, stream: bool, redirect: bool) -> None:
+    from functools import partial
+
+    from app.infrastructure.http.contracts.request import HttpRequest
+
+    received: list[str | None] = []
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        received.append(request.headers.get("cookie"))
+        if redirect and request.url.path == "/profile":
+            return httpx2.Response(302, headers={"set-cookie": "session=caller-a; Path=/", "location": "/redirected"})
+        return httpx2.Response(200, headers={"set-cookie": "session=caller-a; Path=/"})
+
+    monkeypatch.setattr(httpx2, "AsyncClient", partial(httpx2.AsyncClient, transport=httpx2.MockTransport(handler)))
+    resource = create_httpx2_resource(HttpSettings(follow_redirects=True, _env_file=None))
+    try:
+        for headers in ({}, {}, {"cookie": "session=explicit"}, {}):
+            request = HttpRequest(method="GET", url="https://example.com/profile", headers=headers)
+            if stream:
+                async with resource.stream(request):
+                    pass
+            else:
+                await resource.request(request)
+    finally:
+        await resource.aclose()
+    # HTTPX2 跨重定向重新构建 Cookie 头，显式 Cookie 仅用于原始请求。
+    expected = [None, None, "session=explicit", None]
+    if redirect:
+        expected = [value for original in expected for value in (original, None)]
+    assert received == expected

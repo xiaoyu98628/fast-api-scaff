@@ -1,15 +1,23 @@
 """验证数据库查询日志的脱敏、计时和错误分类。"""
 
 import logging
+from types import SimpleNamespace
+from typing import cast
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 
+import app.infrastructure.database.factory as database_factory_module
 import app.infrastructure.database.logging as database_logging_module
 from app.config.database import DatabaseSettings
+from app.infrastructure.database.errors import DatabaseDriverError
+from app.infrastructure.database.factory import close_database_resource
 from app.infrastructure.database.logging import DatabaseLogEvent
 from app.infrastructure.database.manager import DatabaseManager
+from app.infrastructure.database.providers.sqlite import SQLiteDatabaseProvider
+from app.infrastructure.database.resource import DatabaseResource
 
 
 def build_manager(*, echo: bool = False, slow_query_ms: int = 500) -> DatabaseManager:
@@ -41,6 +49,50 @@ async def test_database_resource_lifecycle_is_logged(caplog: pytest.LogCaptureFi
 
     assert DatabaseLogEvent.RESOURCE_CREATED in events
     assert DatabaseLogEvent.RESOURCE_CLOSED in events
+
+
+@pytest.mark.asyncio
+async def test_database_creation_failure_log_excludes_driver_error_message(
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    secret = "PRIVATE_DATABASE_DRIVER_TOKEN"
+    definition = SQLiteDatabaseProvider().prepare({"driver": "sqlite", "database": ":memory:"})
+    monkeypatch.setattr(
+        database_factory_module,
+        "create_async_engine",
+        Mock(side_effect=ModuleNotFoundError(secret)),
+    )
+    caplog.set_level(logging.ERROR, logger="app.infrastructure.database")
+
+    with pytest.raises(DatabaseDriverError, match="无法加载"):
+        await database_factory_module.create_database_resource("main", definition)
+
+    record = next(record for record in caplog.records if getattr(record, "event", None) is DatabaseLogEvent.RESOURCE_CREATE_FAILED)
+    assert record.exc_info is None
+    assert getattr(record, "details")["error_type"] == "builtins.ModuleNotFoundError"
+    assert getattr(record, "details")["stacktrace"]
+    assert secret not in repr(record.__dict__)
+
+
+@pytest.mark.asyncio
+async def test_database_close_failure_log_excludes_driver_error_message(caplog: pytest.LogCaptureFixture) -> None:
+    secret = "PRIVATE_DATABASE_CLOSE_TOKEN"
+    engine = SimpleNamespace(
+        dispose=AsyncMock(side_effect=RuntimeError(secret)),
+        url=SimpleNamespace(drivername="test+async"),
+    )
+    resource = cast(DatabaseResource, SimpleNamespace(connection_name="main", engine=engine))
+    caplog.set_level(logging.ERROR, logger="app.infrastructure.database")
+
+    with pytest.raises(RuntimeError, match=secret):
+        await close_database_resource(resource)
+
+    record = next(record for record in caplog.records if getattr(record, "event", None) is DatabaseLogEvent.RESOURCE_CLOSE_FAILED)
+    assert record.exc_info is None
+    assert getattr(record, "details")["error_type"] == "builtins.RuntimeError"
+    assert getattr(record, "details")["stacktrace"]
+    assert secret not in repr(record.__dict__)
 
 
 @pytest.mark.asyncio

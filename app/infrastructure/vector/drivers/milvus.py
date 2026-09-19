@@ -1,5 +1,6 @@
 """使用 PyMilvus 适配本地 Milvus Lite 和远程 Milvus 服务。"""
 
+import asyncio
 import json
 import os
 from collections.abc import Awaitable, Callable, Mapping
@@ -10,10 +11,9 @@ from threading import Lock
 from typing import Protocol, cast
 
 import httpx
-from anyio import CapacityLimiter, to_thread
+from anyio import CancelScope, CapacityLimiter, to_thread
 
-from app.config.vector import MilvusLocalVectorSettings, MilvusRemoteVectorSettings, parse_vector_connection
-from app.infrastructure.vector.contracts.provider import VectorResourceDefinition
+from app.config.vector import MilvusLocalVectorSettings, MilvusRemoteVectorSettings
 from app.infrastructure.vector.errors import (
     VectorCollectionConflictError,
     VectorCollectionNotFoundError,
@@ -108,14 +108,14 @@ class _LocalMilvusBackend:
 
         operation = cast(Callable[..., MilvusResult], getattr(self._client, method))
         try:
-            return await to_thread.run_sync(partial(operation, **kwargs), abandon_on_cancel=False, limiter=self._limiter)
+            return await _run_sync(partial(operation, **kwargs), limiter=self._limiter)
         except Exception as error:
             _raise_milvus_error(error, self._sdk, local=True)
 
     async def aclose(self) -> None:
         """在线程中关闭 Milvus Lite 及其内部回环服务。"""
 
-        await to_thread.run_sync(self._client.close, abandon_on_cancel=False, limiter=self._limiter)
+        await _run_sync(self._client.close, limiter=self._limiter)
 
 
 class _RemoteMilvusBackend:
@@ -303,20 +303,12 @@ class MilvusVectorClient:
             raise VectorCollectionNotFoundError(f"Milvus Collection {name!r} 不存在")
 
 
-class MilvusVectorProvider:
-    """根据 mode 创建本地 Milvus Lite 或远程异步客户端。"""
+async def create_milvus_resource(settings: MilvusLocalVectorSettings | MilvusRemoteVectorSettings) -> VectorResource:
+    """根据已校验配置创建本地或远程 Milvus 资源。"""
 
-    driver = "milvus"
-
-    def prepare(self, raw_config: dict[str, object]) -> VectorResourceDefinition:
-        """严格校验 Milvus 配置并返回延迟工厂。"""
-
-        settings = parse_vector_connection(raw_config)
-        if isinstance(settings, MilvusLocalVectorSettings):
-            return VectorResourceDefinition(factory=partial(_create_local_resource, settings))
-        if isinstance(settings, MilvusRemoteVectorSettings):
-            return VectorResourceDefinition(factory=partial(_create_remote_resource, settings))
-        raise ValueError("配置不是 Milvus 连接")
+    if isinstance(settings, MilvusLocalVectorSettings):
+        return await _create_local_resource(settings)
+    return await _create_remote_resource(settings)
 
 
 async def _create_local_resource(settings: MilvusLocalVectorSettings) -> VectorResource:
@@ -326,9 +318,11 @@ async def _create_local_resource(settings: MilvusLocalVectorSettings) -> VectorR
     except OSError as error:
         raise VectorConnectionError("无法创建 Milvus Lite 数据目录") from error
     limiter = CapacityLimiter(1)
-    sdk = await to_thread.run_sync(_load_milvus_sdk, abandon_on_cancel=False, limiter=limiter)
+    sdk = await _run_sync(_load_milvus_sdk, limiter=limiter)
     try:
-        client = await to_thread.run_sync(partial(sdk.sync_client, str(path)), abandon_on_cancel=False, limiter=limiter)
+        client = await _run_sync(
+            partial(sdk.sync_client, str(path)), limiter=limiter, on_cancel=lambda client: cast(_SyncMilvusClient, client).close()
+        )
     except Exception as error:
         if isinstance(error, sdk.operation_errors):
             raise VectorConnectionError(f"无法打开 Milvus Lite 文件 {path}") from error
@@ -343,7 +337,7 @@ async def _create_remote_resource(settings: MilvusRemoteVectorSettings) -> Vecto
     except httpx.InvalidURL as error:
         raise VectorConfigurationError("Milvus 远程连接地址不合法") from error
 
-    sdk = await to_thread.run_sync(_load_milvus_sdk, abandon_on_cancel=False)
+    sdk = await _run_sync(_load_milvus_sdk)
     try:
         client = sdk.async_client(
             uri=uri,
@@ -434,3 +428,33 @@ def _milvus_filter(filters: VectorFilters | None) -> str:
     if not filters:
         return ""
     return " and ".join(f"{key} == {json.dumps(value, ensure_ascii=False)}" for key, value in filters.items())
+
+
+async def _run_sync[T](operation: Callable[[], T], *, limiter: CapacityLimiter | None = None, on_cancel: Callable[[T], None] | None = None) -> T:
+    """取消后等待线程结束；创建中取消时释放已经创建但尚未交付的资源。"""
+
+    work = asyncio.create_task(to_thread.run_sync(operation, limiter=limiter))
+    try:
+        return await asyncio.shield(work)
+    except asyncio.CancelledError:
+        # AnyIO 的取消域不能单独防护 Task.cancel()；线程实际结束前不能释放上层锁。
+        with CancelScope(shield=True):
+            await _finish_worker(work)
+            if not work.cancelled() and work.exception() is None and on_cancel is not None:
+                cleanup = asyncio.create_task(to_thread.run_sync(partial(on_cancel, work.result()), limiter=limiter))
+                await _finish_worker(cleanup)
+        raise
+
+
+async def _finish_worker[T](work: asyncio.Task[T]) -> None:
+    """承受重复取消直到线程完成，并取回异常，保留调用方的取消语义。"""
+
+    while not work.done():
+        try:
+            await asyncio.shield(work)
+        except asyncio.CancelledError:
+            continue
+        except Exception:
+            break
+    if not work.cancelled():
+        work.exception()

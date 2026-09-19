@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock
 from uuid import UUID, uuid7
 
 import pytest
+from pydantic import ValidationError
 
 from app.contexts.user.application.dto import UserDTO
 from app.contexts.user.application.errors import UserNotFoundError
@@ -40,6 +41,15 @@ def test_login_succeeded_job_serializes_user_id_and_rejects_custom_message() -> 
         LoginSucceededJob(user_id=cast(UUID, "invalid"))
     with pytest.raises(ValueError, match="任务消息不合法"):
         descriptor.codec.decode(f'{{"user_id":"{user_id}","message":"other"}}'.encode())
+
+
+def test_login_succeeded_job_rejects_unknown_payload_fields() -> None:
+    descriptor = describe_job(LoginSucceededJob)
+
+    with pytest.raises(ValidationError) as captured:
+        descriptor.codec.decode(b'{"unexpected":true}')
+
+    assert captured.value.errors()[0]["type"] == "unexpected_keyword_argument"
 
 
 @pytest.mark.asyncio
@@ -100,3 +110,31 @@ async def test_login_succeeded_job_propagates_database_failure() -> None:
 
     with pytest.raises(RuntimeError, match="database unavailable"):
         await LoginSucceededJob(user_id=user_id).handle(job_context(service))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure_kind", ["disconnect", "pool", "invalidated", "permanent"])
+async def test_login_job_executor_retries_only_identified_transient_database_failures(failure_kind: str) -> None:
+    from dataclasses import replace
+
+    from sqlalchemy.exc import DisconnectionError, OperationalError
+    from sqlalchemy.exc import TimeoutError as SQLAlchemyTimeoutError
+
+    from app.infrastructure.queue.policies import JobPolicy
+    from app.interfaces.worker.executor import run_attempts
+    from app.interfaces.worker.resolver import JobBinding
+
+    failures = {
+        "disconnect": DisconnectionError("connection lost"),
+        "pool": SQLAlchemyTimeoutError("pool exhausted"),
+        "invalidated": OperationalError(None, None, Exception("connection lost"), connection_invalidated=True),
+        "permanent": OperationalError(None, None, Exception("no such table")),
+    }
+    service = SimpleNamespace(get=AsyncMock(side_effect=failures[failure_kind]))
+    descriptor = replace(describe_job(LoginSucceededJob), policy=JobPolicy(max_attempts=3, backoff_seconds=()))
+    binding = JobBinding(descriptor, descriptor.codec)
+    payload = descriptor.codec.encode(LoginSucceededJob(user_id=uuid7()))
+    result = await run_attempts(binding, payload, job_context(service))
+    expected_attempts = 1 if failure_kind == "permanent" else 3
+    assert result.attempts == service.get.await_count == expected_attempts
+    assert result.failure_reason == ("handler_error" if failure_kind == "permanent" else "retry_exhausted")

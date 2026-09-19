@@ -10,6 +10,7 @@ from app.contexts.user.application.dto import ChangeUserStatusCommand, CreateUse
 from app.contexts.user.application.errors import ConcurrentUserUpdateError, UserConflictError, UserNotFoundError
 from app.contexts.user.application.service import UserApplicationService
 from app.contexts.user.domain.repository import UserRepository, UserUpdateResult
+from app.contexts.user.domain.session import UserSession
 from app.contexts.user.domain.session_repository import SessionRepository
 from app.contexts.user.domain.user import User
 from app.contexts.user.domain.values import EmailAddress, Password, PasswordHash, UserId, Username, UserStatus
@@ -70,9 +71,33 @@ class FakeUserRepository:
         return self.items.pop(user_id.value, None) is not None
 
 
+class FakeSessionRepository:
+    def __init__(self) -> None:
+        self.revoked_user_ids: list[UserId] = []
+
+    async def find(self, token_digest: str) -> UserSession | None:
+        del token_digest
+        return None
+
+    async def add(self, session: UserSession) -> None:
+        del session
+
+    async def remove(self, token_digest: str) -> None:
+        del token_digest
+
+    async def remove_for_user(self, user_id: UserId) -> int:
+        self.revoked_user_ids.append(user_id)
+        return 0
+
+    async def remove_expired(self, *, now: datetime) -> int:
+        del now
+        return 0
+
+
 class FakeUserUnitOfWork:
-    def __init__(self, repository: UserRepository) -> None:
+    def __init__(self, repository: UserRepository, sessions: SessionRepository) -> None:
         self._users = repository
+        self._sessions = sessions
         self.commit_count = 0
 
     @property
@@ -81,7 +106,7 @@ class FakeUserUnitOfWork:
 
     @property
     def sessions(self) -> SessionRepository:
-        raise AssertionError("用户 CRUD 不应访问会话仓储")
+        return self._sessions
 
     async def __aenter__(self) -> FakeUserUnitOfWork:
         return self
@@ -99,9 +124,14 @@ class FakeUserUnitOfWork:
         self.commit_count += 1
 
 
-def build_service(repository: FakeUserRepository, password_hasher: FakePasswordHasher | None = None) -> UserApplicationService:
+def build_service(
+    repository: FakeUserRepository,
+    password_hasher: FakePasswordHasher | None = None,
+    sessions: FakeSessionRepository | None = None,
+) -> UserApplicationService:
+    session_repository = sessions or FakeSessionRepository()
     return UserApplicationService(
-        unit_of_work_factory=lambda: FakeUserUnitOfWork(repository),
+        unit_of_work_factory=lambda: FakeUserUnitOfWork(repository, session_repository),
         password_hasher=password_hasher or FakePasswordHasher(),
         clock=lambda: datetime(2026, 8, 28, 18, 0),
     )
@@ -139,7 +169,8 @@ async def test_user_service_rejects_invalid_password_before_hashing() -> None:
 async def test_user_service_resets_password_with_a_new_hash() -> None:
     repository = FakeUserRepository()
     password_hasher = FakePasswordHasher()
-    service = build_service(repository, password_hasher)
+    sessions = FakeSessionRepository()
+    service = build_service(repository, password_hasher, sessions)
     created = await service.create(CreateUserCommand(username="alice", email="alice@example.com", password="password123"))
     original_password_hash = repository.items[created.id].password_hash
 
@@ -149,12 +180,14 @@ async def test_user_service_resets_password_with_a_new_hash() -> None:
     assert password_hasher.passwords == ["password123", "replacement-password"]
     assert reset_password_hash == PasswordHash("hashed::replacement-password")
     assert reset_password_hash != original_password_hash
+    assert sessions.revoked_user_ids == [UserId(created.id)]
 
 
 @pytest.mark.asyncio
 async def test_user_service_completes_crud_flow() -> None:
     repository = FakeUserRepository()
-    service = build_service(repository)
+    sessions = FakeSessionRepository()
+    service = build_service(repository, sessions=sessions)
 
     created = await service.create(CreateUserCommand(username="alice", email="alice@example.com", password="password123"))
     fetched = await service.get(created.id)
@@ -180,6 +213,7 @@ async def test_user_service_completes_crud_flow() -> None:
     assert updated.username == "alice_new"
     assert updated.status is UserStatus.ACTIVE
     assert status_changed.status is UserStatus.DISABLED
+    assert sessions.revoked_user_ids == [UserId(created.id)]
     assert repository.items == {}
 
     with pytest.raises(UserNotFoundError):

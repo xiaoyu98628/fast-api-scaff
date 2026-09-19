@@ -10,6 +10,7 @@ from app.infrastructure.cache.manager import CacheManager
 from app.infrastructure.database.manager import DatabaseManager
 from app.infrastructure.http.manager import HttpClientManager
 from app.infrastructure.queue.manager import QueueManager
+from app.infrastructure.rate_limit.contracts import RateLimiter
 from app.infrastructure.vector.manager import VectorStoreManager
 
 type AsyncCallback = Callable[[], Awaitable[None]]
@@ -29,6 +30,7 @@ class ApplicationContainer:
     startup_callbacks: tuple[AsyncCallback, ...] = ()
     async_shutdown_callbacks: tuple[AsyncCallback, ...] = ()
     shutdown_callbacks: tuple[Callback, ...] = ()
+    rate_limiter: RateLimiter | None = None
 
     async def start(self) -> None:
         """按声明顺序执行应用启动回调。"""

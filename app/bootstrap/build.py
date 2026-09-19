@@ -8,6 +8,7 @@ from app.infrastructure.database.manager import DatabaseManager
 from app.infrastructure.database.providers.registry import DEFAULT_DATABASE_PROVIDERS, DatabaseProviderRegistry
 from app.infrastructure.http.manager import HttpClientManager
 from app.infrastructure.queue.manager import QueueManager
+from app.infrastructure.rate_limit.factory import build_rate_limiter
 from app.infrastructure.vector.manager import VectorStoreManager
 from app.infrastructure.vector.providers.registry import DEFAULT_VECTOR_PROVIDERS, VectorProviderRegistry
 from app.runtime.container import ApplicationContainer
@@ -25,6 +26,7 @@ def build_application_container(
     # Manager 只保存配置并按需创建连接，构建容器本身不会主动访问外部服务。
     databases = DatabaseManager(settings.database, providers=database_providers)
     caches = CacheManager(settings.cache, providers=cache_providers)
+    rate_limiter = build_rate_limiter(settings.rate_limit, caches)
     http = HttpClientManager(settings.http)
     vectors = VectorStoreManager(settings.vector, providers=vector_providers)
     queues = QueueManager(settings.queue, databases)
@@ -35,6 +37,7 @@ def build_application_container(
     return ApplicationContainer(
         databases=databases,
         caches=caches,
+        rate_limiter=rate_limiter,
         http=http,
         vectors=vectors,
         users=users,

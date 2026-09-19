@@ -6,6 +6,8 @@ from collections.abc import Mapping
 from datetime import datetime
 from enum import StrEnum
 
+from app.infrastructure.logging.record import safe_exception_details
+
 
 class _StructuredLogFormatter(logging.Formatter):
     """构建各输出格式共用的结构化日志字段。"""
@@ -63,10 +65,14 @@ class _StructuredLogFormatter(logging.Formatter):
 
         if record.exc_info and record.exc_info[0] is not None:
             exception_type, exception, _traceback = record.exc_info
+            if exception is None:
+                error_type = f"{exception_type.__module__}.{exception_type.__qualname__}"
+                stacktrace = ()
+            else:
+                error_type, stacktrace = safe_exception_details(exception)
             payload["exception"] = {
-                "type": exception_type.__name__,
-                "message": str(exception) if exception is not None else None,
-                "stacktrace": self.formatException(record.exc_info),
+                "type": error_type,
+                "stacktrace": stacktrace,
             }
 
         return payload

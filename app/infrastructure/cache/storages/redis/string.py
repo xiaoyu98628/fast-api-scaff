@@ -5,14 +5,6 @@ from redis.asyncio import Redis
 from app.infrastructure.cache.errors import CacheOperationError
 from app.infrastructure.cache.storages.redis.base import BaseRedisStorage
 
-_INCREMENT_WITH_TTL_SCRIPT = """
-local value = redis.call('INCR', KEYS[1])
-if value == 1 then
-    redis.call('EXPIRE', KEYS[1], ARGV[1])
-end
-return value
-"""
-
 
 class RedisStringStorage(BaseRedisStorage):
     """实现 Redis String 对应的字节级 KV 操作。"""
@@ -60,19 +52,6 @@ class RedisStringStorage(BaseRedisStorage):
             return await self._client.exists(key) > 0
         except Exception as error:
             raise CacheOperationError("Redis 检查缓存失败") from error
-
-    async def increment(self, key: str, ttl: int) -> int:
-        """原子递增整数，并只在首次创建 key 时设置过期时间。"""
-
-        try:
-            value = await self._client.eval(_INCREMENT_WITH_TTL_SCRIPT, 1, key, ttl)
-        except Exception as error:
-            raise CacheOperationError("Redis 原子递增缓存失败") from error
-
-        if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
-            raise CacheOperationError("Redis 返回了无效的递增结果")
-
-        return value
 
     async def expire(self, key: str, ttl: int) -> bool:
         """更新已有 key 的秒级过期时间。"""
