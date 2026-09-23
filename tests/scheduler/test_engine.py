@@ -123,7 +123,7 @@ async def test_engine_maps_cron_and_dispatches_existing_queue_job(caplog: pytest
 @pytest.mark.parametrize(
     ("policy", "expected_start"),
     [
-        (IntervalStartPolicy.IMMEDIATELY, datetime(2026, 9, 19, 12, tzinfo=UTC)),
+        (IntervalStartPolicy.IMMEDIATELY, datetime(2026, 9, 19, 12, 0, 30, tzinfo=UTC)),
         (IntervalStartPolicy.AFTER_INTERVAL, datetime(2026, 9, 19, 12, 0, 30, tzinfo=UTC)),
     ],
 )
@@ -140,15 +140,108 @@ async def test_engine_fixes_interval_first_run_semantics(
         coalesce=CoalescePolicy.ALL,
     )
     engine = _engine(fake, now=now)
+    dispatcher = FakeDispatcher()
 
-    await engine.start((definition,), FakeDispatcher())
+    await engine.start((definition,), dispatcher)
 
     _, trigger, options = fake.jobs[0]
     assert isinstance(trigger, IntervalTrigger)
     assert trigger.start_date == expected_start
     assert options["coalesce"] is False
     assert trigger.interval == timedelta(seconds=30)
+    assert dispatcher.calls == ([(definition.job, None, None)] if policy is IntervalStartPolicy.IMMEDIATELY else [])
     await engine.aclose()
+
+
+@pytest.mark.asyncio
+async def test_immediate_interval_dispatches_before_full_period_elapses() -> None:
+    """长间隔计划在启动阶段直接投递，不依赖 APScheduler 的首次 misfire。"""
+
+    dispatcher = FakeDispatcher()
+    definition = QueueJobSchedule(
+        id="example.immediate",
+        trigger=IntervalSchedule(seconds=60, start=IntervalStartPolicy.IMMEDIATELY),
+        job=ExampleJob(1),
+    )
+    engine = ApschedulerEngine()
+
+    await asyncio.wait_for(engine.start((definition,), dispatcher), timeout=2)
+    try:
+        assert dispatcher.calls == [(definition.job, None, None)]
+    finally:
+        await engine.aclose()
+
+
+@pytest.mark.asyncio
+async def test_immediate_dispatch_failure_still_registers_next_interval(caplog: pytest.LogCaptureFixture) -> None:
+    """首次发布失败仍记录诊断，并从该次尝试结束后继续周期计划。"""
+
+    fake = CapturingScheduler()
+    definition = QueueJobSchedule(
+        id="example.immediate.failure",
+        trigger=IntervalSchedule(seconds=30, start=IntervalStartPolicy.IMMEDIATELY),
+        job=ExampleJob(1),
+    )
+
+    async def fail_dispatch(*_args: object, **_kwargs: object):
+        raise RuntimeError("sensitive queue detail")
+
+    caplog.set_level(logging.INFO, logger="app.interfaces.scheduler.apscheduler")
+    engine = _engine(fake, now=datetime(2026, 9, 19, 12, tzinfo=UTC))
+    await engine.start((definition,), fail_dispatch)
+
+    assert len(fake.jobs) == 1
+    assert isinstance(fake.jobs[0][1], IntervalTrigger)
+    record = next(record for record in caplog.records if getattr(record, "event", None) == "scheduler.dispatch_failed")
+    assert "sensitive queue detail" not in record.getMessage()
+    await engine.aclose()
+
+
+@pytest.mark.asyncio
+async def test_shutdown_waits_for_initial_dispatch() -> None:
+    """关闭请求到来时，启动阶段的首次投递仍有机会完成。"""
+
+    fake = CapturingScheduler()
+    started = asyncio.Event()
+    release = asyncio.Event()
+    completed = False
+
+    async def dispatch(
+        job: object,
+        *,
+        connection: str | None = None,
+        queue: str | None = None,
+        correlation_id: str | None = None,
+    ) -> UUID:
+        nonlocal completed
+        del job, connection, queue, correlation_id
+        started.set()
+        await release.wait()
+        completed = True
+        return FakeDispatcher().job_id
+
+    definition = QueueJobSchedule(
+        id="example.immediate.shutdown",
+        trigger=IntervalSchedule(seconds=30, start=IntervalStartPolicy.IMMEDIATELY),
+        job=ExampleJob(1),
+    )
+    engine = _engine(fake)
+    starting = asyncio.create_task(engine.start((definition,), dispatch))
+    await asyncio.wait_for(started.wait(), timeout=2)
+    assert not fake.jobs
+
+    closing = asyncio.create_task(engine.aclose())
+    try:
+        await asyncio.sleep(0)
+        assert not closing.done()
+        assert not completed
+    finally:
+        release.set()
+        await asyncio.wait_for(starting, timeout=2)
+        await asyncio.wait_for(closing, timeout=2)
+
+    assert completed
+    assert not fake.jobs
 
 
 @pytest.mark.asyncio
@@ -219,7 +312,7 @@ async def test_shutdown_waits_for_inflight_dispatch_before_canceling_executor() 
     engine = ApschedulerEngine()
     definition = QueueJobSchedule(
         id="example.shutdown",
-        trigger=IntervalSchedule(seconds=1, start=IntervalStartPolicy.IMMEDIATELY),
+        trigger=IntervalSchedule(seconds=1, start=IntervalStartPolicy.AFTER_INTERVAL),
         job=ExampleJob(1),
     )
     await engine.start((definition,), dispatch)

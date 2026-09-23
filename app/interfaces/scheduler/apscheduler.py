@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
 
 from apscheduler.events import EVENT_SCHEDULER_SHUTDOWN
@@ -64,6 +64,7 @@ class ApschedulerEngine:
         self._scheduler: AsyncIOScheduler | None = None
         self._executor: _DrainingAsyncIOExecutor | None = None
         self._shutdown_event: asyncio.Event | None = None
+        self._initial_dispatches: set[asyncio.Task[None]] = set()
         self._started = False
         self._closed = False
 
@@ -85,11 +86,17 @@ class ApschedulerEngine:
         shutdown_event = asyncio.Event()
         self._executor = executor
         self._shutdown_event = shutdown_event
+        immediate: list[QueueJobSchedule] = []
         try:
             scheduler.add_executor(executor, alias="default")
             scheduler.add_listener(lambda _event: shutdown_event.set(), EVENT_SCHEDULER_SHUTDOWN)
             for definition in definitions:
-                self._register(scheduler, definition, dispatcher)
+                if self._starts_immediately(definition):
+                    # 首次投递不交给 APScheduler 的 misfire 窗口，先验证时钟契约。
+                    self._build_trigger(definition.trigger)
+                    immediate.append(definition)
+                else:
+                    self._register(scheduler, definition, dispatcher)
         except Exception as error:
             raise SchedulerConfigurationError("定时计划配置不合法") from error
 
@@ -98,6 +105,25 @@ class ApschedulerEngine:
         except Exception as error:
             raise SchedulerError("调度引擎启动失败") from error
         self._started = True
+        await self._start_initial_dispatches(scheduler, tuple(immediate), dispatcher)
+
+    async def _start_initial_dispatches(
+        self,
+        scheduler: AsyncIOScheduler,
+        definitions: tuple[QueueJobSchedule, ...],
+        dispatcher: JobDispatcher,
+    ) -> None:
+        """并发完成首次投递，并让各周期从自己的投递结束时起算。"""
+
+        tasks = tuple(asyncio.create_task(self._dispatch_initial_then_register(scheduler, definition, dispatcher)) for definition in definitions)
+        self._initial_dispatches.update(tasks)
+        for task in tasks:
+            task.add_done_callback(self._initial_dispatches.discard)
+        if tasks:
+            outcomes = await asyncio.shield(asyncio.gather(*tasks, return_exceptions=True))
+            for outcome in outcomes:
+                if isinstance(outcome, BaseException):
+                    raise SchedulerConfigurationError("首次投递后的定时计划注册失败") from outcome
 
     async def wait(self, stop: asyncio.Event) -> None:
         """等待宿主停止请求。"""
@@ -124,6 +150,8 @@ class ApschedulerEngine:
         try:
             # pause 同步阻止新提交；执行器排空后才能关闭共享队列资源。
             scheduler.pause()
+            if self._initial_dispatches:
+                await asyncio.gather(*tuple(self._initial_dispatches), return_exceptions=True)
             if executor is not None:
                 await executor.drain()
             scheduler.shutdown(wait=False)
@@ -131,6 +159,24 @@ class ApschedulerEngine:
                 await shutdown_event.wait()
         except Exception as error:
             raise SchedulerError("调度引擎停止失败") from error
+
+    @staticmethod
+    def _starts_immediately(definition: QueueJobSchedule) -> bool:
+        """标识需要在启动阶段显式投递一次的 Interval 计划。"""
+
+        return isinstance(definition.trigger, IntervalSchedule) and definition.trigger.start is IntervalStartPolicy.IMMEDIATELY
+
+    async def _dispatch_initial_then_register(
+        self,
+        scheduler: AsyncIOScheduler,
+        definition: QueueJobSchedule,
+        dispatcher: JobDispatcher,
+    ) -> None:
+        """先尝试首次投递，再从完成时刻开始计算后续间隔。"""
+
+        await self._build_callback(definition, dispatcher)()
+        if not self._closed:
+            self._register(scheduler, definition, dispatcher)
 
     def _register(
         self,
@@ -154,7 +200,7 @@ class ApschedulerEngine:
         self,
         definition: QueueJobSchedule,
         dispatcher: JobDispatcher,
-    ) -> Callable[[], object]:
+    ) -> Callable[[], Awaitable[None]]:
         """创建记录投递结果且不承担业务处理的异步回调。"""
 
         async def dispatch() -> None:
@@ -208,7 +254,8 @@ class ApschedulerEngine:
                 now = self._clock()
                 if now.tzinfo is None or now.utcoffset() is None:
                     raise ValueError("Scheduler 本地时钟必须包含 UTC offset")
-                start_date = now if trigger.start is IntervalStartPolicy.IMMEDIATELY else now + timedelta(seconds=trigger.seconds)
+                # IMMEDIATELY 的首次投递由启动流程显式完成，这里只注册后续周期。
+                start_date = now + timedelta(seconds=trigger.seconds)
                 return IntervalTrigger(seconds=trigger.seconds, start_date=start_date)
 
 

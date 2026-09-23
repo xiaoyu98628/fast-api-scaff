@@ -137,11 +137,11 @@ IntervalSchedule(
 )
 ```
 
-`AFTER_INTERVAL` 在一个完整间隔后首次触发，`IMMEDIATELY` 在引擎启动后立即到期。适配器显式计算 `start_date`，不依赖第三方库默认值。
+`AFTER_INTERVAL` 在一个完整间隔后首次触发。`IMMEDIATELY` 在引擎启动阶段通过现有队列回调直接尝试一次投递；该次尝试结束后，适配器才注册从结束时间起算的后续固定间隔计划。首次投递不受 APScheduler 的 `misfire_grace_seconds` 限制，失败仍记录 `scheduler.dispatch_failed` 并继续后续周期；存在此类计划时，启动会等待首次队列发布结束，且可能在启动阶段按需连接队列。
 
 ## 5. 错过执行与投递失败
 
-`misfire_grace_seconds` 定义计划晚于原触发时间多久仍允许投递。`CoalescePolicy.LATEST` 把多个错过时间合并为一次，`CoalescePolicy.ALL` 为每个允许执行的错过时间触发一次投递。
+`misfire_grace_seconds` 定义 APScheduler 管理的周期计划晚于原触发时间多久仍允许投递。`CoalescePolicy.LATEST` 把多个错过时间合并为一次，`CoalescePolicy.ALL` 为每个允许执行的错过时间触发一次投递。
 
 Scheduler 的 `max_instances=1` 只限制同一计划的投递回调并发，不限制消息到达 Worker 后的业务执行并发。需要避免重复副作用时，应在应用服务、数据库约束或所属基础设施中建立业务幂等边界。
 
@@ -149,7 +149,7 @@ Scheduler 的 `max_instances=1` 只限制同一计划的投递回调并发，不
 
 ## 6. 生命周期和日志
 
-Scheduler 复用 `ApplicationRuntime`，启动顺序为容器、计划目录、队列路由校验、调度引擎；关闭时先暂停新触发，等待已经提交给调度执行器的投递结束，再关闭调度引擎和应用容器。停机因此可能等待当前队列发布完成；队列发布失败仍按 `scheduler.dispatch_failed` 记录。SIGINT 和 SIGTERM 转换为协作式停止请求。调度引擎与容器关闭都得到尝试，多个关闭根因通过异常组保留。
+Scheduler 复用 `ApplicationRuntime`，启动顺序为容器、计划目录、队列路由校验、调度引擎及 `IMMEDIATELY` 计划的首次投递；关闭时先暂停新触发，等待首次投递和已经提交给调度执行器的投递结束，再关闭调度引擎和应用容器。停机因此可能等待当前队列发布完成；队列发布失败仍按 `scheduler.dispatch_failed` 记录。SIGINT 和 SIGTERM 转换为协作式停止请求。调度引擎与容器关闭都得到尝试，多个关闭根因通过异常组保留。
 
 生命周期事件：
 

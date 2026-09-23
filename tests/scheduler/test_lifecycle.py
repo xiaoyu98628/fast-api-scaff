@@ -13,7 +13,7 @@ from app.bootstrap.scheduler.application import SchedulerHost
 from app.infrastructure.queue.errors import QueueConfigurationError
 from app.infrastructure.queue.job import QueueJob
 from app.interfaces.scheduler.cli import run_scheduler
-from app.interfaces.scheduler.contracts import CronSchedule, QueueJobSchedule
+from app.interfaces.scheduler.contracts import CronSchedule, JobDispatcher, QueueJobSchedule
 from app.interfaces.scheduler.registry import ScheduleRegistry
 from tests.console.test_application import build_settings
 from tests.scheduler.fakes import FakeSchedulerEngine
@@ -117,6 +117,54 @@ async def test_scheduler_keeps_container_open_until_engine_drains() -> None:
         await asyncio.wait_for(serving, timeout=2)
 
     assert events.index("engine.closed") < events.index("container.closed")
+
+
+@pytest.mark.asyncio
+async def test_stop_during_initial_dispatch_waits_before_container_close() -> None:
+    """停止信号即使在引擎启动中到达，也要等待首次投递结束。"""
+
+    settings = build_settings()
+    events: list[str] = []
+    publishing = asyncio.Event()
+    release = asyncio.Event()
+
+    class InitialDispatchEngine(FakeSchedulerEngine):
+        async def start(self, definitions: tuple[QueueJobSchedule, ...], dispatcher: JobDispatcher) -> None:
+            """模拟启动期间尚未完成的首次投递。"""
+
+            await super().start(definitions, dispatcher)
+            publishing.set()
+            await release.wait()
+            events.append("initial.finished")
+
+    base_container = build_application_container(settings)
+
+    async def record_container_close() -> None:
+        events.append("container.closed")
+
+    container = replace(
+        base_container,
+        async_shutdown_callbacks=(*base_container.async_shutdown_callbacks, record_container_close),
+    )
+    stop = asyncio.Event()
+    application = SchedulerHost(
+        settings,
+        container_builder=lambda _: container,
+        registry_builder=ScheduleRegistry,
+        engine_builder=lambda: InitialDispatchEngine(events),
+    )
+
+    serving = asyncio.create_task(application.serve(stop))
+    try:
+        await asyncio.wait_for(publishing.wait(), timeout=2)
+        stop.set()
+        await asyncio.sleep(0)
+        assert "container.closed" not in events
+    finally:
+        release.set()
+        await asyncio.wait_for(serving, timeout=2)
+
+    assert events.index("initial.finished") < events.index("container.closed")
 
 
 @pytest.mark.asyncio
