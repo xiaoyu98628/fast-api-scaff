@@ -25,8 +25,14 @@ def test_default_registry_contains_builtin_drivers() -> None:
     assert DEFAULT_CACHE_PROVIDERS.drivers == ("redis", "memcached")
 
 
-def test_cache_drivers_are_imported_only_when_the_selected_resource_is_created() -> None:
-    script = """
+@pytest.mark.parametrize(
+    ("selected_driver", "selected_package", "unused_driver", "unused_package"),
+    [("redis", "redis", "memcached", "memcachio"), ("memcached", "memcachio", "redis", "redis")],
+)
+def test_cache_drivers_are_imported_only_when_the_selected_resource_is_created(
+    selected_driver: str, selected_package: str, unused_driver: str, unused_package: str
+) -> None:
+    script = f"""
 import asyncio
 import sys
 from app.config.cache import CacheSettings
@@ -35,17 +41,17 @@ from app.infrastructure.cache.manager import CacheManager
 manager = CacheManager(CacheSettings(
     default="session",
     namespace="test",
-    connections={
-        "session": {"driver": "redis"},
-        "page": {"driver": "memcached"},
-    },
+    connections={{
+        "session": {{"driver": {selected_driver!r}}},
+        "page": {{"driver": {unused_driver!r}}},
+    }},
     _env_file=None,
 ))
 assert "redis" not in sys.modules
 assert "memcachio" not in sys.modules
 asyncio.run(manager.get("session"))
-assert "redis" in sys.modules
-assert "memcachio" not in sys.modules
+assert {selected_package!r} in sys.modules
+assert {unused_package!r} not in sys.modules
 asyncio.run(manager.aclose())
 """
 
@@ -54,8 +60,12 @@ asyncio.run(manager.aclose())
     assert result.returncode == 0, result.stderr
 
 
-def test_missing_cache_driver_dependency_has_stable_configuration_error() -> None:
-    script = """
+@pytest.mark.parametrize(
+    ("driver", "package", "label"),
+    [("redis", "redis", "Redis"), ("memcached", "memcachio", "Memcached")],
+)
+def test_missing_cache_driver_dependency_has_stable_configuration_error(driver: str, package: str, label: str) -> None:
+    script = f"""
 import asyncio
 import builtins
 from app.config.cache import CacheSettings
@@ -65,21 +75,22 @@ from app.infrastructure.cache.manager import CacheManager
 manager = CacheManager(CacheSettings(
     default="session",
     namespace="test",
-    connections={"session": {"driver": "redis"}},
+    connections={{"session": {{"driver": {driver!r}}}}},
     _env_file=None,
 ))
 original_import = builtins.__import__
 def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
-    if name == "redis" or name.startswith("redis."):
-        raise ModuleNotFoundError("blocked redis dependency")
+    if name == {package!r} or name.startswith({package!r} + "."):
+        raise ModuleNotFoundError("blocked selected dependency")
     return original_import(name, globals, locals, fromlist, level)
 builtins.__import__ = guarded_import
 try:
     asyncio.run(manager.get())
 except CacheConfigurationError as error:
-    assert "客户端依赖无法加载" in str(error)
+    assert str(error) == {label!r} + " 缓存驱动的客户端依赖无法加载"
+    assert isinstance(error.__cause__, ModuleNotFoundError)
 else:
-    raise AssertionError("missing Redis dependency was accepted")
+    raise AssertionError("missing selected dependency was accepted")
 """
 
     result = subprocess.run([sys.executable, "-c", script], cwd=PROJECT_ROOT, capture_output=True, text=True, timeout=10)

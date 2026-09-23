@@ -136,7 +136,11 @@ databases = DatabaseManager(DatabaseSettings(_env_file=None))
 manager = QueueManager(
     QueueSettings(
         default="main",
-        connections={"main": {"driver": "redis"}},
+        connections={
+            "main": {"driver": "redis"},
+            "events": {"driver": "kafka", "bootstrap_servers": ["localhost:9092"]},
+            "notifications": {"driver": "rabbitmq"},
+        },
         _env_file=None,
     ),
     databases,
@@ -175,8 +179,17 @@ asyncio.run(databases.aclose())
     assert result.returncode == 0, result.stderr
 
 
-def test_missing_queue_driver_dependency_has_stable_configuration_error() -> None:
-    script = """
+@pytest.mark.parametrize(
+    ("raw_config", "package", "driver"),
+    [
+        ({"driver": "redis"}, "redis", "redis"),
+        ({"driver": "kafka", "bootstrap_servers": ["localhost:9092"]}, "aiokafka", "kafka"),
+        ({"driver": "rabbitmq"}, "aio_pika", "rabbitmq"),
+    ],
+)
+def test_missing_queue_driver_dependency_has_stable_configuration_error(raw_config: dict[str, object], package: str, driver: str) -> None:
+    expected_error = f"队列驱动 {driver!r} 的客户端依赖无法加载"
+    script = f"""
 import asyncio
 import builtins
 from app.config.database import DatabaseSettings
@@ -186,21 +199,22 @@ from app.infrastructure.queue.errors import QueueConfigurationError
 from app.infrastructure.queue.manager import QueueManager
 
 manager = QueueManager(
-    QueueSettings(default="main", connections={"main": {"driver": "redis"}}, _env_file=None),
+    QueueSettings(default="main", connections={{"main": {raw_config!r}}}, _env_file=None),
     DatabaseManager(DatabaseSettings(_env_file=None)),
 )
 original_import = builtins.__import__
 def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
-    if name == "redis" or name.startswith("redis."):
-        raise ModuleNotFoundError("blocked redis dependency")
+    if name == {package!r} or name.startswith({package!r} + "."):
+        raise ModuleNotFoundError("blocked selected dependency")
     return original_import(name, globals, locals, fromlist, level)
 builtins.__import__ = guarded_import
 try:
     asyncio.run(manager.get())
 except QueueConfigurationError as error:
-    assert "客户端依赖无法加载" in str(error)
+    assert str(error) == {expected_error!r}
+    assert isinstance(error.__cause__, ModuleNotFoundError)
 else:
-    raise AssertionError("missing Redis dependency was accepted")
+    raise AssertionError("missing selected dependency was accepted")
 """
 
     result = subprocess.run([sys.executable, "-c", script], cwd=PROJECT_ROOT, capture_output=True, text=True, timeout=10)
