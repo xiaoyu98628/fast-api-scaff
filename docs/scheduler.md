@@ -149,7 +149,7 @@ Scheduler 的 `max_instances=1` 只限制同一计划的投递回调并发，不
 
 ## 6. 生命周期和日志
 
-Scheduler 复用 `ApplicationRuntime`，启动顺序为容器、计划目录、队列路由校验、调度引擎；关闭顺序为调度引擎、应用容器。SIGINT 和 SIGTERM 转换为协作式停止请求。调度引擎与容器关闭都得到尝试，多个关闭根因通过异常组保留。
+Scheduler 复用 `ApplicationRuntime`，启动顺序为容器、计划目录、队列路由校验、调度引擎；关闭时先暂停新触发，等待已经提交给调度执行器的投递结束，再关闭调度引擎和应用容器。停机因此可能等待当前队列发布完成；队列发布失败仍按 `scheduler.dispatch_failed` 记录。SIGINT 和 SIGTERM 转换为协作式停止请求。调度引擎与容器关闭都得到尝试，多个关闭根因通过异常组保留。
 
 生命周期事件：
 

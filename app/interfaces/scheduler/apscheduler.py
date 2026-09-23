@@ -5,6 +5,8 @@ import logging
 from collections.abc import Callable
 from datetime import datetime, timedelta
 
+from apscheduler.events import EVENT_SCHEDULER_SHUTDOWN
+from apscheduler.executors.asyncio import AsyncIOExecutor
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
@@ -34,6 +36,18 @@ def _local_now() -> datetime:
     return datetime.now().astimezone()
 
 
+class _DrainingAsyncIOExecutor(AsyncIOExecutor):
+    """在 Scheduler 关闭前等待已经提交的异步投递结束。"""
+
+    async def drain(self) -> None:
+        """等待执行器持有的全部任务，不由关闭流程取消正在发布的消息。"""
+
+        # APScheduler 3 的 shutdown(wait=True) 仍会取消这些 Future，
+        # 因此必须在调用 shutdown 前完成等待。
+        while pending := getattr(self, "_pending_futures", ()):
+            await asyncio.gather(*tuple(pending), return_exceptions=True)
+
+
 class ApschedulerEngine:
     """把项目计划转换为 APScheduler Trigger 并投递 QueueJob。"""
 
@@ -48,6 +62,8 @@ class ApschedulerEngine:
         self._scheduler_factory = scheduler_factory
         self._clock = clock
         self._scheduler: AsyncIOScheduler | None = None
+        self._executor: _DrainingAsyncIOExecutor | None = None
+        self._shutdown_event: asyncio.Event | None = None
         self._started = False
         self._closed = False
 
@@ -65,7 +81,13 @@ class ApschedulerEngine:
 
         scheduler = self._scheduler_factory()
         self._scheduler = scheduler
+        executor = _DrainingAsyncIOExecutor()
+        shutdown_event = asyncio.Event()
+        self._executor = executor
+        self._shutdown_event = shutdown_event
         try:
+            scheduler.add_executor(executor, alias="default")
+            scheduler.add_listener(lambda _event: shutdown_event.set(), EVENT_SCHEDULER_SHUTDOWN)
             for definition in definitions:
                 self._register(scheduler, definition, dispatcher)
         except Exception as error:
@@ -88,15 +110,25 @@ class ApschedulerEngine:
         """幂等停止 APScheduler，并禁止再次启动。"""
 
         scheduler = self._scheduler
+        executor = self._executor
+        shutdown_event = self._shutdown_event
         started = self._started
         self._scheduler = None
+        self._executor = None
+        self._shutdown_event = None
         self._started = False
         self._closed = True
 
         if scheduler is None or not started:
             return
         try:
-            scheduler.shutdown(wait=True)
+            # pause 同步阻止新提交；执行器排空后才能关闭共享队列资源。
+            scheduler.pause()
+            if executor is not None:
+                await executor.drain()
+            scheduler.shutdown(wait=False)
+            if shutdown_event is not None:
+                await shutdown_event.wait()
         except Exception as error:
             raise SchedulerError("调度引擎停止失败") from error
 

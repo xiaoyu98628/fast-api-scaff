@@ -75,6 +75,51 @@ async def test_scheduler_runs_empty_catalog_and_closes_engine_before_container(
 
 
 @pytest.mark.asyncio
+async def test_scheduler_keeps_container_open_until_engine_drains() -> None:
+    """宿主等待调度引擎关闭完成后，才释放其使用的队列容器。"""
+
+    settings = build_settings()
+    events: list[str] = []
+    draining = asyncio.Event()
+    release = asyncio.Event()
+
+    class DrainingEngine(FakeSchedulerEngine):
+        async def aclose(self) -> None:
+            events.append("engine.draining")
+            draining.set()
+            await release.wait()
+            events.append("engine.closed")
+
+    base_container = build_application_container(settings)
+
+    async def record_container_close() -> None:
+        events.append("container.closed")
+
+    container = replace(
+        base_container,
+        async_shutdown_callbacks=(*base_container.async_shutdown_callbacks, record_container_close),
+    )
+    stop = asyncio.Event()
+    stop.set()
+    application = SchedulerHost(
+        settings,
+        container_builder=lambda _: container,
+        registry_builder=ScheduleRegistry,
+        engine_builder=lambda: DrainingEngine(events),
+    )
+
+    serving = asyncio.create_task(application.serve(stop))
+    try:
+        await asyncio.wait_for(draining.wait(), timeout=2)
+        assert "container.closed" not in events
+    finally:
+        release.set()
+        await asyncio.wait_for(serving, timeout=2)
+
+    assert events.index("engine.closed") < events.index("container.closed")
+
+
+@pytest.mark.asyncio
 async def test_scheduler_logs_catalog_failure_and_still_closes_runtime(
     caplog: pytest.LogCaptureFixture,
 ) -> None:

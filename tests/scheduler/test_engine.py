@@ -1,10 +1,12 @@
 """验证 APScheduler 适配器的映射、投递和生命周期。"""
 
+import asyncio
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import cast
+from uuid import UUID
 
 import pytest
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -38,7 +40,15 @@ class CapturingScheduler:
     def __init__(self) -> None:
         self.jobs: list[tuple[Callable, object, dict[str, object]]] = []
         self.started = False
+        self.paused = False
         self.shutdown_wait: bool | None = None
+        self.shutdown_listener: Callable[[object], None] | None = None
+
+    def add_executor(self, _executor: object, *, alias: str) -> None:
+        assert alias == "default"
+
+    def add_listener(self, callback: Callable[[object], None], _mask: int) -> None:
+        self.shutdown_listener = callback
 
     def add_job(self, callback: Callable, *, trigger: object, **options: object) -> None:
         self.jobs.append((callback, trigger, options))
@@ -46,8 +56,13 @@ class CapturingScheduler:
     def start(self) -> None:
         self.started = True
 
+    def pause(self) -> None:
+        self.paused = True
+
     def shutdown(self, *, wait: bool) -> None:
         self.shutdown_wait = wait
+        assert self.shutdown_listener is not None
+        self.shutdown_listener(object())
 
 
 def _engine(fake: CapturingScheduler, *, now: datetime | None = None) -> ApschedulerEngine:
@@ -100,7 +115,8 @@ async def test_engine_maps_cron_and_dispatches_existing_queue_job(caplog: pytest
     }
 
     await engine.aclose()
-    assert fake.shutdown_wait is True
+    assert fake.paused is True
+    assert fake.shutdown_wait is False
 
 
 @pytest.mark.asyncio
@@ -171,3 +187,52 @@ async def test_closed_engine_rejects_restart() -> None:
 
     with pytest.raises(SchedulerError, match="已经关闭"):
         await engine.start((), FakeDispatcher())
+
+
+@pytest.mark.asyncio
+async def test_shutdown_waits_for_inflight_dispatch_before_canceling_executor() -> None:
+    """真实 APScheduler 运行中的投递必须先完成，随后才关闭调度器。"""
+
+    started = asyncio.Event()
+    release = asyncio.Event()
+    completed = asyncio.Event()
+    canceled = False
+
+    async def dispatch(
+        job: object,
+        *,
+        connection: str | None = None,
+        queue: str | None = None,
+        correlation_id: str | None = None,
+    ) -> UUID:
+        nonlocal canceled
+        del job, connection, queue, correlation_id
+        started.set()
+        try:
+            await release.wait()
+        except asyncio.CancelledError:
+            canceled = True
+            raise
+        completed.set()
+        return FakeDispatcher().job_id
+
+    engine = ApschedulerEngine()
+    definition = QueueJobSchedule(
+        id="example.shutdown",
+        trigger=IntervalSchedule(seconds=1, start=IntervalStartPolicy.IMMEDIATELY),
+        job=ExampleJob(1),
+    )
+    await engine.start((definition,), dispatch)
+    await asyncio.wait_for(started.wait(), timeout=3)
+
+    closing = asyncio.create_task(engine.aclose())
+    try:
+        await asyncio.sleep(0)
+        assert not closing.done()
+        assert not completed.is_set()
+    finally:
+        release.set()
+        await asyncio.wait_for(closing, timeout=2)
+
+    assert completed.is_set()
+    assert not canceled
