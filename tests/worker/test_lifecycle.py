@@ -16,6 +16,7 @@ from app.bootstrap.build import build_application_container
 from app.bootstrap.worker.application import WorkerHost, build_job_resolver
 from app.config.database import DatabaseSettings
 from app.config.queue import QueueSettings
+from app.contexts.user.jobs.cleanup_expired_sessions import CleanupExpiredSessionsJob
 from app.contexts.user.jobs.login_succeeded import LoginSucceededJob
 from app.infrastructure.logging.formatter import JsonLogFormatter, TextLogFormatter
 from app.infrastructure.queue.errors import QueueError
@@ -42,10 +43,13 @@ def test_worker_resolver_builder_discovers_and_logs_catalog(caplog: pytest.LogCa
 
     resolver = build_job_resolver()
 
-    assert tuple(descriptor.job_type for descriptor in resolver.descriptors) == (LoginSucceededJob,)
+    assert tuple(descriptor.job_type for descriptor in resolver.descriptors) == (
+        CleanupExpiredSessionsJob,
+        LoginSucceededJob,
+    )
     records = [record for record in caplog.records if getattr(record, "event", None) == "worker.jobs_discovered"]
     assert len(records) == 1
-    assert getattr(records[0], "details") == {"job_count": 1}
+    assert getattr(records[0], "details") == {"job_count": 2}
 
 
 @pytest.mark.asyncio

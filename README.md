@@ -1,6 +1,6 @@
 # fast-api-scaff
 
-面向 Python 3.14+ 的 FastAPI 模块化单体脚手架。项目以限界上下文组织业务，以 Domain/Application/Infrastructure 分层保护依赖方向，并让 HTTP、Console、Worker 等宿主复用同一套应用用例、配置和资源生命周期。
+面向 Python 3.14+ 的 FastAPI 模块化单体脚手架。项目以限界上下文组织业务，以 Domain/Application/Infrastructure 分层保护依赖方向，并让 HTTP、Console、Worker、Scheduler 等宿主复用同一套应用用例、配置和资源生命周期。
 
 ## 已实现能力
 
@@ -15,12 +15,13 @@
 - Milvus（本地 Lite/远程）、Chroma（本地持久化/远程）和 Elasticsearch 统一异步向量存储；
 - 普通与流式 HTTP 出站请求、独立连接池、阶段超时、池压力诊断和结构化日志；
 - Redis Streams、Kafka、RabbitMQ 队列适配器和独立 Worker；
+- 定时计划约定发现、代码注册表、Cron/Interval Trigger 和独立 Scheduler，到期后向现有队列投递 QueueJob；
 - QueueJob 约定发现与不可变任务目录、稳定引用、显式历史版本解码、投递内重试、SQL 失败存储及 Console 诊断/重放；
 - JSON/Text 结构化日志、HTTP request ID、Console command ID、Worker 任务关联、访问日志和数据库查询日志；
 - 架构依赖测试、pytest、Ruff、ty 与 GitHub Actions 质量检查；
 - CI 使用临时 MySQL/PostgreSQL 服务验证 Alembic upgrade、downgrade 和再次 upgrade。
 
-当前不包含角色/权限体系、刷新令牌、常驻 Scheduler、领域事件/Outbox/Saga、跨数据库原子事务、Redis 高级数据结构、缓存自动降级或通用 HTTP 自动重试。它们需要按实际业务边界设计，不能把规划项当作现有功能。用户 CRUD 仍是公开示例，`GET /api/v1/auth/me` 演示登录校验。
+当前不包含角色/权限体系、刷新令牌、领域事件/Outbox/Saga、跨数据库原子事务、Redis 高级数据结构、缓存自动降级或通用 HTTP 自动重试。它们需要按实际业务边界设计，不能把规划项当作现有功能。用户 CRUD 仍是公开示例，`GET /api/v1/auth/me` 演示登录校验。
 
 HTTP 请求限流通过 `RATE_LIMIT_ENABLED=true` 启用；`RATE_LIMIT_CACHE` 选择已有 Redis 连接，省略时使用默认缓存连接。配额由 `RATE_LIMIT_MAX_REQUESTS=1000` 和 `RATE_LIMIT_WINDOW_SECONDS=60` 配置，独立于登录失败限制。Redis 操作失败默认返回 503，只有显式设置 `RATE_LIMIT_FAIL_OPEN=true` 才故障放行。代理部署必须保证 ASGI 客户端地址可信，应用不直接解析转发头。详见 [HTTP 限流规则](docs/http.md#13-http-请求限流)和[配置参考](docs/configuration.md#http-请求限流)。
 
@@ -90,6 +91,7 @@ CORS 预检由跨域中间件直接处理，不生成 Request ID 或应用访问
 uv run python -m app.console --help
 uv run python -m app.console app info
 uv run python -m app.console queue jobs
+uv run python -m app.console scheduler list
 uv run python -m app.console users create \
   --username alice \
   --email alice@example.com
@@ -116,7 +118,7 @@ curl -X POST http://127.0.0.1:8000/api/v1/auth/login \
 
 失败计数 key 只保存规范化用户名的 SHA-256 摘要。登录限制必须选择 Redis 连接；配置成 Memcached 或其他驱动时，容器组合阶段会明确报错，且不会为通用 `CacheClient` 增加伪原子接口。对于无法取得用户哈希的未锁定请求，密码组件仍执行固定占位哈希校验，避免直接暴露账户是否存在。
 
-认证使用独立的 `user_sessions` 表，签发时间和过期时间采用与用户资料一致的本地无时区 `datetime`，用户表不增加角色或认证版本字段。用户聚合使用从 1 开始递增的内部 `version` 执行乐观并发控制，陈旧写入返回 409，不把版本暴露到 HTTP DTO；数据库迁移将该字段定义为非空整数并默认初始化为 1。每次成功登录会清理已过期会话；密码重置和用户禁用会在用户写入的同一数据库事务中撤销该用户全部会话，重新启用不会恢复旧会话。详细契约见[认证](docs/authentication.md)。
+认证使用独立的 `user_sessions` 表，签发时间和过期时间采用与用户资料一致的本地无时区 `datetime`，用户表不增加角色或认证版本字段。用户聚合使用从 1 开始递增的内部 `version` 执行乐观并发控制，陈旧写入返回 409，不把版本暴露到 HTTP DTO；数据库迁移将该字段定义为非空整数并默认初始化为 1。每次成功登录会清理已过期会话，内置计划还会在容器本地时间每天 0 点投递过期会话清理 Job；密码重置和用户禁用会在用户写入的同一数据库事务中撤销该用户全部会话，重新启用不会恢复旧会话。详细契约见[认证](docs/authentication.md)。
 
 ## Docker
 
@@ -126,9 +128,9 @@ docker compose up --build
 docker compose up --build service
 ```
 
-默认命令同时启动 HTTP 应用和独立 Worker；指定 `service` 时只启动 HTTP 应用。Compose 不提供 MySQL、PostgreSQL、Redis、Kafka、RabbitMQ、Memcached、Milvus、Chroma Server 或 Elasticsearch。容器内 `127.0.0.1` 指向容器自身；应用可以使用 SQLite、Milvus Lite 或 Chroma 本地持久化，但缓存必须配置容器可访问的 Redis 或 Memcached，队列 Worker 必须配置容器可访问的 Redis、Kafka 或 RabbitMQ 地址。Compose 使用 Uvicorn reload，仅适合本地开发。
+默认命令同时启动 HTTP 应用、独立 Worker 和独立 Scheduler；指定 `service` 时只启动 HTTP 应用。Compose 不提供 MySQL、PostgreSQL、Redis、Kafka、RabbitMQ、Memcached、Milvus、Chroma Server 或 Elasticsearch。容器内 `127.0.0.1` 指向容器自身；应用可以使用 SQLite、Milvus Lite 或 Chroma 本地持久化，但缓存必须配置容器可访问的 Redis 或 Memcached，存在已注册计划时 Scheduler 和 Worker 必须使用容器可访问的 Redis、Kafka 或 RabbitMQ 地址。Compose 使用 Uvicorn reload，仅适合本地开发。
 
-Worker 复用应用镜像、`.env` 和网络且不暴露端口。镜像本身不声明健康检查，Compose 只为 HTTP 服务配置 `/health` 检测。脚手架内置登录成功日志 Job；Worker 启动时自动发现 `app/**/jobs.py` 与 `app/**/jobs/**/*.py` 中直接定义的具体 QueueJob，校验后建立不可变任务目录，不需要在组合根逐项注册。Worker 持有与 HTTP、Console 同样完整且按需初始化的应用容器，Job 可以使用已装配的数据库、缓存、HTTP、队列和向量能力；Application/Domain 仍只接收明确的窄依赖。
+Worker 和 Scheduler 复用应用镜像、`.env`、容器本地时区和网络且不暴露端口。镜像本身不声明健康检查，Compose 只为 HTTP 服务配置 `/health` 检测。脚手架内置登录成功日志 Job 和过期会话清理 Job；Worker 启动时自动发现 `app/**/jobs.py` 与 `app/**/jobs/**/*.py` 中直接定义的具体 QueueJob，Scheduler 自动发现 `app/**/schedules/**/*.py` 中直接定义的 `register_schedules(registry)`，两者都不需要在组合根逐项注册。Scheduler 在到期时使用相同队列公共入口投递 Job。两个宿主持有与 HTTP、Console 同样完整且按需初始化的应用容器；Application/Domain 仍只接收明确的窄依赖。
 
 生产镜像以 UID/GID 1000 的非 root 用户运行。镜像中的应用代码和虚拟环境由 root 持有，运行用户只对 `storage/data`、`storage/logs` 和自己的 home 目录拥有写权限。Compose 会把项目目录挂载到 `/app`；若使用 SQLite、Milvus Lite 或 Chroma 本地持久化，请确保宿主机对应目录允许该用户写入。本地向量模式只用于单进程开发和小规模数据，不要让 HTTP 多 worker、HTTP 与 Worker 或多个容器共享同一路径。需要适配其他运行平台时，可通过 `APP_UID`、`APP_GID` 构建参数覆盖镜像用户。
 
@@ -142,6 +144,7 @@ Worker 复用应用镜像、`.env` 和网络且不暴露端口。镜像本身不
 - [Console 命令](docs/console.md)
 - [队列](docs/queue.md)
 - [独立 Worker](docs/worker.md)
+- [独立 Scheduler](docs/scheduler.md)
 - [数据库](docs/database.md)
 - [缓存](docs/cache.md)
 - [向量存储](docs/vector.md)
@@ -177,9 +180,19 @@ uv run python -m app.worker --connection redis --queue reports --concurrency 4
 docker compose up --build worker
 ```
 
-内置 `LoginSucceededJob` 由登录接口尽力投递到默认连接配置的默认队列（`sample.env` 为 `default`），消息以 `user_id` 参数标识登录用户，不包含用户名、密码或 Token；HTTP request ID 由运行时上下文自动作为 correlation ID 写入消息。Worker 收到后通过 `context.container.users.service.get(user_id)` 查询执行时的最新用户数据，证明 Job 可以经应用服务使用数据库，并只记录固定文案、结构化用户 ID 和状态，不把用户名或邮箱写入日志。用户在消费前已删除时记录稳定警告并结束；数据库连接池超时、断连和驱动明确标记的失效连接按现有策略重试；其他数据库错误直接进入失败存储。每条消息获得不可变 `JobExecutionContext`，其中既有当前配置和正在运行的 `ApplicationContainer`，也有任务、队列和关联元数据；Job 可以像 Console operation 一样选择已装配的应用服务以及数据库、缓存、HTTP、队列和向量能力。业务 Job 应优先调用应用服务，不把容器继续传入 Application/Domain。新增任务放入带独立 `jobs` 路径段的模块即可，无需修改组合根；Worker 在开始消费前完成发现、导入和契约校验，具体规则见[QueueJob 自动发现](docs/queue.md#2-queuejob-与自动发现)。HTTP 与 Console 负责发布，独立 Worker 通过 Redis、Kafka 或 RabbitMQ 消费。
+内置 `LoginSucceededJob` 由登录接口尽力投递到默认连接配置的默认队列（`sample.env` 为 `default`），消息以 `user_id` 参数标识登录用户，不包含用户名、密码或 Token；HTTP request ID 由运行时上下文自动作为 correlation ID 写入消息。Worker 收到后通过 `context.container.users.service.get(user_id)` 查询执行时的最新用户数据，并只记录固定文案、结构化用户 ID 和状态。`CleanupExpiredSessionsJob` 由内置 Scheduler 计划投递，Worker 通过认证应用服务删除已经过期的数据库会话并记录删除数量。两个任务都只对明确的暂时性数据库故障执行重试，其他错误进入失败存储。每条消息获得不可变 `JobExecutionContext`，其中既有当前配置和正在运行的 `ApplicationContainer`，也有任务、队列和关联元数据；Job 可以像 Console operation 一样选择已装配的应用服务以及数据库、缓存、HTTP、队列和向量能力。业务 Job 应优先调用应用服务，不把容器继续传入 Application/Domain。新增任务放入带独立 `jobs` 路径段的模块即可，无需修改组合根；Worker 在开始消费前完成发现、导入和契约校验，具体规则见[QueueJob 自动发现](docs/queue.md#2-queuejob-与自动发现)。HTTP、Console 与 Scheduler 负责发布，独立 Worker 通过 Redis、Kafka 或 RabbitMQ 消费。
 
 失败任务固定使用 SQL 存储，需配置 QUEUE_FAILED__DATABASE 并执行对应 Alembic migration。外部适配器目前由模拟客户端测试覆盖，未进行真实 Redis/Kafka/RabbitMQ 服务集成验证。重试是投递内重试，不包含持久延迟调度或 exactly-once 保证。
+
+## 独立 Scheduler
+
+```bash
+uv run python -m app.scheduler
+uv run python -m app.console scheduler list
+docker compose up --build scheduler
+```
+
+Scheduler 自动发现各限界上下文 `schedules/` 目录中的代码计划，按照容器操作系统本地时区计算 Cron 和固定间隔触发时间，并通过现有 QueueManager 投递 QueueJob。内置 `users.sessions.cleanup_expired` 计划每天 0 点向默认队列投递过期会话清理 Job；`scheduler list` 使用相同发现机制输出当前代码计划且不连接外部服务。Scheduler 启动阶段会校验计划模块、重复 ID、任务编码契约以及队列路由。APScheduler API 只允许出现在 Scheduler 入站适配器中，业务计划依赖项目自己的稳定契约。计划声明、发现规则、Trigger 语义、单实例运行约束和日志事件见[独立 Scheduler](docs/scheduler.md)。
 
 ## 许可证
 

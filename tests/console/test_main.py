@@ -17,6 +17,7 @@ from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError, OperationalError
 from typer.testing import CliRunner
 
+import app.interfaces.console.system.scheduler as scheduler_command_module
 from app.bootstrap.console.application import ConsoleHost
 from app.config.app import AppSettings
 from app.config.cache import CacheSettings
@@ -32,6 +33,7 @@ from app.contexts.user.application.service import UserApplicationService
 from app.contexts.user.composition import build_user_context
 from app.contexts.user.domain.errors import InvalidUserDataError
 from app.contexts.user.domain.values import UserStatus
+from app.contexts.user.jobs.login_succeeded import LoginSucceededJob
 from app.infrastructure.cache.manager import CacheManager
 from app.infrastructure.database.manager import DatabaseManager
 from app.infrastructure.http.errors import HttpTransportError
@@ -42,6 +44,14 @@ from app.infrastructure.vector.manager import VectorStoreManager
 from app.interfaces.console.cli import create_console, run_console
 from app.interfaces.console.exit_codes import ConsoleExitCode
 from app.interfaces.console.presentation import ConsolePresenter
+from app.interfaces.scheduler.contracts import (
+    CoalescePolicy,
+    CronSchedule,
+    IntervalSchedule,
+    IntervalStartPolicy,
+    QueueJobSchedule,
+)
+from app.interfaces.scheduler.registry import ScheduleRegistry
 from app.runtime.container import ApplicationContainer
 
 _USER_ID = UUID("00000000-0000-0000-0000-000000000001")
@@ -169,6 +179,79 @@ def test_root_help_and_version_use_runtime_application_metadata() -> None:
     assert "fast-api-scaff" not in help_output
     assert version_result.exit_code == 0
     assert version_result.stdout.strip() == "console-test 1.2.3"
+
+
+def test_scheduler_list_outputs_code_catalog_without_starting_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = build_settings()
+    registry = ScheduleRegistry()
+    registry.add(
+        QueueJobSchedule(
+            id="reports.interval",
+            trigger=IntervalSchedule(seconds=300, start=IntervalStartPolicy.IMMEDIATELY),
+            job=LoginSucceededJob(_USER_ID),
+        )
+    )
+    registry.add(
+        QueueJobSchedule(
+            id="reports.cron",
+            trigger=CronSchedule(hour=3, minute=15, day_of_week="mon-fri"),
+            job=LoginSucceededJob(_USER_ID),
+            connection="redis",
+            queue="reports",
+            coalesce=CoalescePolicy.ALL,
+            misfire_grace_seconds=60,
+        )
+    )
+
+    def reject_container_build(_settings: Settings) -> ApplicationContainer:
+        raise AssertionError("scheduler list 不应构建应用容器")
+
+    console = ConsoleHost(
+        settings,
+        container_builder=reject_container_build,
+    )
+    monkeypatch.setattr(scheduler_command_module, "discover_schedule_registry", lambda: registry)
+    result = CliRunner().invoke(create_console(console), ["scheduler", "list"])
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout) == [
+        {
+            "id": "reports.cron",
+            "trigger": {
+                "type": "cron",
+                "second": 0,
+                "minute": 15,
+                "hour": 3,
+                "day": "*",
+                "month": "*",
+                "day_of_week": "mon-fri",
+            },
+            "job": {
+                "reference": "app.contexts.user.jobs.login_succeeded:LoginSucceededJob",
+                "version": 1,
+            },
+            "connection": "redis",
+            "queue": "reports",
+            "coalesce": "all",
+            "misfire_grace_seconds": 60,
+        },
+        {
+            "id": "reports.interval",
+            "trigger": {
+                "type": "interval",
+                "seconds": 300,
+                "start": "immediately",
+            },
+            "job": {
+                "reference": "app.contexts.user.jobs.login_succeeded:LoginSucceededJob",
+                "version": 1,
+            },
+            "connection": None,
+            "queue": None,
+            "coalesce": "latest",
+            "misfire_grace_seconds": 300,
+        },
+    ]
 
 
 def test_user_command_help_describes_available_operations() -> None:

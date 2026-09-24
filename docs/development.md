@@ -159,7 +159,7 @@ find app database -name '__init__.py' -type f -size +0c -print
 8. 更新公开配置、`sample.env`、README 和专题文档；
 9. 沿完整调用链运行验证。
 
-若功能本质是基础设施宿主，例如常驻 Scheduler，先定义生命周期、信号、并发、任务注册、错误隔离和可观测性，再接业务任务。不要先写一个无限循环，之后再补边界。
+基础设施宿主需要完整定义生命周期、信号、并发、任务注册、错误隔离和可观测性。Scheduler 已按该边界独立运行并只向现有队列投递任务，业务执行留在 Worker。
 
 ## 7. 数据库迁移检查
 
@@ -229,4 +229,4 @@ README 只能描述已经实现和验证的功能。规划项可以明确标成�
 
 ## 队列验证
 
-针对性命令：`uv run python -m pytest -q tests/queue tests/worker`。测试通过注入式队列替身覆盖管理器与 Worker 流程，通过 SQLite 覆盖失败存储；Redis、Kafka、RabbitMQ 驱动使用模拟客户端，不等同于真实服务验证。tests 根目录是空初始化文件的 Python 包，避免 tests/queue 被 pytest 当作标准库 queue 同名顶级包。
+针对性命令：`uv run python -m pytest -q tests/queue tests/worker tests/scheduler`。测试通过注入式替身覆盖队列管理器、Worker 流程、计划映射和 Scheduler 生命周期，通过 SQLite 覆盖失败存储；Redis、Kafka、RabbitMQ 驱动使用模拟客户端，不等同于真实服务验证。tests 根目录是空初始化文件的 Python 包，避免 tests/queue 被 pytest 当作标准库 queue 同名顶级包。

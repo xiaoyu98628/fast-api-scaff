@@ -114,6 +114,14 @@ class AuthApplicationService:
 
         raise InvalidCredentialsError()
 
+    async def cleanup_expired_sessions(self) -> int:
+        """删除当前本地时间已经过期的服务器端会话。"""
+
+        async with self.unit_of_work_factory() as uow:
+            removed_count = await uow.sessions.remove_expired(now=self.clock())
+            await uow.commit()
+        return removed_count
+
     async def current_user(self, credential: SessionCredential) -> UserDTO:
         """解析有效会话，并返回仍处于启用状态的当前用户。"""
 

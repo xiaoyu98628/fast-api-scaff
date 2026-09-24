@@ -1,6 +1,6 @@
 # 架构说明
 
-项目采用模块化单体：一个部署单元内按限界上下文划分业务，并在每个上下文内部保持 Domain、Application、Infrastructure 边界。HTTP、Console 与 Worker 是独立宿主，共享配置、组合根和资源生命周期；HTTP、Console 与 Worker Job 都可以在各自的入站边界选择已装配的应用用例，Worker 通过不可变上下文向启动期自动发现的 QueueJob 提供当前应用容器。
+项目采用模块化单体：一个部署单元内按限界上下文划分业务，并在每个上下文内部保持 Domain、Application、Infrastructure 边界。HTTP、Console、Worker 与 Scheduler 是独立宿主，共享配置、组合根和资源生命周期；HTTP、Console 与 Worker Job 可以在各自的入站边界选择已装配的应用用例，Scheduler 只按代码计划向队列投递 QueueJob。
 
 这不是为了堆叠 DDD 名词，而是解决三个实际问题：业务规则不被框架入口绕过，基础设施可以替换/测试，多入口复用同一用例且不会出现行为分叉。
 
@@ -11,11 +11,13 @@ app/
 ├── main.py                 # HTTP/ASGI 薄入口
 ├── console.py              # Console 薄入口
 ├── worker.py               # Worker 薄入口
-├── bootstrap/              # 全局组合根与 HTTP/Console/Worker 启动装配
+├── scheduler.py            # Scheduler 薄入口
+├── bootstrap/              # 全局组合根与各宿主启动装配
 │   ├── build.py
 │   ├── http/
 │   ├── console/
-│   └── worker/
+│   ├── worker/
+│   └── scheduler/
 ├── config/                 # 环境配置模型
 ├── contexts/
 │   └── user/
@@ -27,7 +29,8 @@ app/
 ├── interfaces/             # 入站协议适配，不负责启动与全局装配
 │   ├── http/               # FastAPI 请求、响应、中间件和路由
 │   ├── console/            # Typer 命令、参数、展示和退出码
-│   └── worker/             # 队列 Job 约定发现、目录解析、执行和消费并发
+│   ├── worker/             # 队列 Job 约定发现、目录解析、执行和消费并发
+│   └── scheduler/          # 计划约定发现、代码契约与调度引擎适配
 └── runtime/                # 宿主无关的容器、生命周期、追踪上下文和进程路径约定
 
 database/main/              # main 数据库的 Alembic 环境与模型注册
@@ -58,7 +61,7 @@ bootstrap/composition 负责选择实现并完成装配
 - Runtime 保存宿主无关的 `ApplicationContainer`、`ApplicationRuntime` 和 `TraceContext`；
 - Bootstrap/Composition 是允许知道具体实现、Interfaces 和 Runtime 的装配边界。
 
-`tests/test_architecture.py` 用 AST 检查 Domain、Application、Infrastructure、Interfaces、Bootstrap 与 QueueJob 的导入。它不仅保护核心层，还禁止共享 Infrastructure 反向依赖业务或宿主、上下文 Infrastructure 跨上下文依赖、Interfaces 依赖 Bootstrap，以及 Interfaces 直接穿透到上下文 Infrastructure。所有模块路径中含独立 `jobs` 段的 Python 文件都被视为 Worker 入站适配器：允许使用 `JobExecutionContext`、当前上下文公开服务和宿主级公共 Manager，但不能依赖 Bootstrap、具体队列驱动/SDK 或其他上下文的 Infrastructure；上下文之外的 Job 不能直接依赖任一上下文 Infrastructure。相对导入也会被视为违规，项目统一要求绝对、显式导入。这类测试防止边界在日常迭代中悄悄腐化。
+`tests/test_architecture.py` 用 AST 检查 Domain、Application、Infrastructure、Interfaces、Bootstrap 与 QueueJob 的导入。它不仅保护核心层，还禁止共享 Infrastructure 反向依赖业务或宿主、上下文 Infrastructure 跨上下文依赖、Interfaces 依赖 Bootstrap，以及 Interfaces 直接穿透到上下文 Infrastructure。所有模块路径中含独立 `jobs` 段的 Python 文件都被视为 Worker 入站适配器：允许使用 `JobExecutionContext`、当前上下文公开服务和宿主级公共 Manager，但不能依赖 Bootstrap、具体队列驱动/SDK 或其他上下文的 Infrastructure；上下文之外的 Job 不能直接依赖任一上下文 Infrastructure。APScheduler 导入只允许出现在 `app.interfaces.scheduler.apscheduler`，防止第三方 API 穿透计划契约和宿主生命周期。相对导入也会被视为违规，项目统一要求绝对、显式导入。这类测试防止边界在日常迭代中悄悄腐化。
 
 ## 3. 用户限界上下文
 
@@ -174,11 +177,11 @@ Application Service 可以做跨聚合的流程编排和权限决策，但不应
 - 关闭时先清空当前引用，再聚合资源关闭错误；
 - 支持 `async with`。
 
-HTTP lifespan、ConsoleHost 和 WorkerHost 都复用 runtime。这样资源的初始化、失败清理和关闭顺序不会在不同入口重复实现。HTTP 与 Worker 的启动/关闭日志边界都覆盖 `BaseException`，取消等退出路径也不会绕过对应失败事件；HTTP lifespan 退出后会清除 `app.state.container`，避免关闭容器继续以可用状态暴露。数据库、缓存、向量和 HTTP 出站资源都由管理器延迟创建，并由容器 callback 逆序关闭；未初始化资源不会在关闭阶段被创建。关闭进入不可取消清理区间，单个 callback 失败或收到取消后仍会尝试剩余 callback，最后通过异常组保留全部根因。Manager/延迟资源是一次性生命周期对象，关闭开始后拒绝新获取，也不能通过再次调用 `get()` 隐式重建。数据库、缓存和向量 Manager 在第一次等待前统一禁止所有资源获取，再逐个释放；已经开始的初始化允许完成，但结果只交给关闭流程，不再返回调用方。宿主必须先停止使用已经借出的资源，再关闭 Manager。
+HTTP lifespan、ConsoleHost、WorkerHost 和 SchedulerHost 都复用 runtime。这样资源的初始化、失败清理和关闭顺序不会在不同入口重复实现。HTTP、Worker 与 Scheduler 的启动/关闭日志边界都覆盖 `BaseException`，取消等退出路径也不会绕过对应失败事件；HTTP lifespan 退出后会清除 `app.state.container`，避免关闭容器继续以可用状态暴露。数据库、缓存、向量和 HTTP 出站资源都由管理器延迟创建，并由容器 callback 逆序关闭；未初始化资源不会在关闭阶段被创建。关闭进入不可取消清理区间，单个 callback 失败或收到取消后仍会尝试剩余 callback，最后通过异常组保留全部根因。Manager/延迟资源是一次性生命周期对象，关闭开始后拒绝新获取，也不能通过再次调用 `get()` 隐式重建。数据库、缓存和向量 Manager 在第一次等待前统一禁止所有资源获取，再逐个释放；已经开始的初始化允许完成，但结果只交给关闭流程，不再返回调用方。宿主必须先停止使用已经借出的资源，再关闭 Manager。
 
 顶层 HTTP 出站能力只负责驱动无关请求、连接池、超时、传输错误和日志，不知道具体上游协议。上下文若需要调用外部服务，应在自己的 application 层定义业务窄端口，在 infrastructure 层使用公共 HTTP 客户端实现，并由 composition 注入；application service 不应持有整个容器，也不应直接导入 HTTPX2。
 
-未来增加常驻 Scheduler 时，也应建立独立宿主：读取同一 Settings、配置适合 Scheduler 的日志、通过 Runtime 获取容器、响应终止信号并优雅关闭。它不应通过 HTTP 请求或系统 cron 间接触发，也不应把无限循环塞进 Console 命令。但当前仓库尚未实现 Scheduler，以上只是扩展边界，不是现有功能。
+SchedulerHost 读取同一 Settings、配置独立生命周期日志、通过 Runtime 获取容器，并把 SIGINT/SIGTERM 转换为协作式停止请求。它先停止调度引擎，再关闭应用容器；两侧关闭都会得到尝试，多个根因通过异常组保留。Scheduler 不依赖 HTTP 请求或系统 cron，也不把常驻循环放进 Console 命令。
 
 ## 10. 时间约定
 
@@ -195,14 +198,15 @@ HTTP lifespan、ConsoleHost 和 WorkerHost 都复用 runtime。这样资源的�
 
 如果业务跨时区、需要精确时间线或与外部系统交换绝对时间，应重新设计为 UTC aware datetime/instant，并同步领域、DTO、数据库列、序列化、迁移和测试；不能只改某一层。
 
-## 11. HTTP、Console 与 Worker 适配器
+## 11. HTTP、Console、Worker 与 Scheduler 适配器
 
-HTTP 与 Console 都调用 `UserApplicationService`，Worker 则从启动期任务目录解析消息携带的 QueueJob 引用，并通过每条消息的 `JobExecutionContext` 调用其 `handle(context)`：
+HTTP 与 Console 调用 `UserApplicationService`，Worker 从启动期任务目录解析消息携带的 QueueJob 引用，并通过每条消息的 `JobExecutionContext` 调用其 `handle(context)`；Scheduler 根据代码计划投递 QueueJob：
 
 - HTTP 负责 schema、status、统一 JSON 和异常到 HTTP 映射；
 - Console 负责 Typer 参数、每次调用的 command ID、JSON stdout、错误 stderr 和退出码；
 - Worker 负责消息解码、宿主上下文注入、执行策略、并发消费和确认；
-- 三者都不实现业务规则，不直接操作 ORM，也不负责全局启动装配。
+- Scheduler 负责计划注册、触发时间计算和队列投递，不直接执行业务用例；
+- 四者都不实现业务规则，不直接操作 ORM，也不负责全局启动装配。
 
 HTTP 独立定义 `page/limit` 查询协议和 `items + meta` 分页响应，并在调用应用服务前把页码换算为 `offset/limit`。Console 的 `users list` 也在宿主边界约束 `page` 和 `limit`，但直接输出应用 DTO；HTTP 缺少调用方 ID 和 Console 启动命令时都通过 Runtime 的同一个生成器创建 32 位 UUID4 十六进制 ID，`ConsoleHost` 在 operation 中复用 command ID，外层没有命令上下文的直接宿主调用则生成独立 ID。HTTP、Console 和 Worker 分别在入口把 request ID、command ID 或消息 correlation ID 绑定到宿主无关的 `TraceContext`，日志和新发布的队列消息从中自动取得关联字段，业务调用不逐层传递 ID。后台批处理应根据任务语义使用 `batch_size`、进度、stdout/stderr 和退出码，而不是复用 HTTP 分页响应。
 
@@ -277,6 +281,14 @@ HTTP 独立定义 `page/limit` 查询协议和 `items + meta` 分页响应，并
 `WorkerContext` 是进程级宿主上下文，与 `ConsoleContext` 一样只在宿主/入站适配边界暴露当前配置和已经启动的 `ApplicationContainer`。执行器从它为每条消息创建独立、不可变的 `JobExecutionContext`，其中 `settings` 和 `container` 保持直接访问，任务、队列和关联元数据组合在 `context.job`；同一投递内重试复用同一个对象。Job 应优先从容器选择当前上下文的公开应用服务；需要数据库、缓存或外部服务的业务流程，仍由 Application 层定义窄协议并经 composition 注入实现。Application/Domain 不导入 Worker、具体 Manager、队列驱动或全局容器，共享 Infrastructure 不导入具体业务。所有消费槽共享应用级 Manager，任务级 Session、UoW 和事务不能跨 Job 共享。内置 `LoginSucceededJob` 由登录 HTTP 适配器在会话提交后尽力投递，HTTP request ID 通过 `TraceContext` 自动进入消息 correlation ID；Worker 通过 `context.container.users.service.get(user_id)` 进入用户应用服务并使用独立 UoW 查询数据库，只记录执行时的用户 ID 和状态，作为默认队列、数据库能力、跨宿主日志关联和 `handle(context)` 输出的最小示例。它不进入认证 Application/Domain，也不参与登录事务。
 
 SQL 失败表属于共享技术能力，在 main metadata 注册；失败写入使用独立短事务，不借用业务 UoW。正常首次投递不查询失败表，只有 Redis/RabbitMQ/Kafka 驱动标识为可能恢复的消息才执行补偿查询；最终失败仍先落库再确认。任务执行和消息确认不是跨系统原子事务。详见[队列](queue.md)、[Worker](worker.md)。
+
+## 17. Scheduler
+
+独立 `app.scheduler` 入口由 `app.bootstrap.scheduler` 完成装配并复用 `ApplicationRuntime`。计划以代码为唯一来源，`app.interfaces.scheduler.discovery` 扫描 `app/**/schedules/**/*.py` 并调用模块直接定义的 `register_schedules(registry)`；`ScheduleRegistry` 在启动时校验重复 ID 和 QueueJob 编码契约，Scheduler 在启动触发循环前校验所有计划引用的队列连接和逻辑队列。新增计划不需要修改全局组合根，注册表为空是合法状态。内置用户会话计划每天 0 点投递过期会话清理 Job。
+
+`app.interfaces.scheduler` 定义不依赖 APScheduler 的 `CronSchedule`、`IntervalSchedule`、`QueueJobSchedule` 和 `SchedulerEngine` 协议。第三方 API 只留在 `apscheduler.py` 适配器，宿主和计划目录不接触 APScheduler 3 的 Job、Trigger 或 Scheduler 类型。升级调度库时应保持项目契约和宿主生命周期稳定，只替换适配器映射。
+
+计划不提供任务级时区；Cron 和 Interval 都使用 Scheduler 容器操作系统本地时区。每个部署只运行一个 Scheduler 实例，因为内存计划目录没有跨进程抢占，多个实例会重复投递。Scheduler 到期时只调用公共队列 Dispatcher；消息重试、失败存储、并发执行和业务幂等仍属于 Worker 与应用用例。详见[Scheduler](scheduler.md)。
 
 
 ## Redis 场景扩展边界

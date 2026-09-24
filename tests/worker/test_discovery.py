@@ -84,10 +84,11 @@ def test_discovery_imports_only_jobs_modules_and_returns_direct_concrete_jobs(
     ]
 
 
-def test_production_discovery_finds_login_succeeded_job() -> None:
+def test_production_discovery_finds_user_jobs() -> None:
+    from app.contexts.user.jobs.cleanup_expired_sessions import CleanupExpiredSessionsJob
     from app.contexts.user.jobs.login_succeeded import LoginSucceededJob
 
-    assert discovery_module.discover_job_types() == (LoginSucceededJob,)
+    assert discovery_module.discover_job_types() == (CleanupExpiredSessionsJob, LoginSucceededJob)
 
 
 def test_discovery_rejects_non_package_root() -> None:

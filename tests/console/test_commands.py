@@ -12,15 +12,16 @@ from app.bootstrap.build import build_application_container
 from app.bootstrap.console.application import ConsoleHost
 from app.config.database import DatabaseSettings
 from app.contexts.user.infrastructure.persistence.models.user import UserModel
+from app.contexts.user.jobs.cleanup_expired_sessions import CleanupExpiredSessionsJob
 from app.contexts.user.jobs.login_succeeded import LoginSucceededJob
 from app.infrastructure.queue.contracts.failed_store import FailedJobRecord
 from app.infrastructure.queue.errors import QueueError
 from app.interfaces.console.command import ConsoleCommand
-from app.interfaces.console.commands.queue import list_failures, list_jobs
 from app.interfaces.console.commands.users import create_user
 from app.interfaces.console.context import ConsoleContext
 from app.interfaces.console.discovery import discover_console_commands
 from app.interfaces.console.registry import ConsoleCommandRegistry
+from app.interfaces.console.system.queue import list_failures, list_jobs
 from tests.console.test_application import build_settings
 
 
@@ -107,6 +108,7 @@ def test_discovery_finds_concrete_commands_in_stable_order() -> None:
         ("queue", "forget"),
         ("queue", "jobs"),
         ("queue", "retry"),
+        ("scheduler", "list"),
         ("users", "create"),
         ("users", "list"),
     ]
@@ -117,6 +119,16 @@ def test_list_jobs_returns_discovered_contracts_without_starting_runtime() -> No
 
     assert result == [
         {
+            "reference": "app.contexts.user.jobs.cleanup_expired_sessions:CleanupExpiredSessionsJob",
+            "type_path": "app.contexts.user.jobs.cleanup_expired_sessions:CleanupExpiredSessionsJob",
+            "version": 1,
+            "supported_versions": (1,),
+            "legacy_references": (),
+            "max_attempts": CleanupExpiredSessionsJob.policy.max_attempts,
+            "backoff_seconds": CleanupExpiredSessionsJob.policy.backoff_seconds,
+            "timeout_seconds": CleanupExpiredSessionsJob.policy.timeout_seconds,
+        },
+        {
             "reference": "app.contexts.user.jobs.login_succeeded:LoginSucceededJob",
             "type_path": "app.contexts.user.jobs.login_succeeded:LoginSucceededJob",
             "version": 1,
@@ -125,7 +137,7 @@ def test_list_jobs_returns_discovered_contracts_without_starting_runtime() -> No
             "max_attempts": LoginSucceededJob.policy.max_attempts,
             "backoff_seconds": LoginSucceededJob.policy.backoff_seconds,
             "timeout_seconds": LoginSucceededJob.policy.timeout_seconds,
-        }
+        },
     ]
 
 
