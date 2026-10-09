@@ -146,7 +146,7 @@ Repository 的 `update()` 使用 `id + version` 条件写入完整聚合并递�
 
 ### 持久化主键生成工具
 
-`app.infrastructure.database.identifiers` 只负责为数据库持久化适配器生成主键，不包含连接、事务、ORM 自动填充或追踪上下文。
+`app.infrastructure.database.identifiers` 只负责生成数据库主键，不包含连接、事务、ORM 自动填充或追踪上下文。持久化适配器可直接调用；组合点也可以将生成器作为窄函数依赖注入应用用例。
 
 | 函数 | 返回值 | 持久化约定 |
 | --- | --- | --- |
@@ -166,7 +166,9 @@ compact_uuid_key = new_uuid4().hex
 
 ULID 前 48 位是 Unix 毫秒时间戳，后 80 位使用密码学安全随机数；时间超出无符号 48 位范围时抛出 `OverflowError`，同一毫秒内不保证生成顺序单调。工具不会校验数据库唯一约束或自动写入记录。
 
-Domain/Application 不直接导入数据库基础设施。现有用户聚合继续通过标准库 UUID7 生成领域 ID；只有需要在持久化边界生成主键的适配器使用上述工具。用户表、请求/命令 ID 和队列消息的生成规则保持各自现有约定。
+Domain/Application 不直接导入数据库基础设施。`build_user_context` 将公共 `new_uuid7` 注入 `UserApplicationService.new_user_id`，用户创建用例在唯一性预检查和密码哈希后调用它，再把结果传入 `User.create(user_id=...)`。聚合要求显式 UUID，不再自行生成 ID。
+
+直接构造 `UserApplicationService` 时必须提供 `new_user_id: Callable[[], UUID]`；直接调用 `User.create` 时必须提供 `user_id: UUID`。HTTP、Console 和其他宿主通过已装配的用户服务创建用户，无需自行提供 ID。用户 ID 仍使用 UUID7，数据库保存为 36 位带连字符字符串；该调整不需要数据迁移。
 
 不要让领域对象继承 ORM Model，也不要把 SQLAlchemy Session 传进领域方法。显式 mapper 看起来多一层代码，但能避免 ORM 状态、懒加载和数据库字段成为领域模型的隐性 API。
 

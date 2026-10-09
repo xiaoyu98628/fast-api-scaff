@@ -9,7 +9,7 @@
 - 用户限界上下文 CRUD、状态修改与密码重置示例，密码哈希和验证在线程中执行并共享并发限制；
 - 数据库会话认证：登录、当前用户、退出，随机 Bearer Token 只保存摘要，并用 Redis 限制连续登录失败；
 - MySQL、PostgreSQL、SQLite 异步 SQLAlchemy，支持按驱动复用数据库公共配置；
-- 持久化适配器可使用 ULID、UUID4、UUID7 主键生成工具；
+- 提供 ULID、UUID4、UUID7 主键生成工具，用户创建通过组合点注入公共 UUID7 生成器；
 - Repository、Mapper、Unit of Work 与 Alembic migration；
 - Redis、Memcached 字节级 KV 缓存，Redis 专属入口提供 NX 毫秒 TTL、Hash 读写、Set 添加及 Sorted Set 写入、删除和分数范围查询；
 - 可选的 Redis HTTP IP 限流：默认关闭，同一 IP 的 API 请求共享 1000 次/60 秒配额，超限返回 429；

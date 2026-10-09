@@ -21,6 +21,7 @@ from app.contexts.user.infrastructure.persistence.models.session import UserSess
 from app.contexts.user.infrastructure.persistence.models.user import UserModel
 from app.contexts.user.infrastructure.persistence.unit_of_work import SqlAlchemyUserUnitOfWork
 from app.contexts.user.infrastructure.security.session_token import SecureSessionTokenCodec
+from app.infrastructure.database.identifiers import new_uuid7
 from app.infrastructure.database.manager import DatabaseManager
 from database.main.model_registry import load_main_database_metadata
 
@@ -131,14 +132,18 @@ async def test_user_and_session_share_transaction_and_foreign_key_cascades() -> 
         async with engine.begin() as connection:
             await connection.run_sync(load_main_database_metadata().create_all)
             assert await connection.scalar(text("PRAGMA foreign_keys")) == 1
-        user = User.create(username="alice", email="alice@example.com", password_hash=PasswordHash("test-hash"), now=datetime.now())
+        user = User.create(
+            user_id=new_uuid7(), username="alice", email="alice@example.com", password_hash=PasswordHash("test-hash"), now=datetime.now()
+        )
         stored = UserSession(
             token_digest="a" * 64,
             user_id=user.id,
             issued_at=datetime(2026, 9, 6, 12),
             expires_at=datetime(2026, 9, 6, 13),
         )
-        other_user = User.create(username="bob", email="bob@example.com", password_hash=PasswordHash("test-hash"), now=datetime.now())
+        other_user = User.create(
+            user_id=new_uuid7(), username="bob", email="bob@example.com", password_hash=PasswordHash("test-hash"), now=datetime.now()
+        )
         other_stored = UserSession(
             token_digest="b" * 64,
             user_id=other_user.id,

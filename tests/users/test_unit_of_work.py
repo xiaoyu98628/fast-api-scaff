@@ -4,14 +4,16 @@ import sqlite3
 from contextlib import AbstractAsyncContextManager
 from datetime import datetime
 from typing import cast
+from unittest.mock import Mock
 
 import pytest
 from asyncmy.errors import IntegrityError as MySQLIntegrityError
 from asyncpg.exceptions._base import PostgresError
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import app.contexts.user.composition as user_composition
 from app.config.app import AppSettings
 from app.config.auth import AuthSettings
 from app.config.cache import CacheSettings
@@ -25,11 +27,15 @@ from app.contexts.user.domain.user import User
 from app.contexts.user.domain.values import PasswordHash
 from app.contexts.user.infrastructure.persistence.models.user import UserModel
 from app.contexts.user.infrastructure.persistence.unit_of_work import SqlAlchemyUserUnitOfWork, _resolve_user_conflict_field
+from app.infrastructure.database.identifiers import new_uuid7
 from app.infrastructure.database.manager import DatabaseManager
 
 
 @pytest.mark.asyncio
-async def test_user_context_binds_unit_of_work_to_main_connection() -> None:
+async def test_user_context_binds_id_generator_and_main_connection(monkeypatch: pytest.MonkeyPatch) -> None:
+    expected_id = new_uuid7()
+    generator = Mock(return_value=expected_id)
+    monkeypatch.setattr(user_composition, "new_uuid7", generator)
     settings = Settings(
         app=AppSettings(_env_file=None),
         auth=AuthSettings(login_limit_cache=None, _env_file=None),
@@ -50,6 +56,7 @@ async def test_user_context_binds_unit_of_work_to_main_connection() -> None:
         await connection.run_sync(UserModel.metadata.create_all)
 
     users = build_user_context(settings, databases)
+    generator.assert_not_called()
     created = await users.service.create(
         CreateUserCommand(
             username="alice",
@@ -59,6 +66,11 @@ async def test_user_context_binds_unit_of_work_to_main_connection() -> None:
     )
 
     assert created.username == "alice"
+    assert created.id == expected_id
+    assert created.id.version == 7
+    generator.assert_called_once_with()
+    async with databases.session("main") as session:
+        assert await session.scalar(select(UserModel.id)) == str(expected_id)
     assert databases.is_initialized("main") is True
     assert databases.is_initialized("fallback") is False
     await databases.aclose()
@@ -166,8 +178,10 @@ async def test_user_unit_of_work_closes_session_context_when_rollback_fails(inte
 @pytest.mark.asyncio
 async def test_unique_conflicts_are_translated_and_rolled_back(stage: str, field: str) -> None:
     databases = DatabaseManager(DatabaseSettings(_env_file=None, connections={"main": {"driver": "sqlite", "database": ":memory:"}}))
-    first = User.create(username="alice", email="alice@example.com", password_hash=PasswordHash("test-hash"), now=datetime.now())
-    second = User.create(username="bobby", email="bobby@example.com", password_hash=PasswordHash("test-hash"), now=datetime.now())
+    first = User.create(user_id=new_uuid7(), username="alice", email="alice@example.com", password_hash=PasswordHash("test-hash"), now=datetime.now())
+    second = User.create(
+        user_id=new_uuid7(), username="bobby", email="bobby@example.com", password_hash=PasswordHash("test-hash"), now=datetime.now()
+    )
     try:
         engine = await databases.get_engine("main")
         async with engine.begin() as connection:
@@ -182,7 +196,9 @@ async def test_unique_conflicts_are_translated_and_rolled_back(stage: str, field
         with pytest.raises(UserConflictError) as captured:
             async with SqlAlchemyUserUnitOfWork(databases, "main") as unit_of_work:
                 if stage == "insert":
-                    duplicate = User.create(username=username, email=email, password_hash=PasswordHash("test-hash"), now=datetime.now())
+                    duplicate = User.create(
+                        user_id=new_uuid7(), username=username, email=email, password_hash=PasswordHash("test-hash"), now=datetime.now()
+                    )
                     await unit_of_work.users.add(duplicate)
                     await unit_of_work.commit()
                 else:

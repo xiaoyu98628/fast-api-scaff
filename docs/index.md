@@ -37,7 +37,7 @@
 - 用户限界上下文的增、查、改、删示例；
 - 数据库会话认证与 Redis 登录失败限制，用户表不增加角色或认证版本字段，数据写入使用内部乐观锁版本；
 - MySQL、PostgreSQL、SQLite 异步数据库连接与按驱动复用的公共配置；
-- 持久化适配器使用的 ULID、UUID4、UUID7 主键生成工具；
+- ULID、UUID4、UUID7 主键生成工具，用户创建已接入公共 UUID7 生成器；
 - Redis、Memcached 字节级 KV 缓存及 Redis NX 毫秒 TTL、Hash、Set、Sorted Set 专属操作；
 - Milvus、Chroma 与 Elasticsearch 统一向量 CRUD 和近邻检索；
 - 普通与流式 HTTP 出站客户端、独立连接池和统一传输错误；
