@@ -196,7 +196,7 @@ Scheduler 进程对应产生：
 - `http.outbound.pool.pressure/timeout`；
 - `http.outbound.resource.created/closed`。
 
-请求 details 只记录 method、origin、可选 operation、状态码、耗时、响应大小和错误类型，不记录 URL path、query、header 或 body。operation 必须是调用方定义的稳定低基数字段，不能包含用户 ID、token 或完整 URL。
+请求 details 记录 method、origin、route、可选 operation、状态码、耗时、响应大小和错误类型，不记录 URL 用户名/密码、query、fragment、header 或请求/响应 body。`route` 保留原始 path 的动态参数和百分号编码，不自动脱敏或归一化为路由模板；空路径使用 `/`，意外的无效 URL 使用 `<invalid>`。调用方应避免在路径中放置凭据或需要隐藏的数据。operation 必须是调用方定义的稳定低基数字段，不能包含用户 ID、token 或完整 URL。
 
 任务取消保持取消语义，以 `cancelled` INFO 事件记录，不记录为出站 ERROR。进行中请求首次达到 `HTTP_POOL_WARNING_RATIO` 时记录 `pool.pressure`；降到阈值以下后可以再次触发。连接池等待超时先记录 `pool.timeout` WARNING，details 包含池容量、运行计数和 client ID，随后由公共客户端记录对应请求或流的失败事件。流上下文内由调用方业务代码抛出的非 HTTP 异常不会伪装成 `stream.failed`；底层传输和读取错误仍会记录失败事件。客户端不读取或修改 HTTPX2/httpcore2 私有连接池状态。
 

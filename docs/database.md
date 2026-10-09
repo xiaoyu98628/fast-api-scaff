@@ -80,6 +80,8 @@ Provider 负责把严格校验后的配置转换为与 SQLAlchemy 有关的 Engi
 
 连接模型禁止额外字段，能尽早暴露拼写错误和跨驱动误配。例如 SQLite 不能配置 `POOL_SIZE`，PostgreSQL 不能配置 MySQL 的 `CHARSET`。
 
+SQLite 每个连接通过 `connect_args.timeout=30.0` 设置固定 30 秒的数据库锁等待时间，并保持外键约束开启。该时间只控制数据库锁争抢时的等待，不是查询或事务的总超时，也没有对应的环境变量；锁长期未释放时仍可能报错。
+
 ## 4. 延迟生命周期
 
 数据库连接经过三个不同阶段：
@@ -332,3 +334,5 @@ MySQL/PostgreSQL 支持 `pool_size`、`max_overflow`、`pool_pre_ping`、`pool_r
 ## 队列失败表
 
 main metadata 包含 queue_failed_jobs，由迁移链的首个 Alembic revision `c90c9d934260` 创建，后续依次创建 users 和 user_sessions。Worker 或 Console 使用失败存储时访问，启动不自动建表。downgrade 到 base 会删除失败记录。详见[队列](queue.md)。
+
+`SqlFailedJobStore` 对同一实例的 `save()` 使用异步锁串行执行，覆盖所有 SQL 驱动，以减少 Worker 并发保存时的 SQLite 写锁争抢。该锁不覆盖查询、删除、其他实例或其他进程；这些操作仍由数据库协调。

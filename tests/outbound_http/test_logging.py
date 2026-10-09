@@ -52,35 +52,89 @@ class BlockingDriver(FakeDriver):
 
 
 @pytest.mark.asyncio
-async def test_request_log_does_not_include_headers_query_or_path(caplog: pytest.LogCaptureFixture) -> None:
+async def test_request_log_includes_route_and_excludes_other_request_data(caplog: pytest.LogCaptureFixture) -> None:
     client = ManagedHttpClient(FakeDriver())
 
     with capture_http_logs(caplog):
         await client.request(
             HttpRequest(
-                method="GET",
-                url="https://example.com/users/private-id?token=query-secret",
+                method="POST",
+                url="https://url-user-secret:url-password-secret@example.com/users/user-id?token=query-secret#fragment-secret",
                 headers={"Authorization": "Bearer header-secret"},
+                params={"extra": "params-secret"},
+                content=b"body-secret",
                 operation="users.get",
             )
         )
 
     record = caplog.records[-1]
     rendered = f"{record.getMessage()} {getattr(record, 'details', {})}"
-    assert "header-secret" not in rendered
-    assert "query-secret" not in rendered
-    assert "private-id" not in rendered
-    assert getattr(record, "details")["origin"] == "https://example.com"
+    for secret in ("header-secret", "query-secret", "fragment-secret", "params-secret", "body-secret", "url-user-secret", "url-password-secret"):
+        assert secret not in rendered
+    details = getattr(record, "details")
+    assert details["method"] == "POST"
+    assert details["origin"] == "https://example.com"
+    assert details["route"] == "/users/user-id"
+    assert details["operation"] == "users.get"
+
+
+@pytest.mark.asyncio
+async def test_stream_logs_include_route_without_credentials_or_request_data(caplog: pytest.LogCaptureFixture) -> None:
+    client = ManagedHttpClient(FakeDriver())
+    request = HttpRequest(
+        method="POST",
+        url="https://url-user-secret:url-password-secret@example.com/events?token=query-secret#fragment-secret",
+        headers={"Authorization": "Bearer header-secret"},
+        content=b"body-secret",
+    )
+    with capture_http_logs(caplog):
+        async with client.stream(request) as response:
+            assert await response.aread() == b"stream"
+
+    assert _events(caplog) == {HttpLogEvent.STREAM_CONNECTED, HttpLogEvent.STREAM_COMPLETED}
+    for record in caplog.records:
+        details = getattr(record, "details")
+        assert details["route"] == "/events"
+        assert details["origin"] == "https://example.com"
+        rendered = f"{record.getMessage()} {details}"
+        for secret in ("url-user-secret", "url-password-secret", "header-secret", "body-secret", "query-secret", "fragment-secret"):
+            assert secret not in rendered
+
+
+@pytest.mark.parametrize(
+    ("url", "origin", "route"),
+    [
+        ("https://example.com", "https://example.com", "/"),
+        ("https://example.com?token=secret#ignored", "https://example.com", "/"),
+        ("https://user:password@example.com:8443/Users/u-1?token=secret#ignored", "https://example.com:8443", "/Users/u-1"),
+        ("https://example.com/users/a%2Fb?token=secret", "https://example.com", "/users/a%2Fb"),
+    ],
+)
+def test_request_log_preserves_raw_route_and_omits_other_url_components(url: str, origin: str, route: str) -> None:
+    assert request_log_details(HttpRequest(method="GET", url=url)) == {"method": "GET", "origin": origin, "route": route}
 
 
 def test_request_log_origin_formats_ipv6_and_degrades_on_invalid_url() -> None:
     request = HttpRequest(method="GET", url="https://[2001:db8::1]:8443/private")
 
-    assert request_log_details(request)["origin"] == "https://[2001:db8::1]:8443"
+    details = request_log_details(request)
+    assert details["origin"] == "https://[2001:db8::1]:8443"
+    assert details["route"] == "/private"
 
     object.__setattr__(request, "url", "https://example.com:notaport/private")
 
-    assert request_log_details(request)["origin"] == "<invalid>"
+    details = request_log_details(request)
+    assert details["origin"] == "<invalid>"
+    assert details["route"] == "<invalid>"
+
+
+@pytest.mark.parametrize("invalid_url", ["/relative/private", "ftp://example.com/private", "https://[invalid-host/private"])
+def test_request_log_handles_unexpected_invalid_url(invalid_url: str) -> None:
+    request = HttpRequest(method="GET", url="https://example.com/private")
+    # 正常构造会拒绝这些地址，这里模拟被破坏的请求，检查诊断逻辑不掩盖原始故障。
+    object.__setattr__(request, "url", invalid_url)
+
+    assert request_log_details(request) == {"method": "GET", "origin": "<invalid>", "route": "<invalid>"}
 
 
 @pytest.mark.asyncio
@@ -98,6 +152,8 @@ async def test_cancelled_request_is_not_logged_as_failure(caplog: pytest.LogCapt
 
     assert HttpLogEvent.REQUEST_FAILED not in _events(caplog)
     assert HttpLogEvent.REQUEST_CANCELLED in _events(caplog)
+    cancelled = next(record for record in caplog.records if getattr(record, "event", None) == HttpLogEvent.REQUEST_CANCELLED)
+    assert getattr(cancelled, "details")["route"] == "/slow"
 
 
 @pytest.mark.asyncio
@@ -119,6 +175,8 @@ async def test_cancelled_stream_is_not_logged_as_failure(caplog: pytest.LogCaptu
 
     assert HttpLogEvent.STREAM_FAILED not in _events(caplog)
     assert HttpLogEvent.STREAM_CANCELLED in _events(caplog)
+    cancelled = next(record for record in caplog.records if getattr(record, "event", None) == HttpLogEvent.STREAM_CANCELLED)
+    assert getattr(cancelled, "details")["route"] == "/events"
 
 
 @pytest.mark.asyncio
