@@ -156,9 +156,26 @@ HTTP 出站配置在 `load_settings()` 时严格校验，普通请求和流式�
 | 变量 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `DB_DEFAULT` | `str | null` | `null` | 未显式传连接名时使用的默认连接 |
+| `DB_CONNECTION_DEFAULTS` | 嵌套对象 | `{}` | 按 driver 保存公共默认字段，命名连接的显式字段优先 |
 | `DB_CONNECTIONS` | 嵌套对象 | `{}` | 按名称保存连接原始定义 |
 
 连接定义会在该连接第一次被获取时解析和严格校验，不是统一在进程读取 `.env` 时全部校验。因此一个从未使用的错误数据库连接可能不会阻止 `/health`，但会在首次访问时失败。
+
+多个同驱动连接可以共享默认地址、凭据或连接池参数：
+
+```dotenv
+DB_CONNECTION_DEFAULTS__MYSQL__HOST=127.0.0.1
+DB_CONNECTION_DEFAULTS__MYSQL__PORT=3306
+DB_CONNECTION_DEFAULTS__MYSQL__USERNAME=root
+DB_CONNECTION_DEFAULTS__MYSQL__PASSWORD=root
+DB_CONNECTIONS__MAIN__DRIVER=mysql
+DB_CONNECTIONS__MAIN__DATABASE=fast_api_scaff
+DB_CONNECTIONS__REPORTING__DRIVER=mysql
+DB_CONNECTIONS__REPORTING__DATABASE=reporting
+DB_CONNECTIONS__REPORTING__HOST=reporting.internal
+```
+
+先根据命名连接自身的 `DRIVER` 取公共默认值，再按字段合并命名连接，最后执行该驱动的严格校验。显式字段（包括 `null` 或空字符串）覆盖默认值，不会因校验失败回退。原有完整连接定义继续有效。默认值按 `DRIVER` 原值匹配，`postgresql` 和 `pgsql` 使用各自同名的默认组，不自动合并别名。MySQL 默认值不会影响 SQLite 或 PostgreSQL 连接；公共配置中的不支持字段仍会在使用对应连接时被拒绝。应用和 Alembic 采用相同解析规则。
 
 ### 7.1 公共字段
 

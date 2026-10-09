@@ -44,19 +44,21 @@ ApplicationContainer
   → Connection（客户端/连接池与 ping/close）
   → Storage（后端字节级 KV 操作）
   → ManagedCacheClient（统一 key 与 TTL）
-      ↳ ManagedRedisCacheClient（Redis TTL 与受控脚本执行）
+      ↳ ManagedRedisCacheClient（Redis 数据类型、TTL 与受控脚本执行）
   → Codec（业务值 ↔ bytes）
 ```
 
-缓存契约按职责拆分：`app.infrastructure.cache.contracts.storage` 定义通用 `KeyValueStorage`；`contracts.redis` 定义 Redis TTL 与组合协议；`contracts.script` 定义 `RedisScriptArgument` 和 `RedisScriptExecutor`。脚本具体实现位于 `storages/redis/script.py`，与契约分开；调用方从符号实际定义的模块导入。
+缓存契约按职责拆分：`app.infrastructure.cache.contracts.storage` 定义通用 `KeyValueStorage`；`contracts.redis` 定义 Redis 数据类型契约与 `RedisStorageProtocol` 组合协议；`contracts.script` 定义 `RedisScriptArgument` 和 `RedisScriptExecutor`。脚本具体实现位于 `storages/redis/script.py`，与契约分开；调用方从符号实际定义的模块导入。
 
-Redis 使用 `RedisStorage` 聚合数据类型适配器，当前 `strings` 实现通用 KV 契约。各数据类型 Storage 继承 `BaseRedisStorage`，统一保存从 Connection 借用的客户端引用；基类不拥有客户端，不负责连接建立、健康检查或关闭，这些生命周期职责仍由 Connection 承担。
+Redis 使用 `RedisStorage` 聚合 `keys`、`strings`、`hashes`、`sets`、`sorted_sets` 和 `scripts`。String 负责字节读写及 NX 写入；删除、存在性和 TTL 属于与值类型无关的 Key 适配器。各数据类型 Storage 继承 `BaseRedisStorage`，统一保存从 Connection 借用的客户端引用；基类不拥有客户端，不负责连接建立、健康检查或关闭，这些生命周期职责仍由 Connection 承担。
+
+Redis 聚合契约从 `RedisAtomicStorage` 更名为 `RedisStorageProtocol`。自定义 Redis Provider 的 Storage 需要实现上述入口及通用 KV 方法；TTL 入口已从 `strings` 移至 `keys`。公共 `ManagedRedisCacheClient.expire/ttl` 的调用方式保持一致。
 
 `RedisStorage.scripts` 使用与 String 相同的借用连接，通过独立 `RedisScriptExecutor` 执行脚本并转换驱动异常；缓存层不加载场景脚本，不解释计数、配额或锁定结果。
 
 Lua 资源由使用它们的组件持有：登录脚本位于 `app/contexts/user/infrastructure/security/scripts/`，固定窗口脚本位于 `app/infrastructure/rate_limit/scripts/`。所属适配器按模块位置在首次导入时读取资源，不依赖启动目录。资源目录不是 Python 包。项目通过 `uv_build` 将顶层 `app` 模块及其中的 Lua 资源写入 wheel；`tests/test_distribution.py` 会构建并安装 wheel，再从安装目录导入登录限制和 HTTP 限流适配器，验证三个脚本均可加载。Dockerfile 仍通过整体复制项目包含这些资源。
 
-后续需要 ZSet 或 List 时，应分别增加继承同一基类的 `RedisSortedSetStorage`、`RedisListStorage`，由 `RedisStorage` 使用同一个客户端组合。Redis 专属能力不进入 Redis/Memcached 共用的 `CacheClient`。当前 `CacheManager.get_redis(name)` 是显式能力入口，返回 `ManagedRedisCacheClient`；选择 Memcached 或其他连接时会在创建资源前返回清楚的配置错误。后续类型应沿用这一入口和聚合方式增加专属客户端能力，不给 Memcached 增加伪实现。
+Redis 专属能力不进入 Redis/Memcached 共用的 `CacheClient`。`CacheManager.get_redis(name)` 是显式能力入口，返回 `ManagedRedisCacheClient`；选择 Memcached 或其他连接时会在创建资源前返回清楚的配置错误。扩展新的数据类型时应沿用这一入口，由 `RedisStorage` 使用同一个客户端组合，不给 Memcached 增加伪实现。
 
 职责隔离的价值：
 
@@ -80,7 +82,37 @@ class CacheClient(Protocol):
 
 `delete/exists` 的布尔值表示目标 key 当时是否存在或删除是否生效，不应当作强一致业务事实。缓存随时可能过期或被其他进程修改。
 
-Redis 专属客户端在公共 KV 方法之外提供 `expire`、`ttl` 和 `execute_script`。脚本入口只供基础设施适配器使用，不进入 Domain/Application，也不暴露原生 Redis 客户端。
+Redis 专属客户端在公共 KV 方法之外提供以下操作；所有 key 经过同一命名空间、连接前缀和有效性校验，Hash 字段与集合成员不添加 key 前缀。
+
+| 方法 | 语义 |
+| --- | --- |
+| `expire(key, ttl=...)` / `ttl(key)` | 更新正整数秒级 TTL，读取 TTL 时保留 `-1`（不过期）和 `-2`（不存在） |
+| `set_if_absent(key, value, ttl_ms=...)` | 通过 NX 条件写入字节值，TTL 为显式正整数毫秒；成功新增返回 `True`，已存在返回 `False` |
+| `hash_get_all(key)` | 返回 `dict[bytes, bytes]`，缺失时返回空字典 |
+| `hash_set(key, mapping)` | 写入非空字段字典，字段名为非空字符串、值为字节；返回新增字段数，保留未指定字段 |
+| `set_add(key, member)` | 添加一个字节成员，新增返回 `True`，已存在返回 `False` |
+| `sorted_set_add(key, member, score=..., nx=False)` | 添加或更新字节成员，返回是否新增；`nx=True` 时保留已有分数 |
+| `sorted_set_remove(key, member)` | 移除字节成员，返回是否存在 |
+| `sorted_set_range_by_score(key, minimum=..., maximum=..., count=..., offset=0)` | 读取闭区间内的成员，按分数升序和同分成员字节顺序返回 `tuple[bytes, ...]`，不移除成员 |
+| `execute_script(script, keys=..., args=...)` | 借用连接执行受信任脚本，由调用适配器解释结果 |
+
+分数和范围边界拒绝布尔值、非数字和 NaN；范围边界可使用正负无穷，`offset` 必须为非负整数，`count` 必须为正整数。Hash、Set 和 Sorted Set 操作不应用默认 TTL，也不自动刷新 TTL；需要过期时显式调用 `expire`。`set_if_absent` 不应用默认秒级 TTL，也不提供锁续租或释放策略。驱动错误与非法返回值转换为 `CacheOperationError`，任务取消继续传播。
+
+宿主或基础设施适配器可通过公共入口使用：
+
+```python
+from app.runtime.container import ApplicationContainer
+
+
+async def use_redis_types(container: ApplicationContainer) -> tuple[bytes, ...]:
+    cache = await container.caches.get_redis("session")
+    await cache.hash_set("profile", {"name": "alice".encode("utf-8")})
+    await cache.set_add("members", b"alice")
+    await cache.sorted_set_add("due", b"alice", score=100, nx=True)
+    return await cache.sorted_set_range_by_score("due", minimum=0, maximum=100, count=20)
+```
+
+Domain/Application 使用所属上下文定义的窄协议，不直接接收 Redis 专属客户端。脚本入口只供基础设施适配器使用，不暴露原生 Redis 客户端。
 
 ```python
 async def execute_script(
@@ -181,7 +213,7 @@ greeting = None if raw is None else TextCacheCodec.decode(raw)
 
 ### Redis
 
-适合共享缓存、分布式部署和需要原子脚本操作的场景。当前提供 String KV、TTL 与受控脚本执行；未提供 Hash/List/Set/ZSet、Pub/Sub 或分布式锁等封装。
+适合共享缓存、分布式部署和需要原子脚本操作的场景。当前提供 String KV、NX 毫秒 TTL、Hash 读写、Set 添加、Sorted Set 写入/删除/分数查询及受控脚本执行。各数据类型仅提供上表列出的操作，没有封装驱动的全部命令；当前未提供 List、Pub/Sub 或完整分布式锁策略。
 
 登录策略见[认证](authentication.md)，固定窗口的准入、重试秒数和故障策略见[HTTP 请求限流](http.md#13-http-请求限流)。两者借用同一缓存资源体系，策略与脚本分别归属其自身模块，不由缓存层决定。
 
@@ -213,7 +245,7 @@ async def check_cache(container: ApplicationContainer) -> bool:
 | --- | --- |
 | `CacheConfigurationError` | 名称、driver、字段、namespace/prefix 等配置错误 |
 | `CacheConnectionError` | 后端无法连接或 ping 失败 |
-| `CacheOperationError` | get/set/delete/exists 或 Redis 原子计数/TTL 操作失败，或返回不符合契约 |
+| `CacheOperationError` | KV、Redis 数据类型、TTL 或脚本操作失败，或返回不符合契约 |
 | `CacheKeyError` | 业务 key 不符合跨驱动规则 |
 
 脚手架不会在一个缓存连接失败后自动切换到其他连接或进程内临时存储，也不会吞掉错误当作 cache miss。透明回退会造成危险歧义：调用方无法区分“数据不存在”和“缓存服务故障”，不同实例还可能访问不一致的数据。

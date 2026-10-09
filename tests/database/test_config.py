@@ -37,6 +37,50 @@ def test_nested_environment_is_loaded_as_raw_snapshot(monkeypatch: pytest.Monkey
     }
 
 
+def test_driver_defaults_are_loaded_and_overridden_by_named_connection(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DB_CONNECTION_DEFAULTS__MYSQL__HOST", "mysql.internal")
+    monkeypatch.setenv("DB_CONNECTION_DEFAULTS__MYSQL__PORT", "3307")
+    monkeypatch.setenv("DB_CONNECTION_DEFAULTS__MYSQL__USERNAME", "common-user")
+    monkeypatch.setenv("DB_CONNECTION_DEFAULTS__MYSQL__PASSWORD", "common-secret")
+    monkeypatch.setenv("DB_CONNECTIONS__MAIN__DRIVER", "mysql")
+    monkeypatch.setenv("DB_CONNECTIONS__MAIN__HOST", "mysql.override.internal")
+    monkeypatch.setenv("DB_CONNECTIONS__MAIN__DATABASE", "application")
+
+    settings = DatabaseSettings(_env_file=None)
+    definition = resolve_database_definition(settings, "main")
+
+    assert settings.connection_defaults == {
+        "mysql": {
+            "host": "mysql.internal",
+            "port": 3307,
+            "username": "common-user",
+            "password": "common-secret",
+        }
+    }
+    assert definition.engine_spec.url.host == "mysql.override.internal"
+    assert definition.engine_spec.url.port == 3307
+    assert definition.engine_spec.url.username == "common-user"
+    assert definition.engine_spec.url.database == "application"
+
+
+def test_driver_defaults_do_not_affect_other_drivers() -> None:
+    settings = DatabaseSettings(
+        connection_defaults={
+            "mysql": {
+                "host": "mysql.internal",
+                "username": "common-user",
+                "password": "common-secret",
+            }
+        },
+        connections={"queue": {"driver": "sqlite", "database": ":memory:"}},
+        _env_file=None,
+    )
+
+    definition = resolve_database_definition(settings, "queue")
+
+    assert definition.engine_spec.url.drivername == "sqlite+aiosqlite"
+
+
 def test_sample_environment_contains_valid_database_connections(monkeypatch: pytest.MonkeyPatch) -> None:
     for name in tuple(os.environ):
         if name.startswith("DB_"):

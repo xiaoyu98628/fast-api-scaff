@@ -48,6 +48,26 @@ DB_CONNECTIONS__LOCAL__DRIVER=sqlite
 
 若希望切换用户数据库，应修改组合策略并配套检查迁移、测试和文档，不能只改环境变量猜测行为。
 
+### 按驱动复用公共配置
+
+同一驱动的多个命名连接可以通过 `DB_CONNECTION_DEFAULTS__<DRIVER>__*` 共享配置：
+
+```dotenv
+DB_CONNECTION_DEFAULTS__MYSQL__HOST=127.0.0.1
+DB_CONNECTION_DEFAULTS__MYSQL__PORT=3306
+DB_CONNECTION_DEFAULTS__MYSQL__USERNAME=root
+DB_CONNECTION_DEFAULTS__MYSQL__PASSWORD=root
+DB_CONNECTIONS__MAIN__DRIVER=mysql
+DB_CONNECTIONS__MAIN__DATABASE=fast_api_scaff
+DB_CONNECTIONS__REPORTING__DRIVER=mysql
+DB_CONNECTIONS__REPORTING__DATABASE=reporting
+DB_CONNECTIONS__REPORTING__HOST=reporting.internal
+```
+
+默认值按命名连接自身的 `DRIVER` 选择，命名连接的显式字段优先，再由对应 Provider 严格校验。原有完整连接定义继续有效；显式空值同样覆盖默认值，校验失败时不回退。公共默认值不作用于其他驱动。`postgresql` 和 `pgsql` 按原值匹配各自的默认组。默认配置也不能携带对应驱动不支持的字段。
+
+Manager 构造时对命名连接和公共默认值做深复制，后续修改原始配置字典不会改变其延迟资源。Alembic 和应用通过相同规则解析目标连接，`DB_DEFAULT` 不改变迁移环境指定的连接名。字段说明见[配置参考](configuration.md#7-数据库全局配置)。
+
 ## 3. Provider 与驱动
 
 | 配置 driver | SQLAlchemy 异步驱动 | 用途 |
@@ -64,8 +84,8 @@ Provider 负责把严格校验后的配置转换为与 SQLAlchemy 有关的 Engi
 
 数据库连接经过三个不同阶段：
 
-1. `DatabaseSettings` 读取 `connections` 原始字典；
-2. 首次 `get/session` 时校验目标连接并创建 Engine；
+1. `DatabaseSettings` 读取 `connections` 和 `connection_defaults` 原始字典；
+2. 首次 `get/session` 时合并目标连接的驱动默认值，严格校验并创建 Engine；
 3. SQLAlchemy 在第一次真实查询/事务时从池中建立网络连接。
 
 因此：
@@ -123,6 +143,30 @@ HTTP / Console
 Repository 的 `update()` 使用 `id + version` 条件写入完整聚合并递增版本，返回更新成功、目标不存在或版本冲突；Application Service 分别转换为成功、`UserNotFoundError` 和 `ConcurrentUserUpdateError`。`remove()` 仍使用主键条件并返回是否匹配记录。这些结果属于领域持久化协议，不向上层暴露 SQLAlchemy result。
 
 用户 ID 在 Domain/Application 中使用 `UUID`，在数据库中统一保存为带连字符的小写 `String(36)`，例如 `019cba13-c9eb-7d22-845e-123456789abc`。Mapper 和 Repository 负责两种类型之间的转换，因此 MySQL、PostgreSQL、SQLite 的物理值与 HTTP 返回值保持一致。这个约定以跨数据库可见格式一致为优先级，PostgreSQL 不使用原生 UUID 列。
+
+### 持久化主键生成工具
+
+`app.infrastructure.database.identifiers` 只负责为数据库持久化适配器生成主键，不包含连接、事务、ORM 自动填充或追踪上下文。
+
+| 函数 | 返回值 | 持久化约定 |
+| --- | --- | --- |
+| `new_ulid()` | `str` | 26 位小写 Crockford Base32 字符串，可保存为 `CHAR(26)` |
+| `new_uuid4()` | 标准库 `UUID` | 随机 UUID；适配器选择 `str(value)` 的 36 位带连字符格式或 `.hex` 的 32 位格式 |
+| `new_uuid7()` | 标准库 `UUID` | 使用标准库 UUID7 生成规则；文本格式同上 |
+
+基础设施适配器按目标列选择：
+
+```python
+from app.infrastructure.database.identifiers import new_ulid, new_uuid4, new_uuid7
+
+ulid_key = new_ulid()
+uuid_key = str(new_uuid7())
+compact_uuid_key = new_uuid4().hex
+```
+
+ULID 前 48 位是 Unix 毫秒时间戳，后 80 位使用密码学安全随机数；时间超出无符号 48 位范围时抛出 `OverflowError`，同一毫秒内不保证生成顺序单调。工具不会校验数据库唯一约束或自动写入记录。
+
+Domain/Application 不直接导入数据库基础设施。现有用户聚合继续通过标准库 UUID7 生成领域 ID；只有需要在持久化边界生成主键的适配器使用上述工具。用户表、请求/命令 ID 和队列消息的生成规则保持各自现有约定。
 
 不要让领域对象继承 ORM Model，也不要把 SQLAlchemy Session 传进领域方法。显式 mapper 看起来多一层代码，但能避免 ORM 状态、懒加载和数据库字段成为领域模型的隐性 API。
 
@@ -215,7 +259,7 @@ uv run alembic -c database/main/alembic.ini upgrade head
 uv run alembic -c database/main/alembic.ini downgrade -1
 ```
 
-迁移环境的 `connection_name = main`，它显式读取 `DB_CONNECTIONS__MAIN__...`，不跟随 `DB_DEFAULT`。迁移使用独立 Engine 和 `NullPool`，结束时 dispose。
+迁移环境的 `connection_name = main`，它显式读取 `DB_CONNECTIONS__MAIN__...` 并合并对应 driver 的 `DB_CONNECTION_DEFAULTS`，不跟随 `DB_DEFAULT`。迁移使用独立 Engine 和 `NullPool`，结束时 dispose。
 
 ## 12. 迁移工作流
 

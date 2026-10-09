@@ -97,9 +97,25 @@ def test_main_migration_upgrade_creates_users_table(
     assert users_table is None
 
 
-def run_migration(database_path: Path, operation: str, *arguments: str) -> None:
+def test_main_migration_resolves_database_from_driver_defaults(tmp_path: Path) -> None:
+    database_path = tmp_path / "defaults-migration.sqlite"
+    run_migration(database_path, "upgrade", "head", use_driver_defaults=True)
+    run_migration(database_path, "check", use_driver_defaults=True)
+
+    with sqlite3.connect(database_path) as connection:
+        assert connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'").fetchone() == ("users",)
+
+    run_migration(database_path, "downgrade", "base", use_driver_defaults=True)
+
+
+def run_migration(database_path: Path, operation: str, *arguments: str, use_driver_defaults: bool = False) -> None:
     environment = {key: value for key, value in os.environ.items() if not key.startswith("DB_")}
-    environment["DB_CONNECTIONS"] = json.dumps({"main": {"driver": "sqlite", "database": str(database_path)}})
+    connection: dict[str, object] = {"driver": "sqlite"}
+    if use_driver_defaults:
+        environment["DB_CONNECTION_DEFAULTS"] = json.dumps({"sqlite": {"database": str(database_path)}})
+    else:
+        connection["database"] = str(database_path)
+    environment["DB_CONNECTIONS"] = json.dumps({"main": connection})
     script = """
 import sys
 from alembic import command

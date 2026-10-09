@@ -39,6 +39,8 @@ tests/                      # 分层测试与架构约束
 
 `infrastructure` 不是“所有可复用代码”的杂物目录。只有真正跨上下文的技术能力放在顶层；某个上下文的 ORM Model、Repository 和 UoW 实现留在该上下文内部。
 
+`app.infrastructure.database.identifiers` 为持久化适配器提供 ULID、UUID4 和 UUID7 主键生成，只依赖标准库，不读取配置或访问数据库。Domain/Application 不导入该基础设施模块；现有用户聚合直接使用标准库 UUID7。追踪标识的生成与上下文仍归 Runtime，数据库主键工具不承担宿主追踪职责。使用方式见[数据库](database.md#持久化主键生成工具)。
+
 ## 2. 依赖方向
 
 核心方向：
@@ -293,6 +295,6 @@ SQL 失败表属于共享技术能力，在 main metadata 注册；失败写入�
 
 ## Redis 场景扩展边界
 
-公共缓存层提供 KV、TTL、连接生命周期和受控脚本执行，不持有登录或请求配额策略。`ManagedRedisCacheClient.execute_script` 统一处理 key 前缀，`RedisStorage.scripts` 借用现有连接执行并转换驱动异常；返回值由调用适配器解释。
+公共缓存层提供 KV、Redis 数据类型、TTL、连接生命周期和受控脚本执行，不持有登录或请求配额策略。Hash、Set、Sorted Set 和 NX 毫秒 TTL 只进入 Redis 专属客户端，不扩展 Redis/Memcached 共用的 `CacheClient`。`ManagedRedisCacheClient.execute_script` 统一处理 key 前缀，`RedisStorage.scripts` 借用现有连接执行并转换驱动异常；返回值由调用适配器解释。
 
 登录计数与条件清理脚本归属用户上下文的 `infrastructure/security/scripts/`，应用层继续只依赖 `LoginAttemptLimiter`。固定窗口脚本归属独立技术组件 `app.infrastructure.rate_limit/scripts/`，HTTP 中间件只处理请求身份、范围和响应策略。新增业务模块应定义自己的窄协议，在所属基础设施适配器中维护受信任脚本与结果校验，无需为每个场景扩展公共缓存 API。脚本仅通过 `KEYS` 访问统一命名空间下的键；脚本入口不是面向用户的执行接口或 Lua 沙箱。

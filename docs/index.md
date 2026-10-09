@@ -14,8 +14,8 @@
 
 ## 基础设施
 
-- [数据库](database.md)：多连接、SQLAlchemy、Repository、Unit of Work 和 Alembic。
-- [缓存](cache.md)：Redis、Memcached、key、TTL、编码与边界。
+- [数据库](database.md)：多连接、驱动公共配置、主键生成、SQLAlchemy、Repository、Unit of Work 和 Alembic。
+- [缓存](cache.md)：Redis、Memcached、Redis 数据类型、key、TTL、编码与边界。
 - [向量存储](vector.md)：Milvus、Chroma、Elasticsearch、本地模式、统一协议与扩展边界。
 - [HTTP 出站请求](outbound-http.md)：公共契约、普通/流式请求、连接池、超时和错误语义。
 - [日志](logging.md)：结构化日志、访问日志、字段、输出流和扩展驱动。
@@ -36,8 +36,9 @@
 - FastAPI HTTP 宿主与 Typer Console 宿主；
 - 用户限界上下文的增、查、改、删示例；
 - 数据库会话认证与 Redis 登录失败限制，用户表不增加角色或认证版本字段，数据写入使用内部乐观锁版本；
-- MySQL、PostgreSQL、SQLite 异步数据库连接；
-- Redis、Memcached 字节级 KV 缓存；
+- MySQL、PostgreSQL、SQLite 异步数据库连接与按驱动复用的公共配置；
+- 持久化适配器使用的 ULID、UUID4、UUID7 主键生成工具；
+- Redis、Memcached 字节级 KV 缓存及 Redis NX 毫秒 TTL、Hash、Set、Sorted Set 专属操作；
 - Milvus、Chroma 与 Elasticsearch 统一向量 CRUD 和近邻检索；
 - 普通与流式 HTTP 出站客户端、独立连接池和统一传输错误；
 - JSON/Text 结构化日志、请求 ID、访问日志和统一 HTTP 响应；
@@ -49,7 +50,7 @@
 
 - 角色/权限体系、用户自行修改密码、刷新令牌和 IP 登录限流；
 - 领域事件、Outbox、Saga 或跨数据库原子事务；
-- Redis Hash/List/Set/ZSet 等数据结构；
+- Redis List、Pub/Sub 和完整分布式锁策略；
 - 缓存故障时的自动降级或透明回退；
 - 通用 HTTP 自动重试、熔断和具体上游服务注册。
 
