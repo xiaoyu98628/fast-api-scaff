@@ -39,6 +39,8 @@ tests/                      # 分层测试与架构约束
 
 `infrastructure` 不是“所有可复用代码”的杂物目录。只有真正跨上下文的技术能力放在顶层；某个上下文的 ORM Model、Repository 和 UoW 实现留在该上下文内部。
 
+`app.infrastructure.database.identifiers` 提供 ULID、UUID4 和 UUID7 主键生成，只依赖标准库，不读取配置或访问数据库。用户组合点将公共 `new_uuid7` 作为 `Callable[[], UUID]` 注入应用服务，用例生成 ID 后传给聚合；Domain/Application 不导入该基础设施模块。追踪标识的生成与上下文仍归 Runtime，数据库主键工具不承担宿主追踪职责。使用方式见[数据库](database.md#持久化主键生成工具)。
+
 ## 2. 依赖方向
 
 核心方向：
@@ -81,7 +83,7 @@ bootstrap/composition 负责选择实现并完成装配
 
 `User` 的状态字段使用私有属性，只暴露只读 property。创建、恢复和更新分别走：
 
-- `User.create()`：生成 ID、设置默认状态和创建/更新时间；
+- `User.create(user_id=...)`：接收并校验显式提供的 UUID，设置默认状态和创建/更新时间；
 - `User.rehydrate()`：从数据库恢复，同时重新验证规则；
 - `User.update_profile()`：原子地校验并更新基本信息与时间；
 - `User.change_status()`：独立校验并修改用户状态与时间。
@@ -127,6 +129,8 @@ Python 无法提供绝对私有性；下划线是协作契约。真正的保证�
   → 显式 commit
   → 返回 DTO
 ```
+
+构造服务时必须提供 `new_user_id: Callable[[], UUID]`。用户组合点选择公共 `new_uuid7`，应用服务在资料与密码校验、唯一性预检查和密码哈希成功后生成 ID，再传入 `User.create(user_id=...)`。聚合不提供默认 ID 生成逻辑，直接调用时必须显式传入 UUID；测试可注入确定性生成器，领域层仍只依赖自己的 Domain 与标准库。
 
 Application 不知道 FastAPI、Typer、SQLAlchemy、pwdlib 或具体数据库。时钟和 `PasswordHasher` 窄端口由组合根注入，测试可提供固定时间和确定性的假哈希实现。端口提供 `async def hash(self, password: Password) -> PasswordHash` 和 `async def verify_or_dummy(self, password: str, password_hash: PasswordHash | None) -> bool`。基础设施适配器在线程中执行 Argon2 哈希和验证，两类操作共享同一个默认容量为 2 的限制器；用户服务和认证服务复用该实例。创建用户在哈希前做规范化与唯一性预检查，写入前再次检查；密码重置在确认目标存在后才哈希，并在写入事务中重新读取。这些预检查减少无效请求的计算占用，最终正确性仍由事务内检查和数据库约束保证。取消调用时会等待本次工作结束再传播取消，避免提前释放仍在计算的额度。聚合不会接触明文密码。
 
@@ -293,6 +297,6 @@ SQL 失败表属于共享技术能力，在 main metadata 注册；失败写入�
 
 ## Redis 场景扩展边界
 
-公共缓存层提供 KV、TTL、连接生命周期和受控脚本执行，不持有登录或请求配额策略。`ManagedRedisCacheClient.execute_script` 统一处理 key 前缀，`RedisStorage.scripts` 借用现有连接执行并转换驱动异常；返回值由调用适配器解释。
+公共缓存层提供 KV、Redis 数据类型、TTL、连接生命周期和受控脚本执行，不持有登录或请求配额策略。Hash、Set、Sorted Set 和 NX 毫秒 TTL 只进入 Redis 专属客户端，不扩展 Redis/Memcached 共用的 `CacheClient`。`ManagedRedisCacheClient.execute_script` 统一处理 key 前缀，`RedisStorage.scripts` 借用现有连接执行并转换驱动异常；返回值由调用适配器解释。
 
 登录计数与条件清理脚本归属用户上下文的 `infrastructure/security/scripts/`，应用层继续只依赖 `LoginAttemptLimiter`。固定窗口脚本归属独立技术组件 `app.infrastructure.rate_limit/scripts/`，HTTP 中间件只处理请求身份、范围和响应策略。新增业务模块应定义自己的窄协议，在所属基础设施适配器中维护受信任脚本与结果校验，无需为每个场景扩展公共缓存 API。脚本仅通过 `KEYS` 访问统一命名空间下的键；脚本入口不是面向用户的执行接口或 Lua 沙箱。

@@ -37,39 +37,12 @@ class RedisStringStorage(BaseRedisStorage):
 
         return result is True
 
-    async def delete(self, key: str) -> bool:
-        """删除 key，并按受影响数量返回是否存在。"""
-
+    async def set_if_absent(self, key: str, value: bytes, ttl_ms: int) -> bool:
+        """以 NX 和毫秒 TTL 写入，已存在时返回 False，不接管租约策略。"""
         try:
-            return await self._client.delete(key) > 0
+            result = await self._client.set(key, value, nx=True, px=ttl_ms)
+            if result is not True and result is not None:
+                raise TypeError("Redis SET NX 返回了无效结果")
+            return result is True
         except Exception as error:
-            raise CacheOperationError("Redis 删除缓存失败") from error
-
-    async def exists(self, key: str) -> bool:
-        """使用 Redis EXISTS 判断 key 是否存在。"""
-
-        try:
-            return await self._client.exists(key) > 0
-        except Exception as error:
-            raise CacheOperationError("Redis 检查缓存失败") from error
-
-    async def expire(self, key: str, ttl: int) -> bool:
-        """更新已有 key 的秒级过期时间。"""
-
-        try:
-            return bool(await self._client.expire(key, ttl))
-        except Exception as error:
-            raise CacheOperationError("Redis 更新缓存过期时间失败") from error
-
-    async def ttl(self, key: str) -> int:
-        """返回 Redis TTL 秒数，并保留 -1 与 -2 状态值。"""
-
-        try:
-            value = await self._client.ttl(key)
-        except Exception as error:
-            raise CacheOperationError("Redis 读取缓存过期时间失败") from error
-
-        if not isinstance(value, int) or isinstance(value, bool) or value < -2:
-            raise CacheOperationError("Redis 返回了无效的过期时间")
-
-        return value
+            raise CacheOperationError("Redis 条件写入缓存失败") from error

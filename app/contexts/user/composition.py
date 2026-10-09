@@ -12,6 +12,7 @@ from app.contexts.user.infrastructure.security.redis_login_attempts import Redis
 from app.contexts.user.infrastructure.security.session_token import SecureSessionTokenCodec
 from app.infrastructure.cache.errors import CacheConfigurationError
 from app.infrastructure.cache.manager import CacheManager
+from app.infrastructure.database.identifiers import new_uuid7
 from app.infrastructure.database.manager import DatabaseManager
 
 _USER_DATABASE_CONNECTION_NAME = "main"
@@ -53,7 +54,11 @@ def build_user_context(
         )
 
     return UserContext(
-        service=UserApplicationService(unit_of_work_factory=unit_of_work_factory, password_hasher=password_hasher),
+        service=UserApplicationService(
+            unit_of_work_factory=unit_of_work_factory,
+            password_hasher=password_hasher,
+            new_user_id=new_uuid7,
+        ),
         auth=AuthApplicationService(
             unit_of_work_factory=unit_of_work_factory,
             password_hasher=password_hasher,

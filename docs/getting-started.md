@@ -29,7 +29,7 @@ cp sample.env .env
 
 将 `.env` 中数据库与缓存部分调整为下面的最小配置。其他应用、日志和 CORS 配置可继续使用 `sample.env` 的值。
 
-如果 `.env` 原来使用 `sample.env` 的 MySQL main 示例，先删除全部 `DB_CONNECTIONS__MAIN__...` 行，再写入下面的 SQLite main 配置。不能只把 `DRIVER` 改成 `sqlite` 而保留 `HOST`、`USERNAME`、连接池等字段，因为连接配置禁止当前驱动不支持的额外字段。
+如果 `.env` 原来使用 `sample.env` 的 MySQL main 示例，先删除全部 `DB_CONNECTIONS__MAIN__...` 行，再写入下面的 SQLite main 配置。不能只把 `DRIVER` 改成 `sqlite` 而保留该连接的 `HOST`、`USERNAME`、连接池等字段，因为连接配置禁止当前驱动不支持的额外字段。`DB_CONNECTION_DEFAULTS__MYSQL__*` 只为 MySQL 连接提供默认值，可以保留；切换为 SQLite 后不会继承这些字段。
 
 ```dotenv
 TZ=Asia/Shanghai
@@ -87,11 +87,11 @@ uv run python -m app.console users list
 ```dotenv
 DB_DEFAULT=main
 DB_CONNECTIONS__MAIN__DRIVER=mysql
-DB_CONNECTIONS__MAIN__HOST=127.0.0.1
-DB_CONNECTIONS__MAIN__PORT=3306
+DB_CONNECTION_DEFAULTS__MYSQL__HOST=127.0.0.1
+DB_CONNECTION_DEFAULTS__MYSQL__PORT=3306
 DB_CONNECTIONS__MAIN__DATABASE=fast_api_scaff
-DB_CONNECTIONS__MAIN__USERNAME=root
-DB_CONNECTIONS__MAIN__PASSWORD=root
+DB_CONNECTION_DEFAULTS__MYSQL__USERNAME=root
+DB_CONNECTION_DEFAULTS__MYSQL__PASSWORD=root
 DB_CONNECTIONS__MAIN__CHARSET=utf8mb4
 
 CACHE_DEFAULT=session

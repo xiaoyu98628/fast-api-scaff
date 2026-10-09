@@ -8,9 +8,10 @@
 - Typer Console，一次性命令共享应用容器；
 - 用户限界上下文 CRUD、状态修改与密码重置示例，密码哈希和验证在线程中执行并共享并发限制；
 - 数据库会话认证：登录、当前用户、退出，随机 Bearer Token 只保存摘要，并用 Redis 限制连续登录失败；
-- MySQL、PostgreSQL、SQLite 异步 SQLAlchemy；
+- MySQL、PostgreSQL、SQLite 异步 SQLAlchemy，支持按驱动复用数据库公共配置；
+- 提供 ULID、UUID4、UUID7 主键生成工具，用户创建通过组合点注入公共 UUID7 生成器；
 - Repository、Mapper、Unit of Work 与 Alembic migration；
-- Redis、Memcached 字节级 KV 缓存，Redis Storage 按数据类型组织适配器；
+- Redis、Memcached 字节级 KV 缓存，Redis 专属入口提供 NX 毫秒 TTL、Hash 读写、Set 添加及 Sorted Set 写入、删除和分数范围查询；
 - 可选的 Redis HTTP IP 限流：默认关闭，同一 IP 的 API 请求共享 1000 次/60 秒配额，超限返回 429；
 - Milvus（本地 Lite/远程）、Chroma（本地持久化/远程）和 Elasticsearch 统一异步向量存储；
 - 普通与流式 HTTP 出站请求、独立连接池、阶段超时、池压力诊断和结构化日志；
@@ -21,7 +22,7 @@
 - 架构依赖测试、pytest、Ruff、ty 与 GitHub Actions 质量检查；
 - CI 使用临时 MySQL/PostgreSQL 服务验证 Alembic upgrade、downgrade 和再次 upgrade。
 
-当前不包含角色/权限体系、刷新令牌、领域事件/Outbox/Saga、跨数据库原子事务、Redis 高级数据结构、缓存自动降级或通用 HTTP 自动重试。它们需要按实际业务边界设计，不能把规划项当作现有功能。用户 CRUD 仍是公开示例，`GET /api/v1/auth/me` 演示登录校验。
+当前不包含角色/权限体系、刷新令牌、领域事件/Outbox/Saga、跨数据库原子事务、Redis List 或 Pub/Sub 封装、缓存自动降级或通用 HTTP 自动重试。它们需要按实际业务边界设计，不能把规划项当作现有功能。用户 CRUD 仍是公开示例，`GET /api/v1/auth/me` 演示登录校验。
 
 HTTP 请求限流通过 `RATE_LIMIT_ENABLED=true` 启用；`RATE_LIMIT_CACHE` 选择已有 Redis 连接，省略时使用默认缓存连接。配额由 `RATE_LIMIT_MAX_REQUESTS=1000` 和 `RATE_LIMIT_WINDOW_SECONDS=60` 配置，独立于登录失败限制。Redis 操作失败默认返回 503，只有显式设置 `RATE_LIMIT_FAIL_OPEN=true` 才故障放行。代理部署必须保证 ASGI 客户端地址可信，应用不直接解析转发头。详见 [HTTP 限流规则](docs/http.md#13-http-请求限流)和[配置参考](docs/configuration.md#http-请求限流)。
 
@@ -38,7 +39,7 @@ uv sync --extra dev
 cp sample.env .env
 ```
 
-首次运行建议把 `.env` 中 main 数据库改为 SQLite，并让本地与部署环境都使用 Redis 缓存。切换 main 的 driver 时，必须先删除原 MySQL 的 `HOST`、`PORT`、`USERNAME`、`PASSWORD`、连接池等字段；连接配置禁止携带当前驱动不支持的额外字段。
+首次运行建议把 `.env` 中 main 数据库改为 SQLite，并让本地与部署环境都使用 Redis 缓存。切换 main 的 driver 时，必须先删除该命名连接上原 MySQL 的 `HOST`、`PORT`、`USERNAME`、`PASSWORD`、连接池等字段；连接配置禁止携带当前驱动不支持的额外字段。`DB_CONNECTION_DEFAULTS__MYSQL__*` 只作用于 `driver=mysql` 的连接，切换为 SQLite 后可保留这组公共配置。公共默认值与命名连接的覆盖规则见[数据库](docs/database.md#2-命名连接)。
 
 ```dotenv
 TZ=Asia/Shanghai

@@ -73,6 +73,30 @@ async def test_manager_copies_raw_connection_before_lazy_creation() -> None:
 
 
 @pytest.mark.asyncio
+async def test_manager_applies_driver_defaults_and_copies_them_before_lazy_creation() -> None:
+    settings = DatabaseSettings(
+        default="main",
+        connection_defaults={
+            "mysql": {
+                "host": "mysql.internal",
+                "username": "common-user",
+                "password": "common-secret",
+            }
+        },
+        connections={"main": {"driver": "mysql", "database": "application", "host": "mysql.override.internal"}},
+        _env_file=None,
+    )
+    manager = DatabaseManager(settings)
+
+    settings.connection_defaults["mysql"]["username"] = "changed-user"
+    engine = await manager.get_engine()
+
+    assert engine.url.host == "mysql.override.internal"
+    assert engine.url.username == "common-user"
+    await manager.aclose()
+
+
+@pytest.mark.asyncio
 async def test_missing_default_connection_is_reported_on_first_use() -> None:
     manager = DatabaseManager(DatabaseSettings(_env_file=None))
 

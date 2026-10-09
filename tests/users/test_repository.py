@@ -11,6 +11,7 @@ from app.contexts.user.domain.user import User
 from app.contexts.user.domain.values import EmailAddress, PasswordHash, UserId, Username, UserStatus
 from app.contexts.user.infrastructure.persistence.models.user import UserModel
 from app.contexts.user.infrastructure.persistence.repository import SqlAlchemyUserRepository
+from app.infrastructure.database.identifiers import new_uuid7
 from app.infrastructure.database.manager import DatabaseManager
 
 
@@ -29,7 +30,7 @@ async def test_sqlalchemy_user_repository_persists_and_queries_users() -> None:
 
     now = datetime(2026, 8, 28, 18, 30)
     password_hash = PasswordHash("test-password-hash")
-    user = User.create(username="alice", email="alice@example.com", password_hash=password_hash, now=now)
+    user = User.create(user_id=new_uuid7(), username="alice", email="alice@example.com", password_hash=password_hash, now=now)
 
     async with manager.session() as session:
         repository = SqlAlchemyUserRepository(session)
@@ -93,7 +94,7 @@ async def test_repository_rejects_stale_aggregate_updates() -> None:
         await connection.run_sync(UserModel.metadata.create_all)
 
     now = datetime(2026, 8, 28, 18, 30)
-    user = User.create(username="alice", email="alice@example.com", password_hash=PasswordHash("original-hash"), now=now)
+    user = User.create(user_id=new_uuid7(), username="alice", email="alice@example.com", password_hash=PasswordHash("original-hash"), now=now)
     async with manager.session() as session:
         repository = SqlAlchemyUserRepository(session)
         await repository.add(user)

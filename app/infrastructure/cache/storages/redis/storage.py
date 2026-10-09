@@ -2,7 +2,11 @@
 
 from redis.asyncio import Redis
 
+from app.infrastructure.cache.storages.redis.hash import RedisHashStorage
+from app.infrastructure.cache.storages.redis.key import RedisKeyStorage
 from app.infrastructure.cache.storages.redis.script import RedisScriptExecutor
+from app.infrastructure.cache.storages.redis.set import RedisSetStorage
+from app.infrastructure.cache.storages.redis.sorted_set import RedisSortedSetStorage
 from app.infrastructure.cache.storages.redis.string import RedisStringStorage
 
 
@@ -12,7 +16,11 @@ class RedisStorage:
     def __init__(self, client: Redis) -> None:
         """用同一个 Redis 客户端创建已实现的数据类型适配器。"""
 
+        self.keys = RedisKeyStorage(client)
         self.strings = RedisStringStorage(client)
+        self.hashes = RedisHashStorage(client)
+        self.sets = RedisSetStorage(client)
+        self.sorted_sets = RedisSortedSetStorage(client)
         self.scripts = RedisScriptExecutor(client)
 
     async def get(self, key: str) -> bytes | None:
@@ -28,9 +36,9 @@ class RedisStorage:
     async def delete(self, key: str) -> bool:
         """删除 key，并按受影响数量返回是否存在。"""
 
-        return await self.strings.delete(key)
+        return await self.keys.delete(key)
 
     async def exists(self, key: str) -> bool:
         """使用 Redis EXISTS 判断 key 是否存在。"""
 
-        return await self.strings.exists(key)
+        return await self.keys.exists(key)

@@ -21,6 +21,7 @@ class DatabaseSettings(BaseSettings):
     )
 
     default: str | None = None
+    connection_defaults: dict[str, dict[str, object]] = Field(default_factory=dict)
     connections: dict[str, dict[str, object]] = Field(default_factory=dict)
 
 

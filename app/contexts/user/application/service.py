@@ -23,14 +23,15 @@ from app.contexts.user.domain.values import EmailAddress, Password, UserId, User
 
 @dataclass(frozen=True, slots=True)
 class UserApplicationService:
-    """编排用户管理用例，不依赖 HTTP 或 SQLAlchemy。"""
+    """编排用户管理用例；组合点注入返回 UUID 的主键生成器及所需窄依赖。"""
 
     unit_of_work_factory: UserUnitOfWorkFactory
     password_hasher: PasswordHasher
+    new_user_id: Callable[[], UUID]
     clock: Callable[[], datetime] = datetime.now
 
     async def create(self, command: CreateUserCommand) -> UserDTO:
-        """先廉价检查唯一性，再哈希密码并完成并发安全的写入。"""
+        """先检查唯一性、哈希密码，再生成用户 ID 并完成并发安全的写入。"""
 
         username = Username(command.username)
         email = EmailAddress(command.email)
@@ -42,7 +43,9 @@ class UserApplicationService:
 
         # 慢哈希仍在事务外执行，避免计算期间占用数据库连接和事务。
         password_hash = await self.password_hasher.hash(password)
+        # 实现由组合点选择，聚合只接收标识，不依赖基础设施或自行生成主键。
         user = User.create(
+            user_id=self.new_user_id(),
             username=username.value,
             email=email.value,
             password_hash=password_hash,

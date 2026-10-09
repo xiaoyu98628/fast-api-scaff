@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from uuid import UUID, uuid7
+from uuid import UUID
 
 from app.contexts.user.domain.errors import InvalidUserDataError
 from app.contexts.user.domain.values import EmailAddress, PasswordHash, UserId, Username, UserStatus
@@ -81,16 +81,16 @@ class User:
     def create(
         cls,
         *,
+        user_id: UUID,
         username: str,
         email: str,
         password_hash: PasswordHash,
         now: datetime,
-        user_id: UUID | None = None,
     ) -> User:
-        """创建默认处于启用状态的新用户聚合。"""
+        """使用调用方提供的 UUID 创建默认启用的聚合，并校验领域值与时间。"""
 
         return cls(
-            _id=UserId(user_id if user_id is not None else uuid7()),
+            _id=UserId(user_id),
             _username=Username(username),
             _email=EmailAddress(email),
             _password_hash=password_hash,

@@ -1,8 +1,10 @@
 """验证用户应用服务的用例编排和错误语义。"""
 
+from collections.abc import Callable
 from datetime import datetime
 from types import TracebackType
-from uuid import UUID
+from unittest.mock import Mock
+from uuid import UUID, uuid7
 
 import pytest
 
@@ -128,13 +130,46 @@ def build_service(
     repository: FakeUserRepository,
     password_hasher: FakePasswordHasher | None = None,
     sessions: FakeSessionRepository | None = None,
+    *,
+    new_user_id: Callable[[], UUID] = uuid7,
 ) -> UserApplicationService:
     session_repository = sessions or FakeSessionRepository()
     return UserApplicationService(
         unit_of_work_factory=lambda: FakeUserUnitOfWork(repository, session_repository),
         password_hasher=password_hasher or FakePasswordHasher(),
+        new_user_id=new_user_id,
         clock=lambda: datetime(2026, 8, 28, 18, 0),
     )
+
+
+@pytest.mark.asyncio
+async def test_user_service_generates_and_preserves_one_id_per_user() -> None:
+    repository = FakeUserRepository()
+    identifiers = [UUID("019cba13-c9eb-7d22-845e-123456789abc"), UUID("019cba13-c9eb-7d22-845e-123456789abd")]
+    generator = Mock(side_effect=identifiers)
+    service = build_service(repository, new_user_id=generator)
+    generator.assert_not_called()
+
+    first = await service.create(CreateUserCommand(username="alice", email="alice@example.com", password="password123"))
+    second = await service.create(CreateUserCommand(username="bobby", email="bob@example.com", password="password123"))
+
+    assert [first.id, second.id] == identifiers
+    assert list(repository.items) == identifiers
+    assert [user.id.value for user in repository.items.values()] == identifiers
+    assert generator.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_user_service_does_not_persist_when_id_generation_fails() -> None:
+    repository = FakeUserRepository()
+    generator = Mock(side_effect=RuntimeError("ID 生成失败"))
+    service = build_service(repository, new_user_id=generator)
+
+    with pytest.raises(RuntimeError, match="ID 生成失败"):
+        await service.create(CreateUserCommand(username="alice", email="alice@example.com", password="password123"))
+
+    generator.assert_called_once_with()
+    assert repository.items == {}
 
 
 @pytest.mark.asyncio

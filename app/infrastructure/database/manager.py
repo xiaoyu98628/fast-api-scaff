@@ -8,7 +8,7 @@ from functools import partial
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from app.config.database import DatabaseSettings
-from app.infrastructure.database.connections.resolver import validate_database_definition
+from app.infrastructure.database.connections.resolver import apply_database_connection_defaults, validate_database_definition
 from app.infrastructure.database.errors import DatabaseConfigurationError
 from app.infrastructure.database.factory import close_database_resource, create_database_resource
 from app.infrastructure.database.providers.registry import DEFAULT_DATABASE_PROVIDERS, DatabaseProviderRegistry
@@ -31,10 +31,11 @@ class DatabaseManager:
         self._closed = False
         self._providers = providers
         # 数据库定义延迟到首次使用才解析，因此需与调用方仍可修改的原始字典隔离。
+        connection_defaults = deepcopy(settings.connection_defaults)
         connections = deepcopy(settings.connections)
         self._resources = {
             name: AsyncLazy(
-                factory=partial(self._create, name, raw_config),
+                factory=partial(self._create, name, raw_config, connection_defaults),
                 closer=close_database_resource,
             )
             for name, raw_config in connections.items()
@@ -96,9 +97,11 @@ class DatabaseManager:
         self,
         name: str,
         raw_config: dict[str, object],
+        connection_defaults: dict[str, dict[str, object]],
     ) -> DatabaseResource:
         # 原始连接配置直到首次使用才由 Provider 严格校验。
-        definition = validate_database_definition(name, raw_config, self._providers)
+        resolved_config = apply_database_connection_defaults(raw_config, connection_defaults)
+        definition = validate_database_definition(name, resolved_config, self._providers)
         return await create_database_resource(name, definition)
 
     def _resolve_name(self, name: str | None) -> str:

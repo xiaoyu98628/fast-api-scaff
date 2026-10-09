@@ -10,6 +10,7 @@ from app.contexts.user.domain.errors import InvalidUserDataError
 from app.contexts.user.domain.user import User
 from app.contexts.user.domain.values import Password, PasswordHash, UserId, UserStatus
 
+_USER_ID = UUID("019cba13-c9eb-7d22-845e-123456789abc")
 _PASSWORD_HASH = PasswordHash("test-password-hash")
 
 
@@ -17,12 +18,14 @@ def test_user_creation_normalizes_identity_fields() -> None:
     now = datetime(2026, 8, 28, 18, 0)
 
     user = User.create(
+        user_id=_USER_ID,
         username="  Alice_01 ",
         email=" Alice@Example.COM ",
         password_hash=_PASSWORD_HASH,
         now=now,
     )
 
+    assert user.id == UserId(_USER_ID)
     assert user.username.value == "alice_01"
     assert user.email.value == "alice@example.com"
     assert user.password_hash == _PASSWORD_HASH
@@ -50,10 +53,22 @@ def test_user_id_rejects_non_uuid_value() -> None:
         UserId(cast(UUID, "not-a-uuid"))
 
 
+@pytest.mark.parametrize("user_id", [None, "not-a-uuid"])
+def test_user_creation_rejects_invalid_provided_id(user_id: object) -> None:
+    with pytest.raises(InvalidUserDataError, match="用户 ID 必须是 UUID"):
+        User.create(
+            user_id=cast(UUID, user_id),
+            username="alice",
+            email="alice@example.com",
+            password_hash=_PASSWORD_HASH,
+            now=datetime(2026, 8, 28, 18, 0),
+        )
+
+
 def test_user_profile_update_preserves_password_status_and_creation_time() -> None:
     created_at = datetime(2026, 8, 28, 18, 0)
     updated_at = created_at + timedelta(minutes=1)
-    user = User.create(username="alice", email="alice@example.com", password_hash=_PASSWORD_HASH, now=created_at)
+    user = User.create(user_id=_USER_ID, username="alice", email="alice@example.com", password_hash=_PASSWORD_HASH, now=created_at)
 
     user.update_profile(
         username="alice_new",
@@ -72,7 +87,7 @@ def test_user_profile_update_preserves_password_status_and_creation_time() -> No
 def test_user_status_change_preserves_profile_password_and_creation_time() -> None:
     created_at = datetime(2026, 8, 28, 18, 0)
     updated_at = created_at + timedelta(minutes=1)
-    user = User.create(username="alice", email="alice@example.com", password_hash=_PASSWORD_HASH, now=created_at)
+    user = User.create(user_id=_USER_ID, username="alice", email="alice@example.com", password_hash=_PASSWORD_HASH, now=created_at)
 
     user.change_status(status=UserStatus.DISABLED, now=updated_at)
 
@@ -88,7 +103,7 @@ def test_user_password_reset_preserves_profile_status_and_creation_time() -> Non
     created_at = datetime(2026, 8, 28, 18, 0)
     updated_at = created_at + timedelta(minutes=1)
     new_password_hash = PasswordHash("new-password-hash")
-    user = User.create(username="alice", email="alice@example.com", password_hash=_PASSWORD_HASH, now=created_at)
+    user = User.create(user_id=_USER_ID, username="alice", email="alice@example.com", password_hash=_PASSWORD_HASH, now=created_at)
 
     user.reset_password(password_hash=new_password_hash, now=updated_at)
 
@@ -102,7 +117,7 @@ def test_user_password_reset_preserves_profile_status_and_creation_time() -> Non
 
 def test_invalid_password_reset_does_not_partially_change_user() -> None:
     now = datetime(2026, 8, 28, 18, 0)
-    user = User.create(username="alice", email="alice@example.com", password_hash=_PASSWORD_HASH, now=now)
+    user = User.create(user_id=_USER_ID, username="alice", email="alice@example.com", password_hash=_PASSWORD_HASH, now=now)
 
     with pytest.raises(InvalidUserDataError, match="密码哈希类型"):
         user.reset_password(
@@ -116,7 +131,7 @@ def test_invalid_password_reset_does_not_partially_change_user() -> None:
 
 def test_invalid_profile_update_does_not_partially_change_user() -> None:
     now = datetime(2026, 8, 28, 18, 0)
-    user = User.create(username="alice", email="alice@example.com", password_hash=_PASSWORD_HASH, now=now)
+    user = User.create(user_id=_USER_ID, username="alice", email="alice@example.com", password_hash=_PASSWORD_HASH, now=now)
 
     with pytest.raises(InvalidUserDataError):
         user.update_profile(
@@ -142,6 +157,7 @@ def test_invalid_profile_update_does_not_partially_change_user() -> None:
 def test_user_creation_rejects_invalid_profile(username: str, email: str) -> None:
     with pytest.raises(InvalidUserDataError):
         User.create(
+            user_id=_USER_ID,
             username=username,
             email=email,
             password_hash=_PASSWORD_HASH,
@@ -152,6 +168,7 @@ def test_user_creation_rejects_invalid_profile(username: str, email: str) -> Non
 def test_user_rejects_timezone_aware_business_time() -> None:
     with pytest.raises(InvalidUserDataError, match="本地无时区时间"):
         User.create(
+            user_id=_USER_ID,
             username="alice",
             email="alice@example.com",
             password_hash=_PASSWORD_HASH,
@@ -161,7 +178,7 @@ def test_user_rejects_timezone_aware_business_time() -> None:
 
 def test_user_rehydration_rechecks_domain_value_types() -> None:
     now = datetime(2026, 8, 28, 18, 0)
-    user = User.create(username="alice", email="alice@example.com", password_hash=_PASSWORD_HASH, now=now)
+    user = User.create(user_id=_USER_ID, username="alice", email="alice@example.com", password_hash=_PASSWORD_HASH, now=now)
 
     with pytest.raises(InvalidUserDataError, match="密码哈希类型"):
         User.rehydrate(
@@ -179,7 +196,7 @@ def test_user_rehydration_rechecks_domain_value_types() -> None:
 @pytest.mark.parametrize("version", [0, -1, True])
 def test_user_rehydration_rejects_invalid_version(version: int) -> None:
     now = datetime(2026, 8, 28, 18, 0)
-    user = User.create(username="alice", email="alice@example.com", password_hash=_PASSWORD_HASH, now=now)
+    user = User.create(user_id=_USER_ID, username="alice", email="alice@example.com", password_hash=_PASSWORD_HASH, now=now)
 
     with pytest.raises(InvalidUserDataError, match="用户版本"):
         User.rehydrate(
@@ -196,6 +213,7 @@ def test_user_rehydration_rejects_invalid_version(version: int) -> None:
 
 def test_user_version_advances_only_when_persistence_confirms_update() -> None:
     user = User.create(
+        user_id=_USER_ID,
         username="alice",
         email="alice@example.com",
         password_hash=_PASSWORD_HASH,
@@ -211,6 +229,7 @@ def test_user_version_advances_only_when_persistence_confirms_update() -> None:
 
 def test_user_fields_can_only_be_changed_through_domain_methods() -> None:
     user = User.create(
+        user_id=_USER_ID,
         username="alice",
         email="alice@example.com",
         password_hash=_PASSWORD_HASH,
