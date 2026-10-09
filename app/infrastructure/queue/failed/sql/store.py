@@ -1,5 +1,6 @@
 """使用独立短事务实现失败任务持久化。"""
 
+import asyncio
 import builtins
 from uuid import UUID
 
@@ -12,16 +13,25 @@ from app.infrastructure.queue.failed.sql.model import FailedJobModel
 
 
 class SqlFailedJobStore:
-    """通过 DatabaseManager 访问指定数据库中的失败任务表。"""
+    """通过短事务访问失败任务表，并串行保存同一实例收到的记录。"""
 
     def __init__(self, databases: DatabaseManager, database: str = "main") -> None:
         """保存数据库管理器和失败记录所在的连接名。"""
 
         self._databases = databases
         self._database = database
+        self._write_lock = asyncio.Lock()
 
     async def save(self, record: FailedJobRecord) -> None:
-        """幂等保存失败记录；相同 failure_id 已存在时视为成功。"""
+        """在本实例内串行、幂等保存记录；重复 failure_id 保留首份现场。"""
+
+        # Worker 的并发槽复用同一存储实例，串行提交可减少 SQLite 写锁争抢。
+        # 锁只覆盖本实例的 save；其他实例、进程和数据库写入仍由数据库协调。
+        async with self._write_lock:
+            await self._save(record)
+
+    async def _save(self, record: FailedJobRecord) -> None:
+        """在实例写锁保护下提交记录，并保留重复 failure_id 的首份现场。"""
 
         try:
             async with self._databases.session(self._database) as session:

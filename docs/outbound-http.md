@@ -122,7 +122,9 @@ JSON 解码失败、调用参数错误和调用方业务处理异常不属于网
 
 ## 7. 日志与敏感信息
 
-普通请求记录完成、失败或取消，流式请求记录连接、完成、失败或取消；资源创建、关闭、连接池压力和容量超时也有独立事件。请求日志只包含 method、origin、可选 operation、状态、耗时和响应大小，不记录 path、query、请求/响应体或 header。
+普通请求记录完成、失败或取消，流式请求记录连接、完成、失败或取消；资源创建、关闭、连接池压力和容量超时也有独立事件。请求日志包含 method、origin、route、可选 operation、状态、耗时、响应大小和错误类型，不记录 URL 用户名/密码、query、fragment、请求/响应体或 header。
+
+`route` 是原始 URL path，保留动态参数和百分号编码，不做脱敏或路由模板归一化；空路径记录为 `/`。调用方应避免在路径中放置凭据或需要隐藏的数据。`operation` 仍用于稳定、低基数的业务操作名，不能包含用户 ID、token 或完整 URL。
 
 池压力和容量超时日志包含 pool、active、peak active、limit、usage、cancelled 与 pool timeout；容量超时还记录 client ID。客户端不读取或修改 HTTPX2/httpcore2 私有连接池状态，避免把诊断能力绑定到第三方内部结构。
 

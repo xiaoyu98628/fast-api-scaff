@@ -8,13 +8,13 @@
 - Typer Console，一次性命令共享应用容器；
 - 用户限界上下文 CRUD、状态修改与密码重置示例，密码哈希和验证在线程中执行并共享并发限制；
 - 数据库会话认证：登录、当前用户、退出，随机 Bearer Token 只保存摘要，并用 Redis 限制连续登录失败；
-- MySQL、PostgreSQL、SQLite 异步 SQLAlchemy，支持按驱动复用数据库公共配置；
+- MySQL、PostgreSQL、SQLite 异步 SQLAlchemy，支持按驱动复用数据库公共配置，SQLite 连接固定等待数据库锁最多 30 秒；
 - 提供 ULID、UUID4、UUID7 主键生成工具，用户创建通过组合点注入公共 UUID7 生成器；
 - Repository、Mapper、Unit of Work 与 Alembic migration；
 - Redis、Memcached 字节级 KV 缓存，Redis 专属入口提供 NX 毫秒 TTL、Hash 读写、Set 添加及 Sorted Set 写入、删除和分数范围查询；
 - 可选的 Redis HTTP IP 限流：默认关闭，同一 IP 的 API 请求共享 1000 次/60 秒配额，超限返回 429；
 - Milvus（本地 Lite/远程）、Chroma（本地持久化/远程）和 Elasticsearch 统一异步向量存储；
-- 普通与流式 HTTP 出站请求、独立连接池、阶段超时、池压力诊断和结构化日志；
+- 普通与流式 HTTP 出站请求、独立连接池、阶段超时、池压力诊断和包含原始路径 route 的结构化日志；
 - Redis Streams、Kafka、RabbitMQ 队列适配器和独立 Worker；
 - 定时计划约定发现、代码注册表、Cron/Interval Trigger 和独立 Scheduler，到期后向现有队列投递 QueueJob；
 - QueueJob 约定发现与不可变任务目录、稳定引用、显式历史版本解码、投递内重试、SQL 失败存储及 Console 诊断/重放；
@@ -183,7 +183,7 @@ docker compose up --build worker
 
 内置 `LoginSucceededJob` 由登录接口尽力投递到默认连接配置的默认队列（`sample.env` 为 `default`），消息以 `user_id` 参数标识登录用户，不包含用户名、密码或 Token；HTTP request ID 由运行时上下文自动作为 correlation ID 写入消息。Worker 收到后通过 `context.container.users.service.get(user_id)` 查询执行时的最新用户数据，并只记录固定文案、结构化用户 ID 和状态。`CleanupExpiredSessionsJob` 由内置 Scheduler 计划投递，Worker 通过认证应用服务删除已经过期的数据库会话并记录删除数量。两个任务都只对明确的暂时性数据库故障执行重试，其他错误进入失败存储。每条消息获得不可变 `JobExecutionContext`，其中既有当前配置和正在运行的 `ApplicationContainer`，也有任务、队列和关联元数据；Job 可以像 Console operation 一样选择已装配的应用服务以及数据库、缓存、HTTP、队列和向量能力。业务 Job 应优先调用应用服务，不把容器继续传入 Application/Domain。新增任务放入带独立 `jobs` 路径段的模块即可，无需修改组合根；Worker 在开始消费前完成发现、导入和契约校验，具体规则见[QueueJob 自动发现](docs/queue.md#2-queuejob-与自动发现)。HTTP、Console 与 Scheduler 负责发布，独立 Worker 通过 Redis、Kafka 或 RabbitMQ 消费。
 
-失败任务固定使用 SQL 存储，需配置 QUEUE_FAILED__DATABASE 并执行对应 Alembic migration。外部适配器目前由模拟客户端测试覆盖，未进行真实 Redis/Kafka/RabbitMQ 服务集成验证。重试是投递内重试，不包含持久延迟调度或 exactly-once 保证。
+失败任务固定使用 SQL 存储，需配置 QUEUE_FAILED__DATABASE 并执行对应 Alembic migration。同一失败存储实例的保存操作串行执行，跨实例和跨进程仍由数据库协调。外部适配器目前由模拟客户端测试覆盖，未进行真实 Redis/Kafka/RabbitMQ 服务集成验证。重试是投递内重试，不包含持久延迟调度或 exactly-once 保证。
 
 ## 独立 Scheduler
 

@@ -29,7 +29,7 @@ await container.queues.dispatch(job, connection="redis", queue="reports")
 
 `sample.env` 同时声明 `redis`、`kafka` 和 `rabbitmq` 三个命名连接，并以 `redis` 为默认连接、`default` 为该连接的默认逻辑队列。`uv run python -m app.worker` 直接消费该队列；`--connection` 和 `--queue` 只是高级覆盖。Worker 不会动态扫描所有物理队列；未显式隔离的 Job 都复用默认队列。
 
-配置见[配置参考](configuration.md#队列与-worker)与 `sample.env`。未配置连接时，HTTP/Console 仍可启动；调用队列公共入口才报告未配置错误。连接字段在容器构建时严格校验。
+配置见[配置参考](configuration.md#13-队列worker-与-scheduler)与 `sample.env`。未配置连接时，HTTP/Console 仍可启动；调用队列公共入口才报告未配置错误。连接字段在容器构建时严格校验。
 
 ## 2. QueueJob 与自动发现
 
@@ -210,6 +210,8 @@ WHERE failure_id = '<failure-id>';
 Console 的 `queue failed` 命令默认只展示失败元数据，不输出 payload，避免把用户 ID 或未来任务中的敏感业务数据泄漏到终端和命令日志。直接查询 payload 时也应遵守相同的数据访问和脱敏要求。
 
 SQL 使用独立短事务，表名为 `queue_failed_jobs`，迁移归 main 管理。若选择其他数据库连接，必须保证该连接具有同一表结构；框架不会启动时自动建表。迁移 downgrade 会删除失败记录。
+
+同一 `SqlFailedJobStore` 实例的 `save()` 在所有 SQL 驱动上串行执行，重复 `failure_id` 保留首份失败记录。保存抛错或任务取消后会释放实例锁，后续保存可以继续；取消不保证已经开始的数据库提交没有完成。查询、删除、其他实例和其他进程不受此锁保护。SQLite 连接另有固定 30 秒的数据库锁等待时间，持续占锁仍可能导致保存失败。
 
 retry 生成新 job_id 并保留 replay_of，原失败记录保留；forget 单独删除。重复 retry 可生成多条任务。发布结果不确定时需检查下游，不能宣称人工重放 exactly-once。独立 Console 只读取配置的 SQL 失败存储；数据库不可访问时明确报错，不返回误导性的空列表。
 

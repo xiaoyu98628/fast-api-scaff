@@ -1,4 +1,4 @@
-"""构造不包含请求敏感数据的 HTTP 出站结构化日志。"""
+"""构造包含接口路径的 HTTP 出站结构化日志，不记录 query、header 或 body。"""
 
 import logging
 from enum import StrEnum
@@ -27,12 +27,13 @@ class HttpLogEvent(StrEnum):
 
 
 def request_log_details(request: HttpRequest, **details: object) -> dict[str, object]:
-    """只提取 method、origin 和调用方提供的低基数 operation。"""
+    """提取 method、origin、原始 route 和调用方提供的低基数 operation。"""
 
-    # 不记录 path、query、headers 或 body，避免凭据和业务数据进入日志。
+    # 原始路径不做脱敏，调用方不能把凭据放在 path 中；query、headers 和 body 不进入日志。
     values: dict[str, object] = {
         "method": request.method,
         "origin": _safe_origin(request.url),
+        "route": _safe_route(request.url),
     }
     if request.operation is not None:
         values["operation"] = request.operation
@@ -69,3 +70,17 @@ def _safe_origin(url: str) -> str:
     rendered_hostname = f"[{hostname}]" if ":" in hostname else hostname
     origin = f"{parsed_url.scheme}://{rendered_hostname}"
     return f"{origin}:{port}" if port is not None else origin
+
+
+def _safe_route(url: str) -> str:
+    """返回原始 URL path，排除 query、fragment 和 URL 凭据；空路径使用 /。"""
+
+    try:
+        parsed_url = urlsplit(url)
+        _ = parsed_url.port
+    except ValueError:
+        return "<invalid>"
+
+    if parsed_url.hostname is None or parsed_url.scheme not in {"http", "https"}:
+        return "<invalid>"
+    return parsed_url.path or "/"

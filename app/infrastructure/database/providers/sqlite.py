@@ -9,6 +9,8 @@ from app.config.database import SQLiteDatabaseSettings
 from app.infrastructure.database.connections.spec import DatabaseEngineSpec
 from app.infrastructure.database.contracts.provider import DatabaseResourceDefinition
 
+_SQLITE_BUSY_TIMEOUT_SECONDS = 30.0
+
 
 class SQLiteDatabaseProvider:
     """解析内存库、绝对路径和 storage 相对路径。"""
@@ -16,7 +18,7 @@ class SQLiteDatabaseProvider:
     drivers = ("sqlite",)
 
     def prepare(self, raw_config: dict[str, object]) -> DatabaseResourceDefinition:
-        """校验配置并生成不包含连接池参数的资源定义。"""
+        """校验配置并生成带 30 秒写锁等待时间的资源定义。"""
 
         settings = SQLiteDatabaseSettings.model_validate(raw_config)
         return DatabaseResourceDefinition(
@@ -25,7 +27,8 @@ class SQLiteDatabaseProvider:
                     drivername="sqlite+aiosqlite",
                     database=settings.resolved_database,
                 ),
-                options={},
+                # SQLite 写入会争抢数据库锁；给短事务留出等待其他写入完成的时间。
+                options={"connect_args": {"timeout": _SQLITE_BUSY_TIMEOUT_SECONDS}},
                 log_queries=settings.echo,
                 slow_query_ms=settings.slow_query_ms,
             ),

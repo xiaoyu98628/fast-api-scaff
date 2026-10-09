@@ -219,6 +219,8 @@ DB_CONNECTIONS__REPORTING__HOST=reporting.internal
 
 SQLite 不接受 MySQL/PostgreSQL 的连接池字段。连接模型使用 `extra="forbid"`，拼错字段或为驱动添加不支持的字段会在首次取连接时失败。
 
+SQLite 连接固定使用 30 秒的数据库锁等待时间，不新增环境变量。它只约束锁争抢时的等待，不是查询或事务的总超时；持续占锁仍可能导致操作失败。
+
 完整数据库行为见[数据库](database.md)。
 
 ## 8. 缓存全局配置

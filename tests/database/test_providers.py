@@ -1,7 +1,9 @@
 """验证数据库 Provider 注册、替换和配置解析。"""
 
+from pathlib import Path
+
 import pytest
-from sqlalchemy import URL
+from sqlalchemy import URL, text
 
 from app.bootstrap.build import build_application_container
 from app.config.app import AppSettings
@@ -152,10 +154,30 @@ def test_sqlite_provider_builds_supported_engine_spec() -> None:
 
     assert definition.engine_spec.url.drivername == "sqlite+aiosqlite"
     assert definition.engine_spec.url.database == ":memory:"
-    assert definition.engine_spec.options == {}
+    assert definition.engine_spec.options == {"connect_args": {"timeout": 30.0}}
     assert definition.engine_spec.log_queries is True
     assert definition.engine_spec.slow_query_ms == 500
     assert definition.configure_engine is not None
+
+
+@pytest.mark.asyncio
+async def test_sqlite_connections_apply_busy_timeout_and_foreign_keys(tmp_path: Path) -> None:
+    manager = DatabaseManager(
+        DatabaseSettings(
+            default="main",
+            connections={"main": {"driver": "sqlite", "database": str(tmp_path / "waiting.sqlite")}},
+            _env_file=None,
+        )
+    )
+    try:
+        engine = await manager.get_engine()
+        # 同时借出连接，验证连接池后续创建的连接也采用相同等待时间和外键开关。
+        async with engine.connect() as first, engine.connect() as second:
+            for connection in (first, second):
+                assert await connection.scalar(text("PRAGMA busy_timeout")) == 30_000
+                assert await connection.scalar(text("PRAGMA foreign_keys")) == 1
+    finally:
+        await manager.aclose()
 
 
 @pytest.mark.asyncio
