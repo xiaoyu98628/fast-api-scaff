@@ -24,7 +24,7 @@ class WorkerRunner:
         self._closing = False
 
     async def run(self, consumer: QueueConsumer, executor: JobExecutor, stop: asyncio.Event) -> None:
-        """运行到停止信号或首个执行槽失败，然后有界等待在途任务。"""
+        """运行到停止信号或执行槽失败；限时排空后请求取消，并等待在途任务退出。"""
 
         self._closing = False
         tasks = [asyncio.create_task(self._lane(consumer, executor, stop)) for _ in range(self._concurrency)]
